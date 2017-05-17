@@ -1446,6 +1446,76 @@ static void file_delete_many_test(struct transaction *tr)
     }
 }
 
+struct file_iterate_many_state {
+    struct file_iterate_state iter;
+    uint64_t found;
+    bool stop;
+    char last_path[10];
+};
+
+static bool file_iterate_many_iter(struct file_iterate_state *iter,
+                                   struct transaction *tr,
+                                   const struct block_mac *block_mac,
+                                   bool added, bool removed)
+{
+    struct file_iterate_many_state *miter =
+        containerof(iter, struct file_iterate_many_state, iter);
+    const struct file_info *file_info;
+    obj_ref_t ref = OBJ_REF_INITIAL_VALUE(ref);
+    int i;
+    int ret;
+    uint64_t mask;
+
+    file_info = file_get_info(tr, block_mac, &ref);
+
+    ret = sscanf(file_info->path, "test%d", &i);
+
+    assert(strlen(file_info->path) < sizeof(miter->last_path));
+    strcpy(miter->last_path, file_info->path);
+
+    file_info_put(file_info, &ref);
+
+    assert(ret == 1);
+    mask = (1ULL << i);
+    assert(!(miter->found & mask));
+    miter->found |= mask;
+
+    return miter->stop;
+}
+
+static void file_iterate_many_test(struct transaction *tr)
+{
+    struct file_iterate_many_state state = {
+        .iter.file =  file_iterate_many_iter,
+        .found = 0,
+        .stop = false,
+    };
+    uint64_t last_found;
+    bool ret;
+
+    /* iterate over all files in one pass */
+    ret = file_iterate(tr, NULL, false, &state.iter);
+    assert(state.found = (1 << file_test_many_file_count) - 1);
+    assert(ret);
+    ret = file_iterate(tr, NULL, true, &state.iter);
+    assert(ret);
+
+    /* lookup one file at a time */
+    state.found = 0;
+    state.stop = true;
+    ret = file_iterate(tr, NULL, false, &state.iter);
+    assert(ret);
+    while (state.found != last_found) {
+        last_found = state.found;
+        ret = file_iterate(tr, state.last_path, false, &state.iter);
+        assert(ret);
+    }
+    assert(state.found = (1 << file_test_many_file_count) - 1);
+    ret = file_iterate(tr, NULL, true, &state.iter);
+    assert(ret);
+}
+
+
 static void file_allocate_all1_test(struct transaction *tr)
 {
     file_allocate_all_test(tr, 1, 0, 1, "test1", FILE_OPEN_CREATE);
@@ -1590,6 +1660,7 @@ struct {
     TEST(file_write1_small_test),
     TEST(file_write1_small_test),
     TEST(file_delete1_small_test),
+    TEST(file_iterate_many_test),
     TEST(file_delete_many_test),
     TEST(file_create1_test),
     TEST(file_allocate_all1_test),
