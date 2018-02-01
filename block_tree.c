@@ -15,7 +15,8 @@
  */
 
 #include <assert.h>
-#include <compiler.h>
+#include <lk/compiler.h>
+#include <lk/macros.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>

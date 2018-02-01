@@ -15,9 +15,9 @@
  */
 
 #include <assert.h>
-#include <err.h>
 #include <errno.h>
-#include <list.h>
+#include <uapi/err.h>
+#include <lk/list.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
