@@ -14,8 +14,6 @@
  * limitations under the License.
  */
 
-#include <trusty_std.h>
-
 #include <interface/storage/storage.h>
 
 #include "block_cache.h"

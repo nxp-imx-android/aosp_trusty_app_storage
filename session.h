@@ -16,8 +16,6 @@
 
 #pragma once
 
-#include <trusty_std.h>
-
 #include "block_device_tipc.h"
 #include "crypt.h"
 #include "ipc.h"

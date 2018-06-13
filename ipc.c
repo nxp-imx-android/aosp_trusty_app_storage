@@ -15,11 +15,10 @@
  */
 
 #include <assert.h>
-#include <uapi/err.h>
 #include <lk/list.h>
 #include <stdlib.h>
-
-#include <trusty_std.h>
+#include <trusty_ipc.h>
+#include <uapi/err.h>
 
 #include "ipc.h"
 

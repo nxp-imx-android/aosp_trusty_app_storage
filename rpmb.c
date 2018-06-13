@@ -20,7 +20,6 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-#include <trusty_std.h>
 
 #include <openssl/mem.h>
 #include <openssl/hmac.h>

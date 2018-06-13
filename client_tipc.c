@@ -16,13 +16,12 @@
 
 #include <assert.h>
 #include <errno.h>
-#include <uapi/err.h>
 #include <lk/list.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <trusty_std.h>
+#include <uapi/err.h>
 
 #include <openssl/mem.h>
 
