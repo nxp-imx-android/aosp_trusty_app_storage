@@ -124,7 +124,8 @@ bool update_super_block(struct transaction *tr,
     }
     super_rw->magic = SUPER_BLOCK_MAGIC;
     super_rw->flags = ver;
-    super_rw->fs_version = SUPER_BLOCK_FS_VERSION; /* TODO: keep existing fs version when possible */
+    /* TODO: keep existing fs version when possible */
+    super_rw->fs_version = SUPER_BLOCK_FS_VERSION;
     super_rw->block_size = tr->fs->dev->block_size;
     super_rw->block_num_size = tr->fs->block_num_size;
     super_rw->mac_size = tr->fs->mac_size;

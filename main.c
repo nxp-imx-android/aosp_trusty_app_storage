@@ -28,8 +28,8 @@ int main(void)
 {
 	struct ipc_port_context ctx = {
 		.ops = {
-			.on_connect = proxy_connect,
-		}
+			.on_connect = proxy_connect
+		},
 	};
 
 	crypt_init();

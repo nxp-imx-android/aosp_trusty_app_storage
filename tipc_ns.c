@@ -87,11 +87,11 @@ int rpmb_send(void *handle_,
 	iovec_t rx_iov[] = {
 		{
 			.base = &msg,
-			.len = sizeof(msg),
+			.len = sizeof(msg)
 		},
 		{
 			.base = read_buf,
-			.len = read_size,
+			.len = read_size
 		},
 	};
 
@@ -99,20 +99,20 @@ int rpmb_send(void *handle_,
 	iovec_t tx_iov[] = {
 		{
 			.base = &msg,
-			.len = sizeof(msg),
+			.len = sizeof(msg)
 		},
 		{
 			.base = &req,
-			.len = sizeof(req),
+			.len = sizeof(req)
 		},
 		{
 			.base = reliable_write_buf,
-			.len = reliable_write_size,
+			.len = reliable_write_size
 		},
 		{
 			.base = write_buf,
 			.len = write_size
-		}
+		},
 	};
 
 	rc = sync_ipc_send_msg(handle, tx_iov, countof(tx_iov),
@@ -145,27 +145,27 @@ int ns_open_file(handle_t ipc_handle, const char *fname,
 	iovec_t tx_iov[] = {
 		{
 			.base = &msg,
-			.len = sizeof(msg),
+			.len = sizeof(msg)
 		},
 		{
 			.base = &req,
-			.len = sizeof(req),
+			.len = sizeof(req)
 		},
 		{
 			// TODO: change to const API when available
 			.base = (char *) fname,
-			.len = fname_size,
+			.len = fname_size
 		}
 	};
 
 	iovec_t rx_iov[] = {
 		{
 			.base = &msg,
-			.len = sizeof(msg),
+			.len = sizeof(msg)
 		},
 		{
 			.base = &resp,
-			.len = sizeof(resp),
+			.len = sizeof(resp)
 		}
 	};
 
@@ -210,11 +210,11 @@ void ns_close_file(handle_t ipc_handle, ns_handle_t handle)
 	iovec_t iov[] = {
 		{
 			.base = &msg,
-			.len = sizeof(msg),
+			.len = sizeof(msg)
 		},
 		{
 			.base = &req,
-			.len = sizeof(req),
+			.len = sizeof(req)
 		},
 	};
 
@@ -249,22 +249,22 @@ int ns_read_pos(handle_t ipc_handle, ns_handle_t handle, ns_off_t pos, void *dat
 	iovec_t tx_iov[] = {
 		{
 			.base = &msg,
-			.len = sizeof(msg),
+			.len = sizeof(msg)
 		},
 		{
 			.base = &req,
-			.len = sizeof(req),
+			.len = sizeof(req)
 		},
 	};
 
 	iovec_t rx_iov[] = {
 		{
 			.base = &msg,
-			.len = sizeof(msg),
+			.len = sizeof(msg)
 		},
 		{
 			.base = data,
-			.len = data_size,
+			.len = data_size
 		}
 	};
 
@@ -308,16 +308,16 @@ int ns_write_pos(handle_t ipc_handle, ns_handle_t handle, ns_off_t pos,
 	iovec_t iov[] = {
 		{
 			.base = &msg,
-			.len = sizeof(msg),
+			.len = sizeof(msg)
 		},
 		{
 			.base = &req,
-			.len = sizeof(req),
+			.len = sizeof(req)
 		},
 		{
 			// TODO: use const API
 			.base = (void *) data,
-			.len = data_size,
+			.len = data_size
 		}
 	};
 

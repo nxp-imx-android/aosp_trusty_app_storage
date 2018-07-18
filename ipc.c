@@ -151,8 +151,7 @@ static int do_handle_msg(struct ipc_channel_context *ctx, const uevent_t *ev)
 		return NO_ERROR; /* no new messages */
 
 	if (rc != NO_ERROR) {
-		TLOGE("failed (%d) to get_msg for chan (%d), closing "
-		      "connection\n",
+		TLOGE("failed (%d) to get_msg for chan (%d), closing connection\n",
 		      rc, chan);
 		return rc;
 	}

@@ -240,8 +240,9 @@ static void file_block_map_update(struct transaction *tr,
              * Use block_get_copy instead of block_move since tr->fs->files
              * is still used and not updated until file_transaction_complete.
              */
+            // TODO: fix
             file_entry_rw = block_get_copy(tr, file_entry_ro, new_block,
-                                           false, &file_entry_copy_ref); // TODO: fix
+                                           false, &file_entry_copy_ref);
             block_put(file_entry_ro, &file_entry_ref);
             file_entry_ro = file_entry_rw;
             obj_ref_transfer(&file_entry_ref, &file_entry_copy_ref);
@@ -249,14 +250,16 @@ static void file_block_map_update(struct transaction *tr,
                 pr_warn("transaction failed, abort\n");
                 goto err;
             }
-            block_tree_insert(tr, &tr->files_updated, file_block, new_block); /* TODO: insert mac */
+            /* TODO: insert mac */
+            block_tree_insert(tr, &tr->files_updated, file_block, new_block);
             block_free(tr, file_block);
             file->block_mac = block_mac;
         }
         assert(!file_tree_lookup(NULL, tr, &tr->files_added, &tree_path,
                                  file_entry_ro->info.path, false));
 
-        block_tree_walk(tr, &tr->files_updated, old_block, false, &tree_path); /* TODO: get path from insert operation */
+        /* TODO: get path from insert operation */
+        block_tree_walk(tr, &tr->files_updated, old_block, false, &tree_path);
         if (tr->failed) {
             pr_warn("transaction failed, abort\n");
             goto err;
@@ -264,7 +267,8 @@ static void file_block_map_update(struct transaction *tr,
         assert(block_tree_path_get_key(&tree_path) == old_block);
         block_mac = block_tree_path_get_data_block_mac(&tree_path);
         assert(block_mac_to_block(tr, &block_mac) == block_mac_to_block(tr, &file->block_mac));
-        //assert(block_mac_eq(tr, &block_mac, &file->block_mac)); /* TODO: enable after insert mac TODO */
+        /* TODO: enable after insert mac TODO */
+        //assert(block_mac_eq(tr, &block_mac, &file->block_mac));
 
         if (new_path) {
             /* TODO: remove by path or, when possible, skip insert instead */
@@ -297,7 +301,8 @@ static void file_block_map_update(struct transaction *tr,
     } else {
         block_tree_path_put_dirty(tr, &tree_path, tree_path.count,
                                   file_entry_rw, &file_entry_ref);
-        file->block_mac = tree_path.entry[tree_path.count].block_mac; /* TODO: add better api */
+        /* TODO: add better api */
+        file->block_mac = tree_path.entry[tree_path.count].block_mac;
     }
 
     /*
@@ -673,8 +678,10 @@ static bool file_tree_lookup(struct block_mac *block_mac_out,
         block_put(file_entry, &file_entry_ref);
         if (found) {
             if (remove) {
-                //block_tree_remove_path(tr, tree_path); /* TODO: remove by path */
-                block_tree_remove(tr, tree, hash, block_mac_to_block(tr, &block_mac)); /* TODO: pass mac */
+                /* TODO: remove by path */
+                //block_tree_remove_path(tr, tree_path);
+                /* TODO: pass mac */
+                block_tree_remove(tr, tree, hash, block_mac_to_block(tr, &block_mac));
             }
             *block_mac_out = block_mac;
             return true;
@@ -1042,9 +1049,10 @@ bool file_delete(struct transaction *tr, const char *path)
     block_put(file_entry, &file_entry_ref);
     if (in_files) {
         if (!block_mac_same_block(tr, &block_mac, &old_block_mac)) {
+            /* TODO: pass mac */
             block_tree_remove(tr, &tr->files_updated,
                               block_mac_to_block(tr, &old_block_mac),
-                              block_mac_to_block(tr, &block_mac)); /* TODO: pass mac */
+                              block_mac_to_block(tr, &block_mac));
             if (tr->failed) {
                 pr_warn("transaction failed, abort\n");
                 return false;

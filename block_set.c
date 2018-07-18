@@ -469,7 +469,8 @@ void block_set_add_range(struct transaction *tr,
     extended = block_range_extend(&new_tree_range, range);
     if (!extended) {
         assert(!extend_left);
-        block_tree_insert(tr, &set->block_tree, range.start, range.end); /* TODO: use path for insert point */
+        /* TODO: use path for insert point */
+        block_tree_insert(tr, &set->block_tree, range.start, range.end);
     } else {
         block_tree_path_next(&path);
         if (tr->failed) {
@@ -481,9 +482,10 @@ void block_set_add_range(struct transaction *tr,
             assert(block_tree_path_get_data(&path) > new_tree_range.end);
             new_tree_range.end = block_tree_path_get_data(&path);
         }
+        /* TODO: use path? */
         block_tree_update(tr, &set->block_tree,
                           tree_range.start, tree_range.end,
-                          new_tree_range.start, new_tree_range.end); /* TODO: use path? */
+                          new_tree_range.start, new_tree_range.end);
         if (tr->failed) {
             pr_warn("transaction failed, abort\n");
             return;
@@ -571,9 +573,10 @@ void block_set_remove_range(struct transaction *tr,
     if (block_range_empty(new_tree_range)) {
         block_tree_remove(tr, &set->block_tree, tree_range.start, tree_range.end);
     } else {
+        /* TODO: use path? */
         block_tree_update(tr, &set->block_tree,
                           tree_range.start, tree_range.end,
-                          new_tree_range.start, new_tree_range.end); /* TODO: use path? */
+                          new_tree_range.start, new_tree_range.end);
     }
 
     if (tr->failed) {

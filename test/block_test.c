@@ -49,7 +49,8 @@ long gettime(uint32_t clock_id, uint32_t flags, int64_t *time)
     return 0;
 }
 
-#if 0 /* test tree order 3 */ /* not useful, b+tree for free set grows faster than the space that is added to it */
+#if 0 /* test tree order 3 */
+/* not useful, b+tree for free set grows faster than the space that is added to it */
 #define BLOCK_SIZE (64)
 #define BLOCK_COUNT (256)
 #elif 0 /* test tree order 4 */
@@ -73,10 +74,12 @@ long gettime(uint32_t clock_id, uint32_t flags, int64_t *time)
 #elif 1
 #define BLOCK_SIZE (2048)
 #define BLOCK_COUNT (256)
-#elif 0 /* test single rpmb block with simulated 16-bit indexes, 128kb device */
+#elif 0
+/* test single rpmb block with simulated 16-bit indexes, 128kb device */
 #define BLOCK_SIZE (256 * 4)
 #define BLOCK_COUNT (512)
-#elif 0 /* test single rpmb block with simulated 16-bit indexes, 4MB device */
+#elif 0
+/* test single rpmb block with simulated 16-bit indexes, 4MB device */
 #define BLOCK_SIZE (256 * 4)
 #define BLOCK_COUNT (16384)
 #else
@@ -803,7 +806,8 @@ static void free_test(struct transaction *tr)
 
     i = 0;
     do {
-        //i = block_set_find_next_block(&fs.free, i, false); // TODO: use this version, currently does not work since ranges aer not merged accross nodes
+        // TODO: use this version, currently does not work since ranges aer not merged accross nodes
+        //i = block_set_find_next_block(&fs.free, i, false);
         while (block_set_find_next_block(tr, &tr->fs->free, i, true) == i) {
             i++;
         }
