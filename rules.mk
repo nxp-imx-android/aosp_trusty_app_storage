@@ -42,7 +42,7 @@ MODULE_DEPS := \
 	interface/storage \
 	lib/hwkey \
 	lib/libc-trusty \
-	openssl \
+	external/boringssl \
 
 MODULE_DEPS += \
 	app/storage/test \
