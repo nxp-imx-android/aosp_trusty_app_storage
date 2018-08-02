@@ -34,46 +34,45 @@
 struct block_mac {
     uint8_t data[sizeof(data_block_t) + sizeof(struct mac)];
 };
-#define BLOCK_MAC_INITIAL_VALUE(block_mac) { {0} }
+#define BLOCK_MAC_INITIAL_VALUE(block_mac) \
+    {                                      \
+        { 0 }                              \
+    }
 
 struct transaction;
 
-void block_mac_clear(const struct transaction *tr,
-                     struct block_mac *dest);
-data_block_t block_mac_to_block(const struct transaction *tr,
-                                const struct block_mac *block_mac);
-const void *block_mac_to_mac(const struct transaction *tr,
-                             const struct block_mac *block_mac);
-void block_mac_set_block(const struct transaction *tr,
-                         struct block_mac *block_mac,
+void block_mac_clear(const struct transaction* tr, struct block_mac* dest);
+data_block_t block_mac_to_block(const struct transaction* tr,
+                                const struct block_mac* block_mac);
+const void* block_mac_to_mac(const struct transaction* tr,
+                             const struct block_mac* block_mac);
+void block_mac_set_block(const struct transaction* tr,
+                         struct block_mac* block_mac,
                          data_block_t block);
-void block_mac_set_mac(const struct transaction *tr,
-                       struct block_mac *block_mac,
-                       const struct mac *mac);
-bool block_mac_eq(const struct transaction *tr,
-                  const struct block_mac *a,
-                  const struct block_mac *b);
-void block_mac_copy(const struct transaction *tr,
-                    struct block_mac *dest,
-                    const struct block_mac *src);
+void block_mac_set_mac(const struct transaction* tr,
+                       struct block_mac* block_mac,
+                       const struct mac* mac);
+bool block_mac_eq(const struct transaction* tr,
+                  const struct block_mac* a,
+                  const struct block_mac* b);
+void block_mac_copy(const struct transaction* tr,
+                    struct block_mac* dest,
+                    const struct block_mac* src);
 
-static inline bool block_mac_valid(const struct transaction *tr,
-                                   const struct block_mac *block_mac)
-{
+static inline bool block_mac_valid(const struct transaction* tr,
+                                   const struct block_mac* block_mac) {
     return block_mac_to_block(tr, block_mac);
 }
 
-static inline bool block_mac_same_block(const struct transaction *tr,
-                                        const struct block_mac *a,
-                                        const struct block_mac *b)
-{
+static inline bool block_mac_same_block(const struct transaction* tr,
+                                        const struct block_mac* a,
+                                        const struct block_mac* b) {
     return block_mac_to_block(tr, a) == block_mac_to_block(tr, b);
 }
 
-static inline void block_mac_copy_mac(const struct transaction *tr,
-                                      struct block_mac *dest,
-                                      const struct block_mac *src)
-{
+static inline void block_mac_copy_mac(const struct transaction* tr,
+                                      struct block_mac* dest,
+                                      const struct block_mac* src) {
     assert(block_mac_same_block(tr, dest, src));
     block_mac_set_mac(tr, dest, block_mac_to_mac(tr, src));
 }

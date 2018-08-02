@@ -34,9 +34,8 @@
  *
  * Helper function to initialize a block_range from a tree entry.
  */
-static void block_range_init_from_path(struct block_range *range,
-                                       struct block_tree_path *path)
-{
+static void block_range_init_from_path(struct block_range* range,
+                                       struct block_tree_path* path) {
     if (!path->count) {
         block_range_clear(range);
         return;
@@ -53,11 +52,10 @@ static void block_range_init_from_path(struct block_range *range,
  *
  * Return: %true if @add_range was adjacent to @range, %false otherwise.
  */
-static bool block_range_extend(struct block_range *range,
-                               struct block_range add_range)
-{
-    pr_write("%lld-%lld, %lld-%lld\n",
-             range->start, range->end - 1, add_range.start, add_range.end - 1);
+static bool block_range_extend(struct block_range* range,
+                               struct block_range add_range) {
+    pr_write("%lld-%lld, %lld-%lld\n", range->start, range->end - 1,
+             add_range.start, add_range.end - 1);
     assert(!block_range_empty(add_range));
     assert(!block_range_overlap(*range, add_range));
     if (block_range_empty(*range)) {
@@ -85,9 +83,8 @@ static bool block_range_extend(struct block_range *range,
  *
  * Return: %true if @remove_range was at either end of @range, %false otherwise.
  */
-static bool block_range_shrink(struct block_range *range,
-                               struct block_range remove_range)
-{
+static bool block_range_shrink(struct block_range* range,
+                               struct block_range remove_range) {
     pr_write("%lld-%lld, %lld-%lld\n", range->start, range->end - 1,
              remove_range.start, remove_range.end - 1);
     assert(block_range_is_sub_range(*range, remove_range));
@@ -112,17 +109,16 @@ static bool block_range_shrink(struct block_range *range,
  * @tr:         Transaction object.
  * @range:      Range to print.
  */
-static void block_set_print_range(struct block_range range, int *split_line)
-{
+static void block_set_print_range(struct block_range range, int* split_line) {
     if (*split_line >= 8) {
         *split_line = 0;
         printf("\n");
     }
     (*split_line)++;
     if (range.start == range.end - 1) {
-        printf("    %3lld      ",range.start);
+        printf("    %3lld      ", range.start);
     } else {
-        printf("    %3lld - %3lld",range.start, range.end - 1);
+        printf("    %3lld - %3lld", range.start, range.end - 1);
     }
     (*split_line)++;
 }
@@ -132,9 +128,8 @@ static void block_set_print_range(struct block_range range, int *split_line)
  * @tr:         Transaction object.
  * @set:        Block-set object.
  */
-static void block_set_print_ranges(struct transaction *tr,
-                                   struct block_set *set)
-{
+static void block_set_print_ranges(struct transaction* tr,
+                                   struct block_set* set) {
     struct block_tree_path path;
     struct block_range range;
     int split_line = 0;
@@ -163,8 +158,7 @@ static void block_set_print_ranges(struct transaction *tr,
  * @tr:         Transaction object.
  * @set:        Block-set object.
  */
-void block_set_print(struct transaction *tr, struct block_set *set)
-{
+void block_set_print(struct transaction* tr, struct block_set* set) {
     printf("block_tree:\n");
     block_tree_print(tr, &set->block_tree);
     block_set_print_ranges(tr, set);
@@ -180,9 +174,8 @@ void block_set_print(struct transaction *tr, struct block_set *set)
  *
  * Return: %true if the ranges in @set are valid, %false otherwise.
  */
-static bool block_set_check_ranges(struct transaction *tr,
-                                   struct block_set *set)
-{
+static bool block_set_check_ranges(struct transaction* tr,
+                                   struct block_set* set) {
     struct block_tree_path path;
     data_block_t min = tr->fs->min_block_num;
     data_block_t max = tr->fs->dev->block_count;
@@ -196,8 +189,8 @@ static bool block_set_check_ranges(struct transaction *tr,
             return false;
         }
         if (range.end <= range.start) {
-            pr_err("bad range end %lld <= start %lld\n",
-                   range.end, range.start);
+            pr_err("bad range end %lld <= start %lld\n", range.end,
+                   range.start);
             return false;
         }
         if (range.end > max) {
@@ -219,8 +212,7 @@ static bool block_set_check_ranges(struct transaction *tr,
  *
  * Return: %true if the tree and ranges in @set are valid, %false otherwise.
  */
-bool block_set_check(struct transaction *tr, struct block_set *set)
-{
+bool block_set_check(struct transaction* tr, struct block_set* set) {
     bool valid;
 
     valid = block_tree_check(tr, &set->block_tree);
@@ -246,11 +238,10 @@ bool block_set_check(struct transaction *tr, struct block_set *set)
  * Return: First block in or not in @set >= @min_block, or 0 if no match is
  * is found.
  */
-data_block_t block_set_find_next_block(struct transaction *tr,
-                                       struct block_set *set,
+data_block_t block_set_find_next_block(struct transaction* tr,
+                                       struct block_set* set,
                                        data_block_t min_block,
-                                       bool in_set)
-{
+                                       bool in_set) {
     struct block_tree_path path;
     struct block_range range;
 
@@ -268,25 +259,25 @@ data_block_t block_set_find_next_block(struct transaction *tr,
     }
 
     pr_read("set at %lld, %lld in_set %d, [%lld-%lld]\n",
-            block_mac_to_block(tr, &set->block_tree.root),
-            min_block, in_set, range.start, range.end - 1);
+            block_mac_to_block(tr, &set->block_tree.root), min_block, in_set,
+            range.start, range.end - 1);
 
     /* The block tree walk should not find an empty range that is not 0, 0 */
     assert(!block_range_empty(range) || !range.start);
 
     if (block_in_range(range, min_block) == in_set) {
-        pr_read("%lld in_set %d, return min_block, %lld\n",
-                min_block, in_set, min_block);
+        pr_read("%lld in_set %d, return min_block, %lld\n", min_block, in_set,
+                min_block);
         return min_block;
     } else {
         if (!in_set) {
             assert(!block_range_empty(range));
-            pr_read("%lld in_set %d, return range.end, %lld\n",
-                    min_block, in_set, range.end);
+            pr_read("%lld in_set %d, return range.end, %lld\n", min_block,
+                    in_set, range.end);
             return range.end;
         } else {
-            pr_read("%lld in_set %d, return range.start, %lld\n",
-                    min_block, in_set, range.start);
+            pr_read("%lld in_set %d, return range.start, %lld\n", min_block,
+                    in_set, range.start);
             return range.start;
         }
     }
@@ -303,10 +294,9 @@ data_block_t block_set_find_next_block(struct transaction *tr,
  * the returned range will start at @min_block, not at start of the range in
  * @set.
  */
-struct block_range block_set_find_next_range(struct transaction *tr,
-                                             struct block_set *set,
-                                             data_block_t min_block)
-{
+struct block_range block_set_find_next_range(struct transaction* tr,
+                                             struct block_set* set,
+                                             data_block_t min_block) {
     struct block_range range;
     range.start = block_set_find_next_block(tr, set, min_block, true);
     if (range.start) {
@@ -325,10 +315,9 @@ struct block_range block_set_find_next_range(struct transaction *tr,
  *
  * Return: %true if @block is in @set, %false if @block is not on set/
  */
-bool block_set_block_in_set(struct transaction *tr,
-                            struct block_set *set,
-                            data_block_t block)
-{
+bool block_set_block_in_set(struct transaction* tr,
+                            struct block_set* set,
+                            data_block_t block) {
     return block_set_find_next_block(tr, set, block, true) == block;
 }
 
@@ -341,11 +330,11 @@ bool block_set_block_in_set(struct transaction *tr,
  * Return: %true if all of @range is in @set, %false if a block in @range is not
  * in @set.
  */
-bool block_set_range_in_set(struct transaction *tr,
-                            struct block_set *set,
-                            struct block_range range)
-{
-    return block_set_find_next_block(tr, set, range.start, true) == range.start &&
+bool block_set_range_in_set(struct transaction* tr,
+                            struct block_set* set,
+                            struct block_range range) {
+    return block_set_find_next_block(tr, set, range.start, true) ==
+                   range.start &&
            block_set_find_next_block(tr, set, range.start, false) >= range.end;
 }
 
@@ -358,10 +347,9 @@ bool block_set_range_in_set(struct transaction *tr,
  * Return: %true if all of @range is not in @set, %false if a block in @range is
  * in @set.
  */
-bool block_set_range_not_in_set(struct transaction *tr,
-                                struct block_set *set,
-                                struct block_range range)
-{
+bool block_set_range_not_in_set(struct transaction* tr,
+                                struct block_set* set,
+                                struct block_range range) {
     data_block_t block = block_set_find_next_block(tr, set, range.start, true);
     return !block || block >= range.end;
 }
@@ -375,14 +363,13 @@ bool block_set_range_not_in_set(struct transaction *tr,
  * Return: %true a block is in both @set_s and @set_b, %false if no such block
  * exists.
  */
-bool block_set_overlap(struct transaction *tr,
-                       struct block_set *set_a,
-                       struct block_set *set_b)
-{
+bool block_set_overlap(struct transaction* tr,
+                       struct block_set* set_a,
+                       struct block_set* set_b) {
     struct block_range range_a;
     struct block_range range_b = BLOCK_RANGE_INITIAL_VALUE(range_b);
 
-    while(true) {
+    while (true) {
         range_a = block_set_find_next_range(tr, set_a, range_b.start);
         if (block_range_empty(range_a)) {
             return false; /* No overlap as there a no more ranges in set_a */
@@ -416,10 +403,9 @@ bool block_set_overlap(struct transaction *tr,
  * tree, or by adding a new range to the tree. If an existing tree entry is
  * extended check if the next entry can be merged.
  */
-void block_set_add_range(struct transaction *tr,
-                         struct block_set *set,
-                         struct block_range range)
-{
+void block_set_add_range(struct transaction* tr,
+                         struct block_set* set,
+                         struct block_range range) {
     struct block_range tree_range;
     struct block_range new_tree_range;
     bool extended;
@@ -436,10 +422,10 @@ void block_set_add_range(struct transaction *tr,
     }
 
     pr_write("set %lld, add %lld-%lld, updating %d\n",
-             block_mac_to_block(tr, &set->block_tree.root),
-             range.start, range.end - 1, set->updating);
+             block_mac_to_block(tr, &set->block_tree.root), range.start,
+             range.end - 1, set->updating);
 
-    assert (!set->updating);
+    assert(!set->updating);
     set->updating = true;
 
     full_assert(block_set_check(tr, set));
@@ -483,15 +469,16 @@ void block_set_add_range(struct transaction *tr,
             new_tree_range.end = block_tree_path_get_data(&path);
         }
         /* TODO: use path? */
-        block_tree_update(tr, &set->block_tree,
-                          tree_range.start, tree_range.end,
-                          new_tree_range.start, new_tree_range.end);
+        block_tree_update(tr, &set->block_tree, tree_range.start,
+                          tree_range.end, new_tree_range.start,
+                          new_tree_range.end);
         if (tr->failed) {
             pr_warn("transaction failed, abort\n");
             return;
         }
         if (merge) {
-            /* set has overlapping ranges at this point, TODO: check that set is readable in this state */
+            /* set has overlapping ranges at this point, TODO: check that set is
+             * readable in this state */
             block_tree_remove(tr, &set->block_tree,
                               block_tree_path_get_key(&path),
                               block_tree_path_get_data(&path));
@@ -508,8 +495,8 @@ void block_set_add_range(struct transaction *tr,
 
     full_assert(block_set_check(tr, set));
     pr_write("set %lld, add %lld-%lld done\n",
-             block_mac_to_block(tr, &set->block_tree.root),
-             range.start, range.end - 1);
+             block_mac_to_block(tr, &set->block_tree.root), range.start,
+             range.end - 1);
 }
 
 /**
@@ -521,10 +508,9 @@ void block_set_add_range(struct transaction *tr,
  * Remove @range from block set b+tree either by shrinking an existing range
  * in the tree, or by splitting an existing range in the tree.
  */
-void block_set_remove_range(struct transaction *tr,
-                            struct block_set *set,
-                            struct block_range range)
-{
+void block_set_remove_range(struct transaction* tr,
+                            struct block_set* set,
+                            struct block_range range) {
     struct block_tree_path path;
     struct block_range tree_range;
     struct block_range new_tree_range;
@@ -539,12 +525,12 @@ void block_set_remove_range(struct transaction *tr,
     }
 
     pr_write("set %lld, remove %lld-%lld, updating %d\n",
-             block_mac_to_block(tr, &set->block_tree.root),
-             range.start, range.end - 1, set->updating);
+             block_mac_to_block(tr, &set->block_tree.root), range.start,
+             range.end - 1, set->updating);
 
     assert(block_set_range_in_set(tr, set, range) || tr->failed);
 
-    assert (!set->updating);
+    assert(!set->updating);
     set->updating = true;
 
     full_assert(block_set_check(tr, set));
@@ -571,12 +557,13 @@ void block_set_remove_range(struct transaction *tr,
         new_tree_range.end = range.start;
     }
     if (block_range_empty(new_tree_range)) {
-        block_tree_remove(tr, &set->block_tree, tree_range.start, tree_range.end);
+        block_tree_remove(tr, &set->block_tree, tree_range.start,
+                          tree_range.end);
     } else {
         /* TODO: use path? */
-        block_tree_update(tr, &set->block_tree,
-                          tree_range.start, tree_range.end,
-                          new_tree_range.start, new_tree_range.end);
+        block_tree_update(tr, &set->block_tree, tree_range.start,
+                          tree_range.end, new_tree_range.start,
+                          new_tree_range.end);
     }
 
     if (tr->failed) {
@@ -590,8 +577,8 @@ void block_set_remove_range(struct transaction *tr,
     full_assert(block_set_check(tr, set));
 
     pr_write("set %lld, remove %lld-%lld done\n",
-             block_mac_to_block(tr, &set->block_tree.root),
-             range.start, range.end - 1);
+             block_mac_to_block(tr, &set->block_tree.root), range.start,
+             range.end - 1);
 }
 
 /**
@@ -600,10 +587,9 @@ void block_set_remove_range(struct transaction *tr,
  * @set:        Block-set object.
  * @block:      Block to add.
  */
-void block_set_add_block(struct transaction *tr,
-                         struct block_set *set,
-                         data_block_t block)
-{
+void block_set_add_block(struct transaction* tr,
+                         struct block_set* set,
+                         data_block_t block) {
     struct block_range range;
 
     block_range_init_single(&range, block);
@@ -616,10 +602,9 @@ void block_set_add_block(struct transaction *tr,
  * @set:        Block-set object.
  * @block:      Block to remove.
  */
-void block_set_remove_block(struct transaction *tr,
-                            struct block_set *set,
-                            data_block_t block)
-{
+void block_set_remove_block(struct transaction* tr,
+                            struct block_set* set,
+                            data_block_t block) {
     struct block_range range;
 
     block_range_init_single(&range, block);
@@ -634,28 +619,24 @@ void block_set_remove_block(struct transaction *tr,
  * Clear block set, get block_num_size and mac_size from @fs and intialize
  * tree.
  */
-void block_set_init(struct fs *fs, struct block_set *set)
-{
+void block_set_init(struct fs* fs, struct block_set* set) {
     assert(fs);
     assert(fs->dev);
 
     memset(set, 0, sizeof(*set));
-    block_tree_init(&set->block_tree,
-                    fs->dev->block_size,
-                    fs->block_num_size,
-                    fs->block_num_size + fs->mac_size,
-                    fs->block_num_size);
+    block_tree_init(&set->block_tree, fs->dev->block_size, fs->block_num_size,
+                    fs->block_num_size + fs->mac_size, fs->block_num_size);
 }
 
 /**
- * block_set_add_initial_range - Add a range to an empty block set without updating tree
+ * block_set_add_initial_range - Add a range to an empty block set without
+ * updating tree
  * @set:        Block-set object.
  * @range:      Block range to add.
  *
  */
-void block_set_add_initial_range(struct block_set *set,
-                                 struct block_range range)
-{
+void block_set_add_initial_range(struct block_set* set,
+                                 struct block_range range) {
     assert(block_range_empty(set->initial_range));
     set->initial_range = range;
 }
@@ -666,10 +647,9 @@ void block_set_add_initial_range(struct block_set *set,
  * @dest:       New writable block-set object.
  * @src:        Read-only block-set object.
  */
-void block_set_copy(struct transaction *tr,
-                    struct block_set *dest,
-                    const struct block_set *src)
-{
+void block_set_copy(struct transaction* tr,
+                    struct block_set* dest,
+                    const struct block_set* src) {
     assert(src->block_tree.copy_on_write);
     assert(!src->block_tree.allow_copy_on_write);
 

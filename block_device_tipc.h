@@ -33,12 +33,12 @@ struct block_device_tipc;
  */
 struct block_device_rpmb {
     struct block_device dev;
-    struct block_device_tipc *state;
+    struct block_device_tipc* state;
     uint16_t base;
 };
 
 struct client_port_context {
-    struct fs *tr_state;
+    struct fs* tr_state;
     struct ipc_port_context client_ctx;
 };
 
@@ -49,7 +49,7 @@ struct client_port_context {
 
 struct block_device_tipc {
     handle_t ipc_handle;
-    struct rpmb_state *rpmb_state;
+    struct rpmb_state* rpmb_state;
 
     struct block_device_rpmb dev_rpmb;
     struct fs tr_state_rpmb;
@@ -63,8 +63,8 @@ struct block_device_tipc {
     struct client_port_context fs_ns;
 };
 
-int block_device_tipc_init(struct block_device_tipc *state,
+int block_device_tipc_init(struct block_device_tipc* state,
                            handle_t ipc_handle,
-                           const struct key *fs_key,
-                           const struct rpmb_key *rpmb_key);
-void block_device_tipc_uninit(struct block_device_tipc *state);
+                           const struct key* fs_key,
+                           const struct rpmb_key* rpmb_key);
+void block_device_tipc_uninit(struct block_device_tipc* state);

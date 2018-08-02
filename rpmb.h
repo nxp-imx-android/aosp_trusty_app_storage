@@ -18,7 +18,7 @@
 #define __RPMB_H__
 
 struct rpmb_key {
-    uint8_t     byte[32];
+    uint8_t byte[32];
 };
 
 struct rpmb_state;
@@ -26,18 +26,29 @@ struct rpmb_state;
 #define RPMB_BUF_SIZE 256
 
 /* provides */
-int rpmb_init(struct rpmb_state **statep,
-              void *mmc_handle,
-              const struct rpmb_key *key);
-void rpmb_uninit(struct rpmb_state *statep);
-int rpmb_read(struct rpmb_state *state, void *buf, uint16_t addr, uint16_t count);
+int rpmb_init(struct rpmb_state** statep,
+              void* mmc_handle,
+              const struct rpmb_key* key);
+void rpmb_uninit(struct rpmb_state* statep);
+int rpmb_read(struct rpmb_state* state,
+              void* buf,
+              uint16_t addr,
+              uint16_t count);
 /* count must be 1 or 2, addr must be aligned */
-int rpmb_write(struct rpmb_state *state, const void *buf, uint16_t addr, uint16_t count, bool sync);
+int rpmb_write(struct rpmb_state* state,
+               const void* buf,
+               uint16_t addr,
+               uint16_t count,
+               bool sync);
 
 /* needs */
-int rpmb_send(void *mmc_handle,
-              void *reliable_write_buf, size_t reliable_write_size,
-              void *write_buf, size_t write_buf_size,
-              void *read_buf, size_t read_buf_size, bool sync);
+int rpmb_send(void* mmc_handle,
+              void* reliable_write_buf,
+              size_t reliable_write_size,
+              void* write_buf,
+              size_t write_buf_size,
+              void* read_buf,
+              size_t read_buf_size,
+              bool sync);
 
 #endif

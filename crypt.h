@@ -31,13 +31,17 @@ struct mac {
 struct iv {
     uint8_t byte[16];
 };
-#define IV_INITIAL_ZERO_VALUE(iv) {{0}}
+#define IV_INITIAL_ZERO_VALUE(iv) \
+    {                             \
+        { 0 }                     \
+    }
 
 #if DEBUG_MAC_VALUES
-#define UINT8_16_PRINTF_STR "%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x"
-#define UINT8_16_PRINTF_ARGS(var) \
-	var[0], var[1], var[2], var[3], var[4], var[5], var[6], var[7], \
-	var[8], var[9], var[10], var[11], var[12], var[13], var[14], var[15]
+#define UINT8_16_PRINTF_STR \
+    "%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x"
+#define UINT8_16_PRINTF_ARGS(var)                                           \
+    var[0], var[1], var[2], var[3], var[4], var[5], var[6], var[7], var[8], \
+            var[9], var[10], var[11], var[12], var[13], var[14], var[15]
 #else
 #define UINT8_16_PRINTF_STR "%c"
 #define UINT8_16_PRINTF_ARGS(var) '*'
@@ -48,22 +52,24 @@ struct iv {
 #define IV_PRINTF_STR UINT8_16_PRINTF_STR
 #define IV_PRINTF_ARGS(var) UINT8_16_PRINTF_ARGS((var)->byte)
 
-uint64_t str_hash(const char *str);
+uint64_t str_hash(const char* str);
 
-int calculate_mac(const struct key *key, struct mac *mac,
-                  const void *data, size_t data_size);
+int calculate_mac(const struct key* key,
+                  struct mac* mac,
+                  const void* data,
+                  size_t data_size);
 
-int generate_iv(struct iv *iv_out);
+int generate_iv(struct iv* iv_out);
 
-int encrypt(const struct key *key,
-            void *data_in_out,
+int encrypt(const struct key* key,
+            void* data_in_out,
             size_t data_size,
-            const struct iv *iv_in);
+            const struct iv* iv_in);
 
-int decrypt(const struct key *key,
-            void *data_in_out,
+int decrypt(const struct key* key,
+            void* data_in_out,
             size_t data_size,
-            const struct iv *iv_in);
+            const struct iv* iv_in);
 
 void crypt_init(void);
 

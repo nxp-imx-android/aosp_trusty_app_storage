@@ -16,8 +16,12 @@
 
 #pragma once
 
-#define stats_timer_start(counter) do {} while(0)
-#define stats_timer_stop(counter) do {} while(0)
+#define stats_timer_start(counter) \
+    do {                           \
+    } while (0)
+#define stats_timer_stop(counter) \
+    do {                          \
+    } while (0)
 
 static inline void stats_timer_reset(void) {}
 static inline void stats_timer_print(void) {}

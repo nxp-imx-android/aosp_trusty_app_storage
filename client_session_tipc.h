@@ -30,11 +30,11 @@ struct file_handle;
  * Structure that tracks state associated with a session.
  */
 struct storage_client_session {
-	uint32_t magic;
-	struct transaction tr;
-	uuid_t uuid;
-	struct file_handle **files;
-	size_t files_count;
+    uint32_t magic;
+    struct transaction tr;
+    uuid_t uuid;
+    struct file_handle** files;
+    size_t files_count;
 
-	struct ipc_channel_context context;
+    struct ipc_channel_context context;
 };

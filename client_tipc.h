@@ -16,5 +16,5 @@
 
 #include "ipc.h"
 
-int client_create_port(struct ipc_port_context *client_ctx,
-                       const char *port_name);
+int client_create_port(struct ipc_port_context* client_ctx,
+                       const char* port_name);

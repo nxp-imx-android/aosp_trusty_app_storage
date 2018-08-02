@@ -47,7 +47,7 @@ static bool print_cache_get_ref_block_count = true;
 #define BLOCK_CACHE_GUARD_2 (0xdead0005dead0007)
 
 static struct list_node block_cache_lru = LIST_INITIAL_VALUE(block_cache_lru);
-static struct block_cache_entry *block_cache_entries;
+static struct block_cache_entry* block_cache_entries;
 
 /**
  * block_cache_queue_io_op - Helper function to start a read or write operation
@@ -57,8 +57,8 @@ static struct block_cache_entry *block_cache_entries;
  * Set io_op for cache entry and add it to the tail of the io_ops for the
  * block device that the cache entry belongs to.
  */
-static void block_cache_queue_io_op(struct block_cache_entry *entry, int io_op)
-{
+static void block_cache_queue_io_op(struct block_cache_entry* entry,
+                                    int io_op) {
     assert(io_op == BLOCK_CACHE_IO_OP_READ || io_op == BLOCK_CACHE_IO_OP_WRITE);
     assert(entry->io_op == BLOCK_CACHE_IO_OP_NONE);
     assert(entry->dev);
@@ -72,8 +72,7 @@ static void block_cache_queue_io_op(struct block_cache_entry *entry, int io_op)
  * block_cache_queue_read - Start a read operation
  * @entry:      Cache entry.
  */
-static void block_cache_queue_read(struct block_cache_entry *entry)
-{
+static void block_cache_queue_read(struct block_cache_entry* entry) {
     block_cache_queue_io_op(entry, BLOCK_CACHE_IO_OP_READ);
     stats_timer_start(STATS_CACHE_START_READ);
     entry->dev->start_read(entry->dev, entry->block);
@@ -84,13 +83,12 @@ static void block_cache_queue_read(struct block_cache_entry *entry)
  * block_cache_queue_write - Start a write operation
  * @entry:      Cache entry.
  */
-static void block_cache_queue_write(struct block_cache_entry *entry,
-                                    const void *encrypted_data)
-{
+static void block_cache_queue_write(struct block_cache_entry* entry,
+                                    const void* encrypted_data) {
     block_cache_queue_io_op(entry, BLOCK_CACHE_IO_OP_WRITE);
     stats_timer_start(STATS_CACHE_START_WRITE);
-    entry->dev->start_write(entry->dev, entry->block,
-                            encrypted_data, entry->block_size);
+    entry->dev->start_write(entry->dev, entry->block, encrypted_data,
+                            entry->block_size);
     stats_timer_stop(STATS_CACHE_START_WRITE);
 }
 
@@ -98,8 +96,7 @@ static void block_cache_queue_write(struct block_cache_entry *entry,
  * block_cache_complete_io - Wait for io operation on block device to complete
  * @dev:        Block device to wait for
  */
-static void block_cache_complete_io(struct block_device *dev)
-{
+static void block_cache_complete_io(struct block_device* dev) {
     while (!list_is_empty(&dev->io_ops)) {
         assert(dev->wait_for_io);
         dev->wait_for_io(dev);
@@ -120,13 +117,13 @@ static void block_cache_complete_io(struct block_device *dev)
  *
  * Return: Matching block cache entry.
  */
-static struct block_cache_entry *block_cache_pop_io_op(struct block_device *dev,
+static struct block_cache_entry* block_cache_pop_io_op(struct block_device* dev,
                                                        data_block_t block,
-                                                       uint io_op)
-{
-    struct block_cache_entry *entry;
+                                                       uint io_op) {
+    struct block_cache_entry* entry;
 
-    list_for_every_entry(&dev->io_ops, entry, struct block_cache_entry, io_op_node) {
+    list_for_every_entry(&dev->io_ops, entry, struct block_cache_entry,
+                         io_op_node) {
         if (entry->block == block) {
             assert(entry->dev == dev);
             assert(entry->io_op == io_op);
@@ -151,14 +148,13 @@ static struct block_cache_entry *block_cache_pop_io_op(struct block_device *dev,
  *
  * Calculates mac and decrypts data into cache entry. Does not validate mac.
  */
-void block_cache_complete_read(struct block_device *dev,
+void block_cache_complete_read(struct block_device* dev,
                                data_block_t block,
-                               const void *data,
+                               const void* data,
                                size_t data_size,
-                               bool failed)
-{
+                               bool failed) {
     int ret;
-    struct block_cache_entry *entry;
+    struct block_cache_entry* entry;
 
     assert(data_size <= sizeof(entry->data));
     assert(data_size == dev->block_size);
@@ -166,8 +162,7 @@ void block_cache_complete_read(struct block_device *dev,
     entry = block_cache_pop_io_op(dev, block, BLOCK_CACHE_IO_OP_READ);
     assert(!entry->loaded);
     if (failed) {
-        printf("%s: load block %lld failed\n",
-               __func__, entry->block);
+        printf("%s: load block %lld failed\n", __func__, entry->block);
         return;
     }
     assert(!failed);
@@ -176,15 +171,16 @@ void block_cache_complete_read(struct block_device *dev,
     memcpy(entry->data, data, data_size);
 
     stats_timer_start(STATS_FS_READ_BLOCK_CALC_MAC);
-    ret = calculate_mac(entry->key, &entry->mac, entry->data, entry->block_size);
+    ret = calculate_mac(entry->key, &entry->mac, entry->data,
+                        entry->block_size);
     stats_timer_stop(STATS_FS_READ_BLOCK_CALC_MAC);
     assert(!ret);
     entry->encrypted = true;
 
     /* TODO: check mac here instead of when getting data from the cache? */
     if (print_block_load) {
-        printf("%s: load/decrypt block %lld complete\n",
-               __func__, entry->block);
+        printf("%s: load/decrypt block %lld complete\n", __func__,
+               entry->block);
     }
 
     entry->loaded = true;
@@ -199,16 +195,14 @@ void block_cache_complete_read(struct block_device *dev,
  *              means that the secure side block device code has verified that
  *              the data was written to disk.
  */
-void block_cache_complete_write(struct block_device *dev,
+void block_cache_complete_write(struct block_device* dev,
                                 data_block_t block,
-                                bool failed)
-{
-    struct block_cache_entry *entry;
+                                bool failed) {
+    struct block_cache_entry* entry;
 
     entry = block_cache_pop_io_op(dev, block, BLOCK_CACHE_IO_OP_WRITE);
     if (print_block_store) {
-        printf("%s: write block %lld complete\n",
-               __func__, entry->block);
+        printf("%s: write block %lld complete\n", __func__, entry->block);
     }
     assert(entry->dirty_tr);
     if (failed) {
@@ -224,8 +218,7 @@ void block_cache_complete_write(struct block_device *dev,
  *
  * Return: true if there are no references to @entry.
  */
-static bool block_cache_entry_has_refs(struct block_cache_entry *entry)
-{
+static bool block_cache_entry_has_refs(struct block_cache_entry* entry) {
     return !list_is_empty(&entry->obj.ref_list);
 }
 
@@ -235,8 +228,7 @@ static bool block_cache_entry_has_refs(struct block_cache_entry *entry)
  *
  * Return: true if there is a single reference to @entry.
  */
-static bool block_cache_entry_has_one_ref(struct block_cache_entry *entry)
-{
+static bool block_cache_entry_has_one_ref(struct block_cache_entry* entry) {
     return list_length(&entry->obj.ref_list) == 1;
 }
 
@@ -244,11 +236,10 @@ static bool block_cache_entry_has_one_ref(struct block_cache_entry *entry)
  * block_cache_entry_decrypt - Decrypt cache entry
  * @entry:          Cache entry
  */
-static void block_cache_entry_decrypt(struct block_cache_entry *entry)
-{
+static void block_cache_entry_decrypt(struct block_cache_entry* entry) {
     int ret;
-    const struct iv *iv = NULL; /* TODO: support external iv */
-    void *decrypt_data;
+    const struct iv* iv = NULL; /* TODO: support external iv */
+    void* decrypt_data;
     size_t decrypt_size;
 
     assert(entry->loaded);
@@ -257,7 +248,7 @@ static void block_cache_entry_decrypt(struct block_cache_entry *entry)
     decrypt_data = entry->data;
     decrypt_size = entry->block_size;
     if (!iv) {
-        iv = (void *)entry->data;
+        iv = (void*)entry->data;
         assert(decrypt_size > sizeof(*iv));
         decrypt_data += sizeof(*iv);
         decrypt_size -= sizeof(*iv);
@@ -268,8 +259,7 @@ static void block_cache_entry_decrypt(struct block_cache_entry *entry)
     assert(!ret);
 
     if (print_block_decrypt_encrypt) {
-        printf("%s: decrypt block %lld complete\n",
-               __func__, entry->block);
+        printf("%s: decrypt block %lld complete\n", __func__, entry->block);
     }
 
     entry->encrypted = false;
@@ -279,13 +269,12 @@ static void block_cache_entry_decrypt(struct block_cache_entry *entry)
  * block_cache_entry_encrypt - Encrypt cache entry and update mac
  * @entry:          Cache entry
  */
-static void block_cache_entry_encrypt(struct block_cache_entry *entry)
-{
+static void block_cache_entry_encrypt(struct block_cache_entry* entry) {
     int ret;
-    void *encrypt_data;
+    void* encrypt_data;
     size_t encrypt_size;
     struct mac mac;
-    struct iv *iv = NULL; /* TODO: support external iv */
+    struct iv* iv = NULL; /* TODO: support external iv */
 
     assert(entry->dirty);
     assert(!entry->encrypted);
@@ -294,7 +283,7 @@ static void block_cache_entry_encrypt(struct block_cache_entry *entry)
     encrypt_data = entry->data;
     encrypt_size = entry->block_size;
     if (!iv) {
-        iv = (void *)entry->data;
+        iv = (void*)entry->data;
         assert(encrypt_size > sizeof(*iv));
         encrypt_data += sizeof(*iv);
         encrypt_size -= sizeof(*iv);
@@ -306,8 +295,7 @@ static void block_cache_entry_encrypt(struct block_cache_entry *entry)
     assert(!ret);
     entry->encrypted = true;
     if (print_block_decrypt_encrypt) {
-        printf("%s: encrypt block %lld complete\n",
-               __func__, entry->block);
+        printf("%s: encrypt block %lld complete\n", __func__, entry->block);
     }
 
     if (!entry->dirty_mac) {
@@ -315,8 +303,8 @@ static void block_cache_entry_encrypt(struct block_cache_entry *entry)
     }
 
     stats_timer_start(STATS_FS_WRITE_BLOCK_CALC_MAC);
-    ret = calculate_mac(entry->key, &entry->mac,
-                        entry->data, entry->block_size);
+    ret = calculate_mac(entry->key, &entry->mac, entry->data,
+                        entry->block_size);
     stats_timer_stop(STATS_FS_WRITE_BLOCK_CALC_MAC);
     assert(!ret);
 
@@ -324,8 +312,8 @@ static void block_cache_entry_encrypt(struct block_cache_entry *entry)
         assert(!CRYPTO_memcmp(&mac, &entry->mac, sizeof(mac)));
     }
     entry->dirty_mac = false;
-    //assert(!entry->parent || entry->parent->ref_count);
-    //assert(!entry->parent || entry->parent->dirty_ref);
+    // assert(!entry->parent || entry->parent->ref_count);
+    // assert(!entry->parent || entry->parent->dirty_ref);
 }
 
 /**
@@ -334,8 +322,7 @@ static void block_cache_entry_encrypt(struct block_cache_entry *entry)
  *
  * Does not wait for write to complete.
  */
-static void block_cache_entry_clean(struct block_cache_entry *entry)
-{
+static void block_cache_entry_clean(struct block_cache_entry* entry) {
     if (!entry->dirty) {
         return;
     }
@@ -363,8 +350,8 @@ static void block_cache_entry_clean(struct block_cache_entry *entry)
  * Return: A score value indicating in what order entries that are close in the
  * lru should be replaced.
  */
-static uint block_cache_entry_score(struct block_cache_entry *entry, uint index)
-{
+static uint block_cache_entry_score(struct block_cache_entry* entry,
+                                    uint index) {
     if (!entry->dev) {
         return ~0;
     }
@@ -384,13 +371,12 @@ static uint block_cache_entry_score(struct block_cache_entry *entry, uint index)
  * entry can be used, return NULL.
  */
 
-static struct block_cache_entry *block_cache_lookup(struct fs *fs,
-                                                    struct block_device *dev,
+static struct block_cache_entry* block_cache_lookup(struct fs* fs,
+                                                    struct block_device* dev,
                                                     data_block_t block,
-                                                    bool allocate)
-{
-    struct block_cache_entry *entry;
-    struct block_cache_entry *unused_entry = NULL;
+                                                    bool allocate) {
+    struct block_cache_entry* entry;
+    struct block_cache_entry* unused_entry = NULL;
     uint unused_entry_score = 0;
     uint score;
     uint available = 0;
@@ -400,7 +386,8 @@ static struct block_cache_entry *block_cache_lookup(struct fs *fs,
     assert(fs || !allocate);
 
     stats_timer_start(STATS_CACHE_LOOKUP);
-    list_for_every_entry(&block_cache_lru, entry, struct block_cache_entry, lru_node) {
+    list_for_every_entry(&block_cache_lru, entry, struct block_cache_entry,
+                         lru_node) {
         assert(entry->guard1 == BLOCK_CACHE_GUARD_1);
         assert(entry->guard2 == BLOCK_CACHE_GUARD_2);
         if (entry->dev == dev && entry->block == block) {
@@ -422,12 +409,14 @@ static struct block_cache_entry *block_cache_lookup(struct fs *fs,
             }
             if (print_cache_lookup_verbose) {
                 printf("%s: block %lld, cache entry %zd available last used for %lld\n",
-                       __func__, block, entry - block_cache_entries, entry->block);
+                       __func__, block, entry - block_cache_entries,
+                       entry->block);
             }
         } else {
             if (print_cache_lookup_verbose) {
                 printf("%s: block %lld, cache entry %zd in use for %lld\n",
-                       __func__, block, entry - block_cache_entries, entry->block);
+                       __func__, block, entry - block_cache_entries,
+                       entry->block);
             }
             in_use++;
         }
@@ -445,8 +434,8 @@ static struct block_cache_entry *block_cache_lookup(struct fs *fs,
 
     if (print_cache_lookup) {
         printf("%s: block %lld, use cache entry %zd, dirty %d, %u available, %u in_use\n",
-               __func__, block, entry - block_cache_entries,
-               entry->dirty, available, in_use);
+               __func__, block, entry - block_cache_entries, entry->dirty,
+               available, in_use);
     }
 
     assert(!entry->dirty_ref);
@@ -485,9 +474,9 @@ done:
  * the computed mac. true if entry was loaded and @mac is NULL.
  */
 
-static bool block_cache_load_entry(struct block_cache_entry *entry,
-                                   const void *mac, size_t mac_size)
-{
+static bool block_cache_load_entry(struct block_cache_entry* entry,
+                                   const void* mac,
+                                   size_t mac_size) {
     if (!entry->loaded) {
         assert(!block_cache_entry_has_refs(entry));
         if (print_block_load) {
@@ -502,8 +491,8 @@ static bool block_cache_load_entry(struct block_cache_entry *entry,
     }
     if (mac) {
         if (CRYPTO_memcmp(&entry->mac, mac, mac_size)) {
-            printf("%s: block %lld, mac mismatch, %p\n",
-                   __func__, entry->block, mac);
+            printf("%s: block %lld, mac mismatch, %p\n", __func__, entry->block,
+                   mac);
             return false;
         }
     }
@@ -530,22 +519,21 @@ static bool block_cache_load_entry(struct block_cache_entry *entry,
  * Return: cache entry matching dev in @tr and @block. Can return NULL if @load
  * is true and entry could not be loaded or does not match provided mac.
  */
-static struct block_cache_entry *block_cache_get(struct fs *fs,
-                                                 struct block_device *dev,
+static struct block_cache_entry* block_cache_get(struct fs* fs,
+                                                 struct block_device* dev,
                                                  data_block_t block,
                                                  bool load,
-                                                 const void *mac,
+                                                 const void* mac,
                                                  size_t mac_size,
-                                                 obj_ref_t *ref)
-{
+                                                 obj_ref_t* ref) {
     bool loaded;
-    struct block_cache_entry *entry;
+    struct block_cache_entry* entry;
 
     assert(dev);
 
     if (block >= dev->block_count) {
-        printf("%s: bad block num %lld >= %lld\n",
-               __func__, block, dev->block_count);
+        printf("%s: bad block num %lld >= %lld\n", __func__, block,
+               dev->block_count);
         return NULL;
     }
     assert(block < dev->block_count);
@@ -564,8 +552,8 @@ static struct block_cache_entry *block_cache_get(struct fs *fs,
     obj_add_ref(&entry->obj, ref);
     if (print_block_ops) {
         printf("%s: block %lld, cache entry %zd, loaded %d, dirty %d\n",
-               __func__, block, entry - block_cache_entries,
-               entry->loaded, entry->dirty);
+               __func__, block, entry - block_cache_entries, entry->loaded,
+               entry->dirty);
     }
     return entry;
 }
@@ -582,15 +570,14 @@ static struct block_cache_entry *block_cache_get(struct fs *fs,
  *
  * Return: block data pointer, or NULL if block_cache_get returned NULL.
  */
-static void *block_cache_get_data(struct fs *fs,
-                                  struct block_device *dev,
+static void* block_cache_get_data(struct fs* fs,
+                                  struct block_device* dev,
                                   data_block_t block,
                                   bool load,
-                                  const void *mac,
+                                  const void* mac,
                                   size_t mac_size,
-                                  obj_ref_t *ref)
-{
-    struct block_cache_entry *entry;
+                                  obj_ref_t* ref) {
+    struct block_cache_entry* entry;
     entry = block_cache_get(fs, dev, block, load, mac, mac_size, ref);
     if (!entry) {
         return NULL;
@@ -604,9 +591,8 @@ static void *block_cache_get_data(struct fs *fs,
  *
  * Return: cache entry matching @data.
  */
-static struct block_cache_entry *data_to_block_cache_entry(const void *data)
-{
-    struct block_cache_entry *entry;
+static struct block_cache_entry* data_to_block_cache_entry(const void* data) {
+    struct block_cache_entry* entry;
 
     assert(data);
     entry = containerof(data, struct block_cache_entry, data);
@@ -622,8 +608,8 @@ static struct block_cache_entry *data_to_block_cache_entry(const void *data)
  *
  * Return: cache entry matching @data, or NULL is data is NULL.
  */
-static struct block_cache_entry *data_to_block_cache_entry_or_null(const void *data)
-{
+static struct block_cache_entry* data_to_block_cache_entry_or_null(
+        const void* data) {
     return data ? data_to_block_cache_entry(data) : NULL;
 }
 
@@ -636,9 +622,9 @@ static struct block_cache_entry *data_to_block_cache_entry_or_null(const void *d
  * allocated object, the cache entry is not destroyed here. It is instead left
  * in a state where block_cache_lookup can reuse it.
  */
-static void block_cache_entry_destroy(obj_t *obj)
-{
-    struct block_cache_entry *entry = containerof(obj, struct block_cache_entry, obj);
+static void block_cache_entry_destroy(obj_t* obj) {
+    struct block_cache_entry* entry =
+            containerof(obj, struct block_cache_entry, obj);
 
     list_delete(&entry->lru_node);
     list_add_head(&block_cache_lru, &entry->lru_node);
@@ -651,17 +637,17 @@ static void block_cache_entry_destroy(obj_t *obj)
 /**
  * block_cache_init - Allocate and initialize block cache
  */
-void block_cache_init(void)
-{
+void block_cache_init(void) {
     int i;
     obj_ref_t ref;
-    struct block_cache_entry *entry;
+    struct block_cache_entry* entry;
 
     assert(!block_cache_entries);
 
     entry = malloc(sizeof(block_cache_entries[0]) * BLOCK_CACHE_SIZE);
     assert(entry);
-    full_assert(memset(entry, 1, sizeof(block_cache_entries[0]) * BLOCK_CACHE_SIZE));
+    full_assert(memset(entry, 1,
+                       sizeof(block_cache_entries[0]) * BLOCK_CACHE_SIZE));
     block_cache_entries = entry;
 
     for (i = 0; i < BLOCK_CACHE_SIZE; i++, entry++) {
@@ -685,14 +671,14 @@ void block_cache_init(void)
  * block_cache_clean_transaction - Clean blocks modified by transaction
  * @tr:         Transaction
  */
-void block_cache_clean_transaction(struct transaction *tr)
-{
-    struct block_cache_entry *entry;
-    struct block_device *dev = NULL;
+void block_cache_clean_transaction(struct transaction* tr) {
+    struct block_cache_entry* entry;
+    struct block_device* dev = NULL;
 
     stats_timer_start(STATS_CACHE_CLEAN_TRANSACTION);
 
-    list_for_every_entry(&block_cache_lru, entry, struct block_cache_entry, lru_node) {
+    list_for_every_entry(&block_cache_lru, entry, struct block_cache_entry,
+                         lru_node) {
         assert(entry->guard1 == BLOCK_CACHE_GUARD_1);
         assert(entry->guard2 == BLOCK_CACHE_GUARD_2);
         if (entry->dirty_tr != tr) {
@@ -743,12 +729,12 @@ void block_cache_clean_transaction(struct transaction *tr)
  * If @discard_all is %false, only tmp blocks should be dirty. @discard_all
  * therefore only affects errors checks.
  */
-void block_cache_discard_transaction(struct transaction *tr, bool discard_all)
-{
-    struct block_cache_entry *entry;
-    struct block_device *dev = NULL;
+void block_cache_discard_transaction(struct transaction* tr, bool discard_all) {
+    struct block_cache_entry* entry;
+    struct block_device* dev = NULL;
 
-    list_for_every_entry(&block_cache_lru, entry, struct block_cache_entry, lru_node) {
+    list_for_every_entry(&block_cache_lru, entry, struct block_cache_entry,
+                         lru_node) {
         assert(entry->guard1 == BLOCK_CACHE_GUARD_1);
         assert(entry->guard2 == BLOCK_CACHE_GUARD_2);
         if (entry->dirty_tr != tr) {
@@ -764,13 +750,13 @@ void block_cache_discard_transaction(struct transaction *tr, bool discard_all)
         assert(entry->dirty);
 
         if (print_clean_transaction) {
-            printf("%s: tr %p, block %lld, tmp %d\n",
-                   __func__, tr, entry->block, entry->dirty_tmp);
+            printf("%s: tr %p, block %lld, tmp %d\n", __func__, tr,
+                   entry->block, entry->dirty_tmp);
         }
 
         if (block_cache_entry_has_refs(entry)) {
-            pr_warn("tr %p, block %lld has ref (dirty_ref %d)\n",
-                    tr, entry->block, entry->dirty_ref);
+            pr_warn("tr %p, block %lld has ref (dirty_ref %d)\n", tr,
+                    entry->block, entry->dirty_ref);
         } else {
             assert(!entry->dirty_ref);
         }
@@ -796,13 +782,14 @@ void block_cache_discard_transaction(struct transaction *tr, bool discard_all)
  *
  * This is only useful if followed by block_dirty.
  */
-const void *block_get_no_read(struct transaction *tr, data_block_t block, obj_ref_t *ref)
-{
+const void* block_get_no_read(struct transaction* tr,
+                              data_block_t block,
+                              obj_ref_t* ref) {
     assert(tr);
     assert(tr->fs);
 
-    return block_cache_get_data(tr->fs, tr->fs->dev,
-                                block, false, NULL, 0, ref);
+    return block_cache_get_data(tr->fs, tr->fs->dev, block, false, NULL, 0,
+                                ref);
 }
 
 /**
@@ -815,10 +802,7 @@ const void *block_get_no_read(struct transaction *tr, data_block_t block, obj_re
  *
  * Should only be used if block device performs tamper detection.
  */
-const void *block_get_super(struct fs *fs,
-                            data_block_t block,
-                            obj_ref_t *ref)
-{
+const void* block_get_super(struct fs* fs, data_block_t block, obj_ref_t* ref) {
     assert(fs);
     assert(fs->super_dev);
     assert(fs->super_dev->tamper_detecting);
@@ -839,11 +823,10 @@ const void *block_get_super(struct fs *fs,
  * in @block_mac or a read error was reported by the block device when loading
  * the data.
  */
-const void *block_get_no_tr_fail(struct transaction *tr,
-                                 const struct block_mac *block_mac,
-                                 const struct iv *iv,
-                                 obj_ref_t *ref)
-{
+const void* block_get_no_tr_fail(struct transaction* tr,
+                                 const struct block_mac* block_mac,
+                                 const struct iv* iv,
+                                 obj_ref_t* ref) {
     data_block_t block;
 
     assert(tr);
@@ -853,8 +836,8 @@ const void *block_get_no_tr_fail(struct transaction *tr,
     block = block_mac_to_block(tr, block_mac);
     assert(block);
 
-    return block_cache_get_data(tr->fs, tr->fs->dev, block,
-                                true, block_mac_to_mac(tr, block_mac),
+    return block_cache_get_data(tr->fs, tr->fs->dev, block, true,
+                                block_mac_to_mac(tr, block_mac),
                                 tr->fs->mac_size, ref);
 }
 
@@ -872,12 +855,11 @@ const void *block_get_no_tr_fail(struct transaction *tr,
  * @block_mac or a read error was reported by the block device when loading the
  * data.
  */
-const void *block_get(struct transaction *tr,
-                      const struct block_mac *block_mac,
-                      const struct iv *iv,
-                      obj_ref_t *ref)
-{
-    const void *data;
+const void* block_get(struct transaction* tr,
+                      const struct block_mac* block_mac,
+                      const struct iv* iv,
+                      obj_ref_t* ref) {
+    const void* data;
 
     assert(tr);
 
@@ -894,7 +876,6 @@ const void *block_get(struct transaction *tr,
     return data;
 }
 
-
 /**
  * block_dirty - Mark cache entry dirty and return non-const block data pointer.
  * @tr:         Transaction
@@ -903,9 +884,8 @@ const void *block_get(struct transaction *tr,
  *
  * Return: Non-const block data pointer.
  */
-void *block_dirty(struct transaction *tr, const void *data, bool is_tmp)
-{
-    struct block_cache_entry *entry = data_to_block_cache_entry(data);
+void* block_dirty(struct transaction* tr, const void* data, bool is_tmp) {
+    struct block_cache_entry* entry = data_to_block_cache_entry(data);
 
     assert(tr);
     assert(list_in_list(&tr->node)); /* transaction must be active */
@@ -925,7 +905,7 @@ void *block_dirty(struct transaction *tr, const void *data, bool is_tmp)
     entry->dirty_ref = true;
     entry->dirty_tmp = is_tmp;
     entry->dirty_tr = tr;
-    return (void *)data;
+    return (void*)data;
 }
 
 /**
@@ -936,9 +916,8 @@ void *block_dirty(struct transaction *tr, const void *data, bool is_tmp)
  * Return: %true if there is no matching dirty cache entry, %false if the cache
  * contains a dirty block matching @dev and @block.
  */
-bool block_is_clean(struct block_device *dev, data_block_t block)
-{
-    struct block_cache_entry *entry;
+bool block_is_clean(struct block_device* dev, data_block_t block) {
+    struct block_cache_entry* entry;
 
     entry = block_cache_lookup(NULL, dev, block, false);
     return !entry || !entry->dirty;
@@ -948,9 +927,8 @@ bool block_is_clean(struct block_device *dev, data_block_t block)
  * block_discard_dirty - Discard dirty cache data.
  * @data:       Block data pointer
  */
-void block_discard_dirty(const void *data)
-{
-    struct block_cache_entry *entry = data_to_block_cache_entry(data);
+void block_discard_dirty(const void* data) {
+    struct block_cache_entry* entry = data_to_block_cache_entry(data);
 
     if (entry->dirty) {
         assert(entry->dev);
@@ -967,9 +945,9 @@ void block_discard_dirty(const void *data)
  * @dev:        Block device
  * @block:      Block number
  */
-void block_discard_dirty_by_block(struct block_device *dev, data_block_t block)
-{
-    struct block_cache_entry *entry;
+void block_discard_dirty_by_block(struct block_device* dev,
+                                  data_block_t block) {
+    struct block_cache_entry* entry;
 
     entry = block_cache_lookup(NULL, dev, block, false);
     if (!entry) {
@@ -995,15 +973,16 @@ void block_discard_dirty_by_block(struct block_device *dev, data_block_t block)
  * Helper function to for block_put_dirty, block_put_dirty_no_mac and
  * block_put_dirty_discard.
  */
-static void block_put_dirty_etc(struct transaction *tr,
-                                void *data, obj_ref_t *data_ref,
-                                struct block_mac *block_mac,
-                                void *block_mac_ref)
-{
+static void block_put_dirty_etc(struct transaction* tr,
+                                void* data,
+                                obj_ref_t* data_ref,
+                                struct block_mac* block_mac,
+                                void* block_mac_ref) {
     int ret;
-    struct block_cache_entry *entry = data_to_block_cache_entry(data);
-    struct block_cache_entry *parent = data_to_block_cache_entry_or_null(block_mac_ref);
-    struct iv *iv = (void *)entry->data; /* TODO: support external iv */
+    struct block_cache_entry* entry = data_to_block_cache_entry(data);
+    struct block_cache_entry* parent =
+            data_to_block_cache_entry_or_null(block_mac_ref);
+    struct iv* iv = (void*)entry->data; /* TODO: support external iv */
 
     if (tr) {
         assert(block_mac);
@@ -1037,9 +1016,8 @@ static void block_put_dirty_etc(struct transaction *tr,
         block_mac_set_mac(tr, block_mac, &entry->mac);
     }
     if (print_mac_update) {
-        printf("%s: block %lld, update parent mac, %p, block %lld\n",
-               __func__, entry->block, block_mac,
-               parent ? parent->block : 0);
+        printf("%s: block %lld, update parent mac, %p, block %lld\n", __func__,
+               entry->block, block_mac, parent ? parent->block : 0);
     }
 }
 
@@ -1052,9 +1030,11 @@ static void block_put_dirty_etc(struct transaction *tr,
  * @block_mac_ref:  Block data pointer that @block_mac belongs to, or NULL if
  *                  @block_mac points to a memory only location.
  */
-void block_put_dirty(struct transaction *tr, void *data, obj_ref_t *data_ref,
-                     struct block_mac *block_mac, void *block_mac_ref)
-{
+void block_put_dirty(struct transaction* tr,
+                     void* data,
+                     obj_ref_t* data_ref,
+                     struct block_mac* block_mac,
+                     void* block_mac_ref) {
     assert(tr);
     assert(block_mac);
     block_put_dirty_etc(tr, data, data_ref, block_mac, block_mac_ref);
@@ -1067,9 +1047,8 @@ void block_put_dirty(struct transaction *tr, void *data, obj_ref_t *data_ref,
  *
  * Similar to block_put_dirty except no transaction or block_mac is needed.
  */
-void block_put_dirty_no_mac(void *data, obj_ref_t *data_ref)
-{
-    struct block_cache_entry *entry = data_to_block_cache_entry(data);
+void block_put_dirty_no_mac(void* data, obj_ref_t* data_ref) {
+    struct block_cache_entry* entry = data_to_block_cache_entry(data);
 
     assert(entry->dev);
     assert(entry->dev->tamper_detecting);
@@ -1083,8 +1062,7 @@ void block_put_dirty_no_mac(void *data, obj_ref_t *data_ref)
  *
  * Similar to block_put_dirty except data can be discarded.
  */
-void block_put_dirty_discard(void *data, obj_ref_t *data_ref)
-{
+void block_put_dirty_discard(void* data, obj_ref_t* data_ref) {
     block_discard_dirty(data);
     block_put_dirty_etc(NULL, data, data_ref, NULL, NULL);
 }
@@ -1100,12 +1078,11 @@ void block_put_dirty_discard(void *data, obj_ref_t *data_ref)
  *
  * Return: Block data pointer.
  */
-void *block_get_write_no_read(struct transaction *tr,
+void* block_get_write_no_read(struct transaction* tr,
                               data_block_t block,
                               bool is_tmp,
-                              obj_ref_t *ref)
-{
-    const void *data_ro = block_get_no_read(tr, block, ref);
+                              obj_ref_t* ref) {
+    const void* data_ro = block_get_no_read(tr, block, ref);
     return block_dirty(tr, data_ro, is_tmp);
 }
 
@@ -1123,13 +1100,12 @@ void *block_get_write_no_read(struct transaction *tr,
  *
  * Return: Block data pointer.
  */
-void *block_get_write(struct transaction *tr,
-                      const struct block_mac *block_mac,
-                      const struct iv *iv,
+void* block_get_write(struct transaction* tr,
+                      const struct block_mac* block_mac,
+                      const struct iv* iv,
                       bool is_tmp,
-                      obj_ref_t *ref)
-{
-    const void *data_ro = block_get(tr, block_mac, iv, ref);
+                      obj_ref_t* ref) {
+    const void* data_ro = block_get(tr, block_mac, iv, ref);
     if (!data_ro) {
         return NULL;
     }
@@ -1145,12 +1121,11 @@ void *block_get_write(struct transaction *tr,
  *
  * Return: Block data pointer.
  */
-void *block_get_cleared(struct transaction *tr,
+void* block_get_cleared(struct transaction* tr,
                         data_block_t block,
                         bool is_tmp,
-                        obj_ref_t *ref)
-{
-    void *data = block_get_write_no_read(tr, block, is_tmp, ref);
+                        obj_ref_t* ref) {
+    void* data = block_get_write_no_read(tr, block, is_tmp, ref);
     memset(data, 0, MAX_BLOCK_SIZE);
     return data;
 }
@@ -1163,13 +1138,12 @@ void *block_get_cleared(struct transaction *tr,
  *
  * Return: Block data pointer.
  */
-void *block_get_cleared_super(struct transaction *tr,
+void* block_get_cleared_super(struct transaction* tr,
                               data_block_t block,
-                              obj_ref_t *ref)
-{
-    void *data_rw;
-    const void *data_ro =  block_cache_get_data(tr->fs, tr->fs->super_dev,
-                                                block, false, NULL, 0, ref);
+                              obj_ref_t* ref) {
+    void* data_rw;
+    const void* data_ro = block_cache_get_data(tr->fs, tr->fs->super_dev, block,
+                                               false, NULL, 0, ref);
     data_rw = block_dirty(tr, data_ro, false);
     assert(tr->fs->super_dev->block_size <= MAX_BLOCK_SIZE);
     memset(data_rw, 0, tr->fs->super_dev->block_size);
@@ -1186,14 +1160,13 @@ void *block_get_cleared_super(struct transaction *tr,
  *
  * Return: Block data pointer.
  */
-void *block_get_copy(struct transaction *tr,
-                     const void *data,
+void* block_get_copy(struct transaction* tr,
+                     const void* data,
                      data_block_t block,
                      bool is_tmp,
-                     obj_ref_t *new_ref)
-{
-    void *dst_data;
-    struct block_cache_entry *src_entry = data_to_block_cache_entry(data);
+                     obj_ref_t* new_ref) {
+    void* dst_data;
+    struct block_cache_entry* src_entry = data_to_block_cache_entry(data);
 
     assert(block);
     assert(block < tr->fs->dev->block_count);
@@ -1215,21 +1188,20 @@ void *block_get_copy(struct transaction *tr,
  *
  * Return: Non-const block data pointer.
  */
-void *block_move(struct transaction *tr,
-                 const void *data,
+void* block_move(struct transaction* tr,
+                 const void* data,
                  data_block_t block,
-                 bool is_tmp)
-{
-    struct block_cache_entry *dest_entry;
-    struct block_cache_entry *entry = data_to_block_cache_entry(data);
+                 bool is_tmp) {
+    struct block_cache_entry* dest_entry;
+    struct block_cache_entry* entry = data_to_block_cache_entry(data);
 
     assert(block_cache_entry_has_one_ref(entry));
     assert(!entry->dirty);
     assert(entry->dev == tr->fs->dev);
 
     if (print_block_move) {
-        printf("%s: move cache entry %zd, from block %lld to %lld\n",
-               __func__, entry - block_cache_entries, entry->block, block);
+        printf("%s: move cache entry %zd, from block %lld to %lld\n", __func__,
+               entry - block_cache_entries, entry->block, block);
     }
 
     dest_entry = block_cache_lookup(NULL, tr->fs->dev, block, false);
@@ -1240,8 +1212,8 @@ void *block_move(struct transaction *tr,
         assert(!list_in_list(&dest_entry->io_op_node));
         assert(dest_entry->block == block);
         if (print_block_move) {
-            printf("%s: clear old cache entry for block %lld, %zd\n",
-                   __func__, block, dest_entry - block_cache_entries);
+            printf("%s: clear old cache entry for block %lld, %zd\n", __func__,
+                   block, dest_entry - block_cache_entries);
         }
         dest_entry->loaded = false;
         dest_entry->dev = NULL;
@@ -1259,9 +1231,8 @@ void *block_move(struct transaction *tr,
  * @data:           Block data pointer
  * @data_ref:       Reference pointer to release
  */
-void block_put(const void *data, obj_ref_t *ref)
-{
-    struct block_cache_entry *entry = data_to_block_cache_entry(data);
+void block_put(const void* data, obj_ref_t* ref) {
+    struct block_cache_entry* entry = data_to_block_cache_entry(data);
 
     if (print_block_ops) {
         printf("%s: block %lld, cache entry %zd, loaded %d, dirty %d\n",
@@ -1282,33 +1253,33 @@ void block_put(const void *data, obj_ref_t *ref)
  *
  * Return: block number.
  */
-data_block_t data_to_block_num(const void *data)
-{
-    struct block_cache_entry *entry = data_to_block_cache_entry(data);
+data_block_t data_to_block_num(const void* data) {
+    struct block_cache_entry* entry = data_to_block_cache_entry(data);
 
     return entry->block;
 }
 
 /**
- * block_cache_debug_get_ref_block_count - Get number of blocks that have references
+ * block_cache_debug_get_ref_block_count - Get number of blocks that have
+ * references
  *
  * Only used for debug code.
  *
  * Return: number of blocks in cache that have references.
  */
-uint block_cache_debug_get_ref_block_count(void)
-{
+uint block_cache_debug_get_ref_block_count(void) {
     uint count = 0;
-    struct block_cache_entry *entry;
+    struct block_cache_entry* entry;
 
-    list_for_every_entry(&block_cache_lru, entry, struct block_cache_entry, lru_node) {
+    list_for_every_entry(&block_cache_lru, entry, struct block_cache_entry,
+                         lru_node) {
         assert(entry->guard1 == BLOCK_CACHE_GUARD_1);
         assert(entry->guard2 == BLOCK_CACHE_GUARD_2);
         if (block_cache_entry_has_refs(entry)) {
             if (print_cache_get_ref_block_count) {
                 printf("%s: cache entry %zd in use for %lld, dev %p\n",
-                       __func__, entry - block_cache_entries,
-                       entry->block, entry->dev);
+                       __func__, entry - block_cache_entries, entry->block,
+                       entry->dev);
             }
             count++;
         }

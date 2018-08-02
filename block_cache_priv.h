@@ -29,7 +29,7 @@
 #define BLOCK_CACHE_SIZE (64)
 #endif
 #ifdef APP_STORAGE_MAIN_BLOCK_SIZE
-#define MAX_BLOCK_SIZE  (APP_STORAGE_MAIN_BLOCK_SIZE)
+#define MAX_BLOCK_SIZE (APP_STORAGE_MAIN_BLOCK_SIZE)
 #else
 #define MAX_BLOCK_SIZE (2048)
 #endif
@@ -69,8 +69,8 @@ struct block_cache_entry {
     uint8_t data[MAX_BLOCK_SIZE];
     uint64_t guard2;
 
-    const struct key *key;
-    struct block_device *dev;
+    const struct key* key;
+    struct block_device* dev;
     data_block_t block;
     size_t block_size;
     struct mac mac;
@@ -80,7 +80,7 @@ struct block_cache_entry {
     bool dirty_ref;
     bool dirty_mac;
     bool dirty_tmp;
-    struct transaction *dirty_tr;
+    struct transaction* dirty_tr;
 
     obj_t obj;
     struct list_node lru_node;
@@ -92,4 +92,5 @@ struct block_cache_entry {
     } io_op;
 };
 
-#define BLOCK_CACHE_SIZE_BYTES (sizeof(struct block_cache_entry[BLOCK_CACHE_SIZE]))
+#define BLOCK_CACHE_SIZE_BYTES \
+    (sizeof(struct block_cache_entry[BLOCK_CACHE_SIZE]))

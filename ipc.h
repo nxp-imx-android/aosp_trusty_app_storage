@@ -34,9 +34,10 @@ struct ipc_channel_context;
  * Returns a reference to an ipc_channel_context with its channel
  * operations initialized.
  */
-typedef struct ipc_channel_context *(*ipc_connect_handler_t)(struct ipc_port_context *parent,
-                                                             const uuid_t *peer_uuid,
-                                                             handle_t chan_handle);
+typedef struct ipc_channel_context* (*ipc_connect_handler_t)(
+        struct ipc_port_context* parent,
+        const uuid_t* peer_uuid,
+        handle_t chan_handle);
 
 /**
  * ipc_msg_handler_t - handler for msg events
@@ -47,8 +48,9 @@ typedef struct ipc_channel_context *(*ipc_connect_handler_t)(struct ipc_port_con
  * Returns NO_ERROR on success, error code < 0 on failure.
  * In case of error, the channel is disconnected.
  */
-typedef int (*ipc_msg_handler_t)(struct ipc_channel_context *context,
-                                 void *msg, size_t msg_size);
+typedef int (*ipc_msg_handler_t)(struct ipc_channel_context* context,
+                                 void* msg,
+                                 size_t msg_size);
 
 /**
  * ipc_disconnect_handler_t - handler for disconnect events
@@ -56,16 +58,17 @@ typedef int (*ipc_msg_handler_t)(struct ipc_channel_context *context,
  *
  * This function must not close the channel handle.
  */
-typedef void (*ipc_disconnect_handler_t)(struct ipc_channel_context *context);
+typedef void (*ipc_disconnect_handler_t)(struct ipc_channel_context* context);
 
-typedef void (*ipc_evt_handler_t) (struct ipc_context *context, const struct uevent *ev);
+typedef void (*ipc_evt_handler_t)(struct ipc_context* context,
+                                  const struct uevent* ev);
 
 /**
  * ipc_port_ops
  * @on_connect: required connect handler
  */
 struct ipc_port_ops {
-	ipc_connect_handler_t        on_connect;
+    ipc_connect_handler_t on_connect;
 };
 
 /**
@@ -74,23 +77,23 @@ struct ipc_port_ops {
  * @on_disconnect: required disconnect handler
  */
 struct ipc_channel_ops {
-	ipc_msg_handler_t            on_handle_msg;
-	ipc_disconnect_handler_t     on_disconnect;
+    ipc_msg_handler_t on_handle_msg;
+    ipc_disconnect_handler_t on_disconnect;
 };
 
 struct ipc_context {
-	ipc_evt_handler_t evt_handler;
-	handle_t handle;
+    ipc_evt_handler_t evt_handler;
+    handle_t handle;
 };
 
 struct ipc_channel_context {
-	struct ipc_context common;
-	struct ipc_channel_ops ops;
+    struct ipc_context common;
+    struct ipc_channel_ops ops;
 };
 
 struct ipc_port_context {
-	struct ipc_context common;
-	struct ipc_port_ops ops;
+    struct ipc_context common;
+    struct ipc_port_ops ops;
 };
 
 /**
@@ -101,11 +104,16 @@ struct ipc_port_context {
  * @rx_iovecs:      the buffers to receive
  * @rx_iovec_count: the count of buffers to receive
  */
-int sync_ipc_send_msg(handle_t session, iovec_t *tx_iovecs, uint tx_iovec_count,
-                      iovec_t *rx_iovecs, uint rx_iovec_count);
+int sync_ipc_send_msg(handle_t session,
+                      iovec_t* tx_iovecs,
+                      uint tx_iovec_count,
+                      iovec_t* rx_iovecs,
+                      uint rx_iovec_count);
 
-int ipc_port_create(struct ipc_port_context *contextp, const char *port_name,
-                    size_t queue_size, size_t max_buffer_size, uint32_t flags);
-int ipc_port_destroy(struct ipc_port_context *context);
+int ipc_port_create(struct ipc_port_context* contextp,
+                    const char* port_name,
+                    size_t queue_size,
+                    size_t max_buffer_size,
+                    uint32_t flags);
+int ipc_port_destroy(struct ipc_port_context* context);
 void ipc_loop(void);
-

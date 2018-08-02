@@ -22,29 +22,27 @@
 #include "proxy.h"
 #include "tipc_limits.h"
 
-#define SS_ERR(args...)		fprintf(stderr, "ss: " args)
+#define SS_ERR(args...) fprintf(stderr, "ss: " args)
 
-int main(void)
-{
-	struct ipc_port_context ctx = {
-		.ops = {
-			.on_connect = proxy_connect
-		},
-	};
+int main(void) {
+    struct ipc_port_context ctx = {
+            .ops = {.on_connect = proxy_connect},
+    };
 
-	crypt_init();
-	block_cache_init();
+    crypt_init();
+    block_cache_init();
 
-	int rc = ipc_port_create(&ctx, STORAGE_DISK_PROXY_PORT, 1, STORAGE_MAX_BUFFER_SIZE,
-				 IPC_PORT_ALLOW_TA_CONNECT | IPC_PORT_ALLOW_NS_CONNECT);
+    int rc = ipc_port_create(
+            &ctx, STORAGE_DISK_PROXY_PORT, 1, STORAGE_MAX_BUFFER_SIZE,
+            IPC_PORT_ALLOW_TA_CONNECT | IPC_PORT_ALLOW_NS_CONNECT);
 
-	if (rc < 0) {
-		SS_ERR("fatal: unable to initialize proxy endpoint (%d)\n", rc);
-		return rc;
-	}
+    if (rc < 0) {
+        SS_ERR("fatal: unable to initialize proxy endpoint (%d)\n", rc);
+        return rc;
+    }
 
-	ipc_loop();
+    ipc_loop();
 
-	ipc_port_destroy(&ctx);
-	return 0;
+    ipc_port_destroy(&ctx);
+    return 0;
 }

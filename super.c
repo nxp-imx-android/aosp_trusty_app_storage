@@ -98,11 +98,10 @@ STATIC_ASSERT(sizeof(struct super_block) >= 128);
  * Return: %true if super block was updated (in cache), %false if transaction
  * failed before super block was updated.
  */
-bool update_super_block(struct transaction *tr,
-                        const struct block_mac *free,
-                        const struct block_mac *files)
-{
-    struct super_block *super_rw;
+bool update_super_block(struct transaction* tr,
+                        const struct block_mac* free,
+                        const struct block_mac* files) {
+    struct super_block* super_rw;
     obj_ref_t super_ref = OBJ_REF_INITIAL_VALUE(super_ref);
     uint ver;
     uint index;
@@ -113,11 +112,11 @@ bool update_super_block(struct transaction *tr,
     ver = (tr->fs->super_block_version + 1) & SUPER_BLOCK_FLAGS_VERSION_MASK;
     index = ver & SUPER_BLOCK_FLAGS_BLOCK_INDEX_MASK;
 
-    pr_write("write super block %lld, ver %d\n",
-             tr->fs->super_block[index], ver);
+    pr_write("write super block %lld, ver %d\n", tr->fs->super_block[index],
+             ver);
 
-    super_rw = block_get_cleared_super(tr, tr->fs->super_block[index],
-                                       &super_ref);
+    super_rw =
+            block_get_cleared_super(tr, tr->fs->super_block[index], &super_ref);
     if (tr->failed) {
         block_put_dirty_discard(super_rw, &super_ref);
         return false;
@@ -148,16 +147,15 @@ bool update_super_block(struct transaction *tr,
  *
  * Return: %true if @super is valid for @dev, %false otherwise.
  */
-static bool super_block_valid(const struct block_device *dev,
-                              const struct super_block *super)
-{
+static bool super_block_valid(const struct block_device* dev,
+                              const struct super_block* super) {
     if (super->magic != SUPER_BLOCK_MAGIC) {
         pr_init("bad magic, 0x%llx\n", (unsigned long long)super->magic);
         return false;
     }
     if (super->flags != super->flags2) {
-        pr_warn("flags, 0x%x, does not match flags2, 0x%x\n",
-               super->flags, super->flags2);
+        pr_warn("flags, 0x%x, does not match flags2, 0x%x\n", super->flags,
+                super->flags2);
         return false;
     }
     if (super->fs_version > SUPER_BLOCK_FS_VERSION) {
@@ -169,26 +167,26 @@ static bool super_block_valid(const struct block_device *dev,
         return false;
     }
     if (super->block_size != dev->block_size) {
-        pr_warn("bad block size 0x%x, expected 0x%zx\n",
-                super->block_size, dev->block_size);
+        pr_warn("bad block size 0x%x, expected 0x%zx\n", super->block_size,
+                dev->block_size);
         return false;
     }
     if (super->block_num_size < dev->block_num_size ||
         super->block_num_size > sizeof(data_block_t)) {
         pr_warn("invalid block_num_size %d not in [%zd, %zd]\n",
-                super->block_num_size,
-                dev->block_num_size, sizeof(data_block_t));
+                super->block_num_size, dev->block_num_size,
+                sizeof(data_block_t));
         return false;
     }
     if (super->mac_size < dev->mac_size ||
         super->mac_size > sizeof(struct mac)) {
-        pr_warn("invalid mac_size %d not in [%zd, %zd]\n",
-                super->mac_size, dev->mac_size, sizeof(struct mac));
+        pr_warn("invalid mac_size %d not in [%zd, %zd]\n", super->mac_size,
+                dev->mac_size, sizeof(struct mac));
         return false;
     }
     if (!dev->tamper_detecting && super->mac_size != sizeof(struct mac)) {
-        pr_warn("invalid mac_size %d != %zd\n",
-                super->mac_size, sizeof(data_block_t));
+        pr_warn("invalid mac_size %d != %zd\n", super->mac_size,
+                sizeof(data_block_t));
         return false;
     }
     if (super->block_count > dev->block_count) {
@@ -209,16 +207,16 @@ static bool super_block_valid(const struct block_device *dev,
  * Return: %true if @new_super is valid for @dev, and more recent than
  * @old_super (or @old_super is %NULL), %false otherwise.
  */
-static bool use_new_super(const struct block_device *dev,
-                          const struct super_block *new_super,
+static bool use_new_super(const struct block_device* dev,
+                          const struct super_block* new_super,
                           uint new_super_index,
-                          const struct super_block *old_super)
-{
+                          const struct super_block* old_super) {
     uint dv;
     if (!super_block_valid(dev, new_super)) {
         return false;
     }
-    if ((new_super->flags & SUPER_BLOCK_FLAGS_BLOCK_INDEX_MASK) != new_super_index) {
+    if ((new_super->flags & SUPER_BLOCK_FLAGS_BLOCK_INDEX_MASK) !=
+        new_super_index) {
         pr_warn("block index, 0x%x, does not match flags, 0x%x\n",
                 new_super_index, new_super->flags);
         return false;
@@ -227,16 +225,16 @@ static bool use_new_super(const struct block_device *dev,
         return true;
     }
     dv = (new_super->flags - old_super->flags) & SUPER_BLOCK_FLAGS_VERSION_MASK;
-    pr_read("version delta, %d (new flags 0x%x, old flags 0x%x)\n",
-            dv, new_super->flags, old_super->flags);
+    pr_read("version delta, %d (new flags 0x%x, old flags 0x%x)\n", dv,
+            new_super->flags, old_super->flags);
     if (dv == 1) {
         return true;
     }
     if (dv == 3) {
         return false;
     }
-    pr_warn("bad version delta, %d (new flags 0x%x, old flags 0x%x)\n",
-            dv, new_super->flags, old_super->flags);
+    pr_warn("bad version delta, %d (new flags 0x%x, old flags 0x%x)\n", dv,
+            new_super->flags, old_super->flags);
     return false;
 }
 
@@ -244,11 +242,10 @@ static bool use_new_super(const struct block_device *dev,
  * fs_init_empty - Initialize free set for empty file system
  * @fs:         File system state object.
  */
-static void fs_init_empty(struct fs *fs)
-{
+static void fs_init_empty(struct fs* fs) {
     struct block_range range = {
-        .start = fs->min_block_num,
-        .end = fs->dev->block_count,
+            .start = fs->min_block_num,
+            .end = fs->dev->block_count,
     };
     block_set_add_initial_range(&fs->free, range);
 }
@@ -261,10 +258,9 @@ static void fs_init_empty(struct fs *fs)
  *
  * Return: 0 if super block was usable, -1 if not.
  */
-static int fs_init_from_super(struct fs *fs,
-                              const struct super_block *super,
-                              bool clear)
-{
+static int fs_init_from_super(struct fs* fs,
+                              const struct super_block* super,
+                              bool clear) {
     size_t block_mac_size;
 
     if (super && super->fs_version > SUPER_BLOCK_FS_VERSION) {
@@ -275,7 +271,7 @@ static int fs_init_from_super(struct fs *fs,
     if (clear) {
         super = NULL;
     }
-    if(super) {
+    if (super) {
         fs->block_num_size = super->block_num_size;
         fs->mac_size = super->mac_size;
     } else {
@@ -285,8 +281,7 @@ static int fs_init_from_super(struct fs *fs,
     block_mac_size = fs->block_num_size + fs->mac_size;
     block_set_init(fs, &fs->free);
     fs->free.block_tree.copy_on_write = true;
-    block_tree_init(&fs->files, fs->dev->block_size,
-                    fs->block_num_size,
+    block_tree_init(&fs->files, fs->dev->block_size, fs->block_num_size,
                     block_mac_size, block_mac_size);
     fs->files.copy_on_write = true;
     fs->files.allow_copy_on_write = true;
@@ -297,8 +292,7 @@ static int fs_init_from_super(struct fs *fs,
     if (super) {
         fs->free.block_tree.root = super->free;
         fs->files.root = super->files;
-        fs->super_block_version = super->flags &
-                                     SUPER_BLOCK_FLAGS_VERSION_MASK;
+        fs->super_block_version = super->flags & SUPER_BLOCK_FLAGS_VERSION_MASK;
         pr_init("loaded super block version %d\n", fs->super_block_version);
     } else {
         if (clear) {
@@ -325,23 +319,21 @@ static int fs_init_from_super(struct fs *fs,
  * Return: 0 if super block was readable and not from a future file system
  * version (regardless of its other content), -1 if not.
  */
-static int load_super_block(struct fs *fs, bool clear)
-{
+static int load_super_block(struct fs* fs, bool clear) {
     uint i;
     int ret;
-    const struct super_block *new_super;
+    const struct super_block* new_super;
     obj_ref_t new_super_ref = OBJ_REF_INITIAL_VALUE(new_super_ref);
-    const struct super_block *old_super = NULL;
+    const struct super_block* old_super = NULL;
     obj_ref_t old_super_ref = OBJ_REF_INITIAL_VALUE(old_super_ref);
 
     assert(fs->super_dev->block_size >= sizeof(struct super_block));
 
     for (i = 0; i < countof(fs->super_block); i++) {
-        new_super = block_get_super(fs, fs->super_block[i],
-                                    &new_super_ref);
+        new_super = block_get_super(fs, fs->super_block[i], &new_super_ref);
         if (!new_super) {
             pr_err("failed to read super-block\n");
-            ret = -1; // -EIO ? ERR_IO?;
+            ret = -1;  // -EIO ? ERR_IO?;
             goto err;
         }
         if (use_new_super(fs->dev, new_super, i, old_super)) {
@@ -371,24 +363,23 @@ err:
  * @super_dev:  Block device for super block.
  * @clear:      If %true, clear fs state if allowed by super block state.
  */
-int fs_init(struct fs *fs,
-            const struct key *key,
-            struct block_device *dev,
-            struct block_device *super_dev,
-            bool clear)
-{
+int fs_init(struct fs* fs,
+            const struct key* key,
+            struct block_device* dev,
+            struct block_device* super_dev,
+            bool clear) {
     int ret;
 
     if (super_dev->block_size < sizeof(struct super_block)) {
         pr_err("unsupported block size for super_dev, %zd < %zd\n",
                super_dev->block_size, sizeof(struct super_block));
-        return -1; //ERR_NOT_VALID?
+        return -1;  // ERR_NOT_VALID?
     }
 
     if (super_dev->block_count < 2) {
         pr_err("unsupported block count for super_dev, %lld\n",
                super_dev->block_count);
-        return -1; //ERR_NOT_VALID?
+        return -1;  // ERR_NOT_VALID?
     }
 
     fs->key = key;

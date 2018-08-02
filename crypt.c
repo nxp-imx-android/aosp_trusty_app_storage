@@ -28,25 +28,25 @@
 
 /* Backwards compatability */
 #if OPENSSL_VERSION_NUMBER < 0x10100000
-static void EVP_CIPHER_CTX_reset(EVP_CIPHER_CTX *ctx) {
+static void EVP_CIPHER_CTX_reset(EVP_CIPHER_CTX* ctx) {
     EVP_CIPHER_CTX_cleanup(ctx);
     EVP_CIPHER_CTX_init(ctx);
 }
 
-static HMAC_CTX *HMAC_CTX_new(void) {
-    HMAC_CTX *ctx = malloc(sizeof(HMAC_CTX));
+static HMAC_CTX* HMAC_CTX_new(void) {
+    HMAC_CTX* ctx = malloc(sizeof(HMAC_CTX));
     if (ctx) {
         HMAC_CTX_init(ctx);
     }
     return ctx;
 }
 
-static void HMAC_CTX_reset(HMAC_CTX *ctx) {
+static void HMAC_CTX_reset(HMAC_CTX* ctx) {
     HMAC_CTX_cleanup(ctx);
     HMAC_CTX_init(ctx);
 }
 
-static void HMAC_CTX_free(HMAC_CTX *ctx) {
+static void HMAC_CTX_free(HMAC_CTX* ctx) {
     if (ctx) {
         HMAC_CTX_cleanup(ctx);
         free(ctx);
@@ -59,8 +59,8 @@ static void HMAC_CTX_free(HMAC_CTX *ctx) {
  * globally to avoid alocator thrash and the potential for another dynamic
  * failure.
  */
-static EVP_CIPHER_CTX *cipher_ctx;
-static HMAC_CTX *hmac_ctx;
+static EVP_CIPHER_CTX* cipher_ctx;
+static HMAC_CTX* hmac_ctx;
 
 void crypt_init(void) {
     assert(!cipher_ctx);
@@ -91,11 +91,13 @@ void crypt_shutdown(void) {
  *
  * Return: 0 on success, -1 if an error was detected.
  */
-static int crypt(const struct key *key, void *data_in_out, size_t data_size,
-                 const struct iv *iv, bool encrypt)
-{
+static int crypt(const struct key* key,
+                 void* data_in_out,
+                 size_t data_size,
+                 const struct iv* iv,
+                 bool encrypt) {
     int evp_ret;
-    const EVP_CIPHER *cipher;
+    const EVP_CIPHER* cipher;
     int out_data_size;
     size_t key_len;
 
@@ -119,8 +121,8 @@ static int crypt(const struct key *key, void *data_in_out, size_t data_size,
     assert(cipher_ctx);
     EVP_CIPHER_CTX_reset(cipher_ctx);
 
-    evp_ret = EVP_CipherInit_ex(cipher_ctx, cipher, NULL,
-                                key->byte, iv->byte, encrypt);
+    evp_ret = EVP_CipherInit_ex(cipher_ctx, cipher, NULL, key->byte, iv->byte,
+                                encrypt);
     if (!evp_ret) {
         fprintf(stderr, "EVP_CipherInit_ex failed\n");
         goto err;
@@ -133,14 +135,14 @@ static int crypt(const struct key *key, void *data_in_out, size_t data_size,
     }
 
     evp_ret = EVP_CipherUpdate(cipher_ctx, data_in_out, &out_data_size,
-                                data_in_out, data_size);
+                               data_in_out, data_size);
     if (!evp_ret) {
         fprintf(stderr, "EVP_CipherUpdate failed\n");
         goto err;
     }
     if (out_data_size != (int)data_size) {
-        fprintf(stderr, "bad output data size %d != %zd\n",
-                out_data_size, data_size);
+        fprintf(stderr, "bad output data size %d != %zd\n", out_data_size,
+                data_size);
         evp_ret = 0;
         goto err;
     }
@@ -161,8 +163,7 @@ err:
  *
  * Return: Low 8 bytes of SHA1 hash as a little endian 64 bit value.
  */
-uint64_t str_hash(const char *str)
-{
+uint64_t str_hash(const char* str) {
     int evp_ret;
     size_t len = strlen(str);
     uint8_t md[EVP_MAX_MD_SIZE];
@@ -188,9 +189,10 @@ uint64_t str_hash(const char *str)
  *
  * Return: 0 on success, -1 if an error was detected.
  */
-int calculate_mac(const struct key *key, struct mac *mac,
-                  const void *data, size_t data_size)
-{
+int calculate_mac(const struct key* key,
+                  struct mac* mac,
+                  const void* data,
+                  size_t data_size) {
     int hmac_ret;
     unsigned int md_len;
     unsigned char mac_buf[EVP_MAX_MD_SIZE];
@@ -232,8 +234,7 @@ err:
  *
  * Return: 0 on success, -1 if an error was detected.
  */
-int generate_iv(struct iv *iv_out)
-{
+int generate_iv(struct iv* iv_out) {
     int rand_ret;
 
     rand_ret = RAND_bytes(iv_out->byte, sizeof(iv_out->byte));
@@ -253,9 +254,10 @@ int generate_iv(struct iv *iv_out)
  *
  * Return: 0 on success, -1 if an error was detected.
  */
-int encrypt(const struct key *key, void *data_in_out, size_t data_size,
-            const struct iv *iv_in)
-{
+int encrypt(const struct key* key,
+            void* data_in_out,
+            size_t data_size,
+            const struct iv* iv_in) {
     return crypt(key, data_in_out, data_size, iv_in, true);
 }
 
@@ -269,8 +271,9 @@ int encrypt(const struct key *key, void *data_in_out, size_t data_size,
  *
  * Return: 0 on success, -1 if an error was detected.
  */
-int decrypt(const struct key *key, void *data_in_out, size_t data_size,
-            const struct iv *iv_in)
-{
+int decrypt(const struct key* key,
+            void* data_in_out,
+            size_t data_size,
+            const struct iv* iv_in) {
     return crypt(key, data_in_out, data_size, iv_in, false);
 }

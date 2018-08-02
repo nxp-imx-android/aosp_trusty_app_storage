@@ -68,7 +68,7 @@ struct block_tree {
     size_t block_size;
     size_t key_size;
     size_t child_data_size[2]; /* 0: internal/child, 1: leaf/data */
-    size_t key_count[2]; /* 0: internal, 1: leaf */
+    size_t key_count[2];       /* 0: internal, 1: leaf */
     struct block_mac root;
     struct {
         data_block_t block;
@@ -83,11 +83,13 @@ struct block_tree {
     bool allow_copy_on_write;
 };
 
-#define BLOCK_TREE_INITIAL_VALUE(block_tree) {0, 0, {0, 0}, {0, 0},\
-	BLOCK_MAC_INITIAL_VALUE(block_tree.root),\
-	{0, 0, BLOCK_MAC_INITIAL_VALUE(block_tree.inserting.child),\
-	BLOCK_MAC_INITIAL_VALUE(block_tree.inserting.data)}, 0, 0, 0, 0, 0}
-
+#define BLOCK_TREE_INITIAL_VALUE(block_tree)                                \
+    {                                                                       \
+        0, 0, {0, 0}, {0, 0}, BLOCK_MAC_INITIAL_VALUE(block_tree.root),     \
+                {0, 0, BLOCK_MAC_INITIAL_VALUE(block_tree.inserting.child), \
+                 BLOCK_MAC_INITIAL_VALUE(block_tree.inserting.data)},       \
+                0, 0, 0, 0, 0                                               \
+    }
 
 /**
  * struct block_tree_path_entry - block tree path entry
@@ -118,67 +120,81 @@ struct block_tree_path {
     struct block_tree_path_entry entry[BLOCK_TREE_MAX_DEPTH];
     uint count;
     struct block_mac data;
-    struct transaction *tr;
-    struct block_tree *tree;
+    struct transaction* tr;
+    struct block_tree* tree;
     int tree_update_count;
 };
 
-void block_tree_print(struct transaction *tr, const struct block_tree *tree);
-bool block_tree_check(struct transaction *tr, const struct block_tree *tree);
+void block_tree_print(struct transaction* tr, const struct block_tree* tree);
+bool block_tree_check(struct transaction* tr, const struct block_tree* tree);
 
-void block_tree_walk(struct transaction *state,
-                     struct block_tree *tree,
+void block_tree_walk(struct transaction* state,
+                     struct block_tree* tree,
                      data_block_t key,
                      bool key_is_max,
-                     struct block_tree_path *path);
+                     struct block_tree_path* path);
 
-void block_tree_path_next(struct block_tree_path *path);
+void block_tree_path_next(struct block_tree_path* path);
 
-static inline data_block_t block_tree_path_get_key(struct block_tree_path *path) {
+static inline data_block_t block_tree_path_get_key(
+        struct block_tree_path* path) {
     return (path->count > 0) ? path->entry[path->count - 1].next_key : 0;
 }
 
-static inline data_block_t block_tree_path_get_data(struct block_tree_path *path) {
+static inline data_block_t block_tree_path_get_data(
+        struct block_tree_path* path) {
     return block_mac_to_block(path->tr, &path->data);
 }
 
-static inline struct block_mac block_tree_path_get_data_block_mac(struct block_tree_path *path) {
+static inline struct block_mac block_tree_path_get_data_block_mac(
+        struct block_tree_path* path) {
     return path->data;
 }
 
-void block_tree_path_put_dirty(struct transaction *tr,
-                               struct block_tree_path *path,
+void block_tree_path_put_dirty(struct transaction* tr,
+                               struct block_tree_path* path,
                                int path_index,
-                               void *data,
-                               obj_ref_t *data_ref);
+                               void* data,
+                               obj_ref_t* data_ref);
 
-void block_tree_insert(struct transaction *state, struct block_tree *tree,
-                       data_block_t key, data_block_t data);
+void block_tree_insert(struct transaction* state,
+                       struct block_tree* tree,
+                       data_block_t key,
+                       data_block_t data);
 
-void block_tree_insert_block_mac(struct transaction *state,
-                                 struct block_tree *tree,
-                                 data_block_t key, struct block_mac data);
+void block_tree_insert_block_mac(struct transaction* state,
+                                 struct block_tree* tree,
+                                 data_block_t key,
+                                 struct block_mac data);
 
-void block_tree_update(struct transaction *state, struct block_tree *tree,
-                       data_block_t old_key, data_block_t old_data,
-                       data_block_t new_key, data_block_t new_data);
+void block_tree_update(struct transaction* state,
+                       struct block_tree* tree,
+                       data_block_t old_key,
+                       data_block_t old_data,
+                       data_block_t new_key,
+                       data_block_t new_data);
 
-void block_tree_update_block_mac(struct transaction *state, struct block_tree *tree,
-                       data_block_t old_key, struct block_mac old_data,
-                       data_block_t new_key, struct block_mac new_data);
+void block_tree_update_block_mac(struct transaction* state,
+                                 struct block_tree* tree,
+                                 data_block_t old_key,
+                                 struct block_mac old_data,
+                                 data_block_t new_key,
+                                 struct block_mac new_data);
 
-void block_tree_remove(struct transaction *state, struct block_tree *tree,
-                       data_block_t key, data_block_t data);
+void block_tree_remove(struct transaction* state,
+                       struct block_tree* tree,
+                       data_block_t key,
+                       data_block_t data);
 
-void block_tree_init(struct block_tree *tree,
+void block_tree_init(struct block_tree* tree,
                      size_t block_size,
                      size_t key_size,
                      size_t child_size,
                      size_t data_size);
 
-void block_tree_copy(struct block_tree *dst, const struct block_tree *src);
+void block_tree_copy(struct block_tree* dst, const struct block_tree* src);
 
 #if BUILD_STORAGE_TEST
-void block_tree_check_config(struct block_device *dev);
+void block_tree_check_config(struct block_device* dev);
 void block_tree_check_config_done(void);
 #endif

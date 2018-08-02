@@ -32,16 +32,15 @@ static bool print_block_map;
  * @block_size: Block size of device.
  */
 
-void block_map_init(const struct transaction *tr,
-                    struct block_map *block_map,
-                    const struct block_mac *root,
-                    size_t block_size)
-{
+void block_map_init(const struct transaction* tr,
+                    struct block_map* block_map,
+                    const struct block_mac* root,
+                    size_t block_size) {
     size_t block_num_size = tr->fs->block_num_size;
     size_t block_mac_size = block_num_size + tr->fs->mac_size;
     memset(block_map, 0, sizeof(*block_map));
-    block_tree_init(&block_map->tree, block_size,
-                    block_num_size, block_mac_size, block_mac_size);
+    block_tree_init(&block_map->tree, block_size, block_num_size,
+                    block_mac_size, block_mac_size);
     block_map->tree.copy_on_write = 1;
     block_map->tree.allow_copy_on_write = 1;
     block_map->tree.root = *root;
@@ -57,11 +56,10 @@ void block_map_init(const struct transaction *tr,
  * Return: %true if a block_mac exists at @index, %false if not. When returning
  * %true, @block_mac will be filled in. Otherwise, @block_mac is not touched.
  */
-bool block_map_get(struct transaction *tr,
-                   struct block_map *block_map,
+bool block_map_get(struct transaction* tr,
+                   struct block_map* block_map,
                    data_block_t index,
-                   struct block_mac *block_mac)
-{
+                   struct block_mac* block_mac) {
     struct block_tree_path path;
 
     index++; /* 0 is not a valid block tree key */
@@ -69,8 +67,8 @@ bool block_map_get(struct transaction *tr,
     block_tree_walk(tr, &block_map->tree, index, false, &path);
     if (block_tree_path_get_key(&path) != index) {
         if (print_block_map) {
-            printf("%s: %lld not found (next key %lld)\n",
-                   __func__, index, block_tree_path_get_key(&path));
+            printf("%s: %lld not found (next key %lld)\n", __func__, index,
+                   block_tree_path_get_key(&path));
         }
         return false;
     }
@@ -86,9 +84,10 @@ bool block_map_get(struct transaction *tr,
  * @index:      Index of block to set.
  * @block_mac:  block_mac to store, or %NULL to remove the block_mac at @index.
  */
-void block_map_set(struct transaction *tr, struct block_map *block_map,
-                   data_block_t index, const struct block_mac *block_mac)
-{
+void block_map_set(struct transaction* tr,
+                   struct block_map* block_map,
+                   data_block_t index,
+                   const struct block_mac* block_mac) {
     struct block_tree_path path;
 
     index++; /* 0 is not a valid block tree key */
@@ -106,9 +105,11 @@ void block_map_set(struct transaction *tr, struct block_map *block_map,
     if (block_tree_path_get_key(&path) == index) {
         if (print_block_map) {
             printf("%s: block_map at %lld: remove existing entry at %lld\n",
-                   __func__, block_mac_to_block(tr, &block_map->tree.root), index);
+                   __func__, block_mac_to_block(tr, &block_map->tree.root),
+                   index);
         }
-        block_tree_remove(tr, &block_map->tree, index, block_tree_path_get_data(&path));
+        block_tree_remove(tr, &block_map->tree, index,
+                          block_tree_path_get_data(&path));
         if (tr->failed) {
             pr_warn("transaction failed, abort\n");
             return;
@@ -116,11 +117,12 @@ void block_map_set(struct transaction *tr, struct block_map *block_map,
     }
     if (block_mac && block_mac_valid(tr, block_mac)) {
         if (print_block_map) {
-            printf("%s: block_map at %lld: [%lld] = %lld\n",
-                   __func__, block_mac_to_block(tr, &block_map->tree.root),
-                   index, block_mac_to_block(tr, block_mac));
+            printf("%s: block_map at %lld: [%lld] = %lld\n", __func__,
+                   block_mac_to_block(tr, &block_map->tree.root), index,
+                   block_mac_to_block(tr, block_mac));
         }
-        block_tree_insert(tr, &block_map->tree, index, block_mac_to_block(tr, block_mac));
+        block_tree_insert(tr, &block_map->tree, index,
+                          block_mac_to_block(tr, block_mac));
         /* TODO: insert mac */
     }
 }
@@ -133,9 +135,11 @@ void block_map_set(struct transaction *tr, struct block_map *block_map,
  * @data:       block cache entry.
  * @data_ref:   reference to @data.
  */
-void block_map_put_dirty(struct transaction *tr, struct block_map *block_map,
-                         data_block_t index, void *data, obj_ref_t *data_ref)
-{
+void block_map_put_dirty(struct transaction* tr,
+                         struct block_map* block_map,
+                         data_block_t index,
+                         void* data,
+                         obj_ref_t* data_ref) {
     struct block_tree_path path;
 
     index++; /* 0 is not a valid block tree key */
@@ -148,8 +152,8 @@ void block_map_put_dirty(struct transaction *tr, struct block_map *block_map,
     }
 
     if (print_block_map) {
-        printf("%s: %lld (found key %lld)\n",
-               __func__, index, block_tree_path_get_key(&path));
+        printf("%s: %lld (found key %lld)\n", __func__, index,
+               block_tree_path_get_key(&path));
     }
 
     assert(block_tree_path_get_key(&path) == index);
@@ -164,10 +168,9 @@ void block_map_put_dirty(struct transaction *tr, struct block_map *block_map,
  *
  * Remove and free all blocks starting at @index.
  */
-void block_map_truncate(struct transaction *tr,
-                        struct block_map *block_map,
-                        data_block_t index)
-{
+void block_map_truncate(struct transaction* tr,
+                        struct block_map* block_map,
+                        data_block_t index) {
     struct block_tree_path path;
     data_block_t key;
     data_block_t data;
@@ -218,16 +221,15 @@ void block_map_truncate(struct transaction *tr,
  *
  * Free block_map and all blocks stored in it.
  */
-void block_map_free(struct transaction *tr, struct block_map *block_map)
-{
+void block_map_free(struct transaction* tr, struct block_map* block_map) {
     data_block_t root_block;
 
     if (!block_mac_valid(tr, &block_map->tree.root)) {
         return;
     }
     if (print_block_map) {
-        printf("%s: root %lld\n",
-               __func__, block_mac_to_block(tr, &block_map->tree.root));
+        printf("%s: root %lld\n", __func__,
+               block_mac_to_block(tr, &block_map->tree.root));
         block_tree_print(tr, &block_map->tree);
     }
 

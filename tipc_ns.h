@@ -22,10 +22,18 @@
 typedef uint64_t ns_handle_t;
 typedef uint64_t ns_off_t;
 
-int ns_open_file(handle_t ipc_handle, const char *name,
-                 ns_handle_t *handlep, bool create);
+int ns_open_file(handle_t ipc_handle,
+                 const char* name,
+                 ns_handle_t* handlep,
+                 bool create);
 void ns_close_file(handle_t ipc_handle, ns_handle_t handle);
-int ns_read_pos(handle_t ipc_handle, ns_handle_t handle,
-                ns_off_t pos, void *data, int data_size);
-int ns_write_pos(handle_t ipc_handle, ns_handle_t handle,
-                 ns_off_t pos, const void *data, int data_size);
+int ns_read_pos(handle_t ipc_handle,
+                ns_handle_t handle,
+                ns_off_t pos,
+                void* data,
+                int data_size);
+int ns_write_pos(handle_t ipc_handle,
+                 ns_handle_t handle,
+                 ns_off_t pos,
+                 const void* data,
+                 int data_size);

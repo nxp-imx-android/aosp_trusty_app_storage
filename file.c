@@ -27,8 +27,9 @@
 #include "file.h"
 #include "transaction.h"
 
-#define DIV_ROUND_UP(n,d) (((n) + (d) - 1) / (d))
-#define BIT_MASK(x) (((x) >= sizeof(unsigned long long ) * 8) ? (0ULL-1) : ((1ULL << (x)) - 1))
+#define DIV_ROUND_UP(n, d) (((n) + (d)-1) / (d))
+#define BIT_MASK(x) \
+    (((x) >= sizeof(unsigned long long) * 8) ? (0ULL - 1) : ((1ULL << (x)) - 1))
 
 #define FILE_ENTRY_MAGIC (0x0066797473757274) /* trustyf\0 */
 
@@ -48,11 +49,11 @@ struct file_entry {
     struct file_info info;
 };
 
-static bool file_tree_lookup(struct block_mac *block_mac_out,
-                             struct transaction *tr,
-                             struct block_tree *tree,
-                             struct block_tree_path *tree_path,
-                             const char *file_path,
+static bool file_tree_lookup(struct block_mac* block_mac_out,
+                             struct transaction* tr,
+                             struct block_tree* tree,
+                             struct block_tree_path* tree_path,
+                             const char* file_path,
                              bool remove);
 
 /**
@@ -63,13 +64,12 @@ static bool file_tree_lookup(struct block_mac *block_mac_out,
  * Return: non-zero hash value that fits in @tr->fs->block_num_size bytes
  * computed from @path
  */
-static data_block_t path_hash(struct transaction *tr, const char *path)
-{
+static data_block_t path_hash(struct transaction* tr, const char* path) {
     data_block_t hash = str_hash(path);
 
     hash &= BIT_MASK(tr->fs->block_num_size * 8);
     if (!hash) {
-        hash++;  /* 0 key is not supported by block_tree */
+        hash++; /* 0 key is not supported by block_tree */
     }
 
     return hash;
@@ -84,11 +84,10 @@ static data_block_t path_hash(struct transaction *tr, const char *path)
  * Load file entry at @file and initialize @block_map with root node stored
  * there.
  */
-void file_block_map_init(struct transaction *tr,
-                         struct block_map *block_map,
-                         const struct block_mac *file)
-{
-    const struct file_entry *file_entry_ro;
+void file_block_map_init(struct transaction* tr,
+                         struct block_map* block_map,
+                         const struct block_mac* file) {
+    const struct file_entry* file_entry_ro;
     obj_ref_t file_entry_ro_ref = OBJ_REF_INITIAL_VALUE(file_entry_ro_ref);
 
     if (!block_mac_valid(tr, file)) {
@@ -120,9 +119,8 @@ err:
  * @tr:         Transaction object.
  * @file:       File handle object.
  */
-void file_print(struct transaction *tr, const struct file_handle *file)
-{
-    const struct file_entry *file_entry_ro;
+void file_print(struct transaction* tr, const struct file_handle* file) {
+    const struct file_entry* file_entry_ro;
     obj_ref_t file_entry_ro_ref = OBJ_REF_INITIAL_VALUE(file_entry_ro_ref);
     struct block_map block_map;
 
@@ -145,8 +143,7 @@ void file_print(struct transaction *tr, const struct file_handle *file)
  * files_print - Print information about all committed files
  * @tr:         Transaction object.
  */
-void files_print(struct transaction *tr)
-{
+void files_print(struct transaction* tr) {
     struct block_tree_path path;
     struct file_handle file;
 
@@ -168,18 +165,17 @@ void files_print(struct transaction *tr)
  * @file:       File handle object.
  *
  */
-static void file_block_map_update(struct transaction *tr,
-                                  struct block_map *block_map,
-                                  const char *new_path,
-                                  struct file_handle *file)
-{
+static void file_block_map_update(struct transaction* tr,
+                                  struct block_map* block_map,
+                                  const char* new_path,
+                                  struct file_handle* file) {
     bool found;
     data_block_t old_block;
     data_block_t file_block;
     data_block_t new_block;
     struct block_mac block_mac;
-    const struct file_entry *file_entry_ro;
-    struct file_entry *file_entry_rw = NULL;
+    const struct file_entry* file_entry_ro;
+    struct file_entry* file_entry_rw = NULL;
     obj_ref_t file_entry_ref = OBJ_REF_INITIAL_VALUE(file_entry_ref);
     obj_ref_t file_entry_copy_ref = OBJ_REF_INITIAL_VALUE(file_entry_ref);
     struct block_tree_path tree_path;
@@ -223,8 +219,7 @@ static void file_block_map_update(struct transaction *tr,
                 goto err;
             }
             assert((block_map && block_map->tree.root_block_changed) ||
-                   file->size != file_entry_ro->info.size ||
-                   new_path);
+                   file->size != file_entry_ro->info.size || new_path);
             assert(old_block == file_block);
             new_block = block_allocate(tr);
             if (tr->failed) {
@@ -241,8 +236,8 @@ static void file_block_map_update(struct transaction *tr,
              * is still used and not updated until file_transaction_complete.
              */
             // TODO: fix
-            file_entry_rw = block_get_copy(tr, file_entry_ro, new_block,
-                                           false, &file_entry_copy_ref);
+            file_entry_rw = block_get_copy(tr, file_entry_ro, new_block, false,
+                                           &file_entry_copy_ref);
             block_put(file_entry_ro, &file_entry_ref);
             file_entry_ro = file_entry_rw;
             obj_ref_transfer(&file_entry_ref, &file_entry_copy_ref);
@@ -266,13 +261,15 @@ static void file_block_map_update(struct transaction *tr,
         }
         assert(block_tree_path_get_key(&tree_path) == old_block);
         block_mac = block_tree_path_get_data_block_mac(&tree_path);
-        assert(block_mac_to_block(tr, &block_mac) == block_mac_to_block(tr, &file->block_mac));
+        assert(block_mac_to_block(tr, &block_mac) ==
+               block_mac_to_block(tr, &file->block_mac));
         /* TODO: enable after insert mac TODO */
-        //assert(block_mac_eq(tr, &block_mac, &file->block_mac));
+        // assert(block_mac_eq(tr, &block_mac, &file->block_mac));
 
         if (new_path) {
             /* TODO: remove by path or, when possible, skip insert instead */
-            block_tree_remove(tr, &tr->files_updated, old_block, block_mac_to_block(tr, &block_mac));
+            block_tree_remove(tr, &tr->files_updated, old_block,
+                              block_mac_to_block(tr, &block_mac));
         }
     }
     if (!file_entry_rw) {
@@ -292,7 +289,8 @@ static void file_block_map_update(struct transaction *tr,
     if (new_path) {
         strcpy(file_entry_rw->info.path, new_path);
         block_put_dirty(tr, file_entry_rw, &file_entry_ref, &block_mac, NULL);
-        block_tree_insert_block_mac(tr, &tr->files_added, path_hash(tr, new_path), block_mac);
+        block_tree_insert_block_mac(tr, &tr->files_added,
+                                    path_hash(tr, new_path), block_mac);
         if (tr->failed) {
             pr_warn("transaction failed, abort\n");
             goto err;
@@ -330,8 +328,7 @@ err:
  * Return: Get size of data block returned by file_get_block and
  * file_get_block_write for @fs.
  */
-size_t get_file_block_size(struct fs *fs)
-{
+size_t get_file_block_size(struct fs* fs) {
     return fs->dev->block_size - sizeof(struct iv);
 }
 
@@ -347,15 +344,14 @@ size_t get_file_block_size(struct fs *fs)
  * Return: Const block data pointer, or NULL if no valid block is found at
  * @file_block or if @write is %true and a block could not be allocated.
  */
-static const void *file_get_block_etc(struct transaction *tr,
-                                      struct file_handle *file,
+static const void* file_get_block_etc(struct transaction* tr,
+                                      struct file_handle* file,
                                       data_block_t file_block,
                                       bool read,
                                       bool write,
-                                      obj_ref_t *ref)
-{
+                                      obj_ref_t* ref) {
     bool found = false;
-    const void *data = NULL;
+    const void* data = NULL;
     struct block_map block_map;
     struct block_mac block_mac;
     data_block_t old_disk_block;
@@ -380,7 +376,8 @@ static const void *file_get_block_etc(struct transaction *tr,
         if (read) {
             data = block_get(tr, &block_mac, NULL, ref); /* TODO: pass iv? */
         } else {
-            data = block_get_no_read(tr, block_mac_to_block(tr, &block_mac), ref);
+            data = block_get_no_read(tr, block_mac_to_block(tr, &block_mac),
+                                     ref);
         }
         /* TODO: handle mac mismatch better */
     }
@@ -432,7 +429,7 @@ static const void *file_get_block_etc(struct transaction *tr,
 
 err:
     if (dirty) {
-        block_put_dirty_discard((void *)data, ref);
+        block_put_dirty_discard((void*)data, ref);
     } else if (data) {
         block_put(data, ref);
     }
@@ -449,9 +446,10 @@ err:
  * Return: Const block data pointer, or NULL if no valid block is found at
  * @file_block.
  */
-const void *file_get_block(struct transaction *tr, struct file_handle *file,
-                           data_block_t file_block, obj_ref_t *ref)
-{
+const void* file_get_block(struct transaction* tr,
+                           struct file_handle* file,
+                           data_block_t file_block,
+                           obj_ref_t* ref) {
     return file_get_block_etc(tr, file, file_block, true, false, ref);
 }
 
@@ -465,10 +463,12 @@ const void *file_get_block(struct transaction *tr, struct file_handle *file,
  *
  * Return: Block data pointer, or NULL if  a block could not be allocated.
  */
-void *file_get_block_write(struct transaction *tr, struct file_handle *file,
-                           data_block_t file_block, bool read, obj_ref_t *ref)
-{
-     return (void *)file_get_block_etc(tr, file, file_block, read, true, ref);
+void* file_get_block_write(struct transaction* tr,
+                           struct file_handle* file,
+                           data_block_t file_block,
+                           bool read,
+                           obj_ref_t* ref) {
+    return (void*)file_get_block_etc(tr, file, file_block, read, true, ref);
 }
 
 /**
@@ -476,8 +476,7 @@ void *file_get_block_write(struct transaction *tr, struct file_handle *file,
  * @data:       File block data pointer
  * @data_ref:   Reference pointer to release
  */
-void file_block_put(const void *data, obj_ref_t *data_ref)
-{
+void file_block_put(const void* data, obj_ref_t* data_ref) {
     block_put(data - sizeof(struct iv), data_ref);
 }
 
@@ -492,16 +491,17 @@ void file_block_put(const void *data, obj_ref_t *data_ref)
  * Release reference to a file block previously returned by
  * file_get_block_write, and update mac value in block_mac.
  */
-void file_block_put_dirty(struct transaction *tr,
-                          struct file_handle *file, data_block_t file_block,
-                          void *data, obj_ref_t *data_ref)
-{
+void file_block_put_dirty(struct transaction* tr,
+                          struct file_handle* file,
+                          data_block_t file_block,
+                          void* data,
+                          obj_ref_t* data_ref) {
     struct block_map block_map;
 
     file_block_map_init(tr, &block_map, &file->block_mac);
 
-    block_map_put_dirty(tr, &block_map, file_block,
-                        data - sizeof(struct iv), data_ref);
+    block_map_put_dirty(tr, &block_map, file_block, data - sizeof(struct iv),
+                        data_ref);
 
     file_block_map_update(tr, &block_map, NULL, file);
 }
@@ -515,11 +515,10 @@ void file_block_put_dirty(struct transaction *tr,
  * Return: Const file info pointer, or NULL if no valid block is found at
  * @block_mac.
  */
-const struct file_info *file_get_info(struct transaction *tr,
-                                      const struct block_mac *block_mac,
-                                      obj_ref_t *ref)
-{
-    const struct file_entry *file_entry;
+const struct file_info* file_get_info(struct transaction* tr,
+                                      const struct block_mac* block_mac,
+                                      obj_ref_t* ref) {
+    const struct file_entry* file_entry;
 
     file_entry = block_get(tr, block_mac, NULL, ref);
     if (!file_entry) {
@@ -538,9 +537,8 @@ const struct file_info *file_get_info(struct transaction *tr,
  * @data:       File info data pointer
  * @data_ref:   Reference pointer to release
  */
-void file_info_put(const struct file_info *data, obj_ref_t *data_ref)
-{
-    const struct file_entry *entry = containerof(data, struct file_entry, info);
+void file_info_put(const struct file_info* data, obj_ref_t* data_ref) {
+    const struct file_entry* entry = containerof(data, struct file_entry, info);
     assert(entry->magic == FILE_ENTRY_MAGIC);
     block_put(entry, data_ref);
 }
@@ -554,10 +552,9 @@ void file_info_put(const struct file_info *data, obj_ref_t *data_ref)
  * Return: %true if @size was set, %false if @size was not set because @file is
  * invalid or @tr has failed.
  */
-bool file_get_size(struct transaction *tr,
-                   struct file_handle *file,
-                   data_block_t *size)
-{
+bool file_get_size(struct transaction* tr,
+                   struct file_handle* file,
+                   data_block_t* size) {
     if (tr->failed) {
         pr_warn("transaction failed, ignore\n");
         return false;
@@ -583,10 +580,9 @@ bool file_get_size(struct transaction *tr,
  * Set file size and free blocks that are not longer needed. Does not clear any
  * partial block data.
  */
-void file_set_size(struct transaction *tr,
-                   struct file_handle *file,
-                   data_block_t size)
-{
+void file_set_size(struct transaction* tr,
+                   struct file_handle* file,
+                   data_block_t size) {
     data_block_t file_block;
     struct block_map block_map;
     size_t file_block_size = get_file_block_size(tr->fs);
@@ -623,16 +619,15 @@ void file_set_size(struct transaction *tr,
  *
  * Return: %true if @file_path was found in @tree, %false otherwise.
  */
-static bool file_tree_lookup(struct block_mac *block_mac_out,
-                             struct transaction *tr,
-                             struct block_tree *tree,
-                             struct block_tree_path *tree_path,
-                             const char *file_path,
-                             bool remove)
-{
+static bool file_tree_lookup(struct block_mac* block_mac_out,
+                             struct transaction* tr,
+                             struct block_tree* tree,
+                             struct block_tree_path* tree_path,
+                             const char* file_path,
+                             bool remove) {
     struct block_mac block_mac;
     data_block_t hash = path_hash(tr, file_path);
-    const struct file_entry *file_entry;
+    const struct file_entry* file_entry;
     obj_ref_t file_entry_ref = OBJ_REF_INITIAL_VALUE(file_entry_ref);
     bool found = false;
 
@@ -640,7 +635,8 @@ static bool file_tree_lookup(struct block_mac *block_mac_out,
     assert(sizeof(*file_entry) <= tr->fs->dev->block_size);
 
     block_tree_walk(tr, tree, hash - 1, false, tree_path);
-    while (block_tree_path_get_key(tree_path) && block_tree_path_get_key(tree_path) < hash) {
+    while (block_tree_path_get_key(tree_path) &&
+           block_tree_path_get_key(tree_path) < hash) {
         block_tree_path_next(tree_path);
     }
     while (block_tree_path_get_key(tree_path) == hash) {
@@ -679,9 +675,10 @@ static bool file_tree_lookup(struct block_mac *block_mac_out,
         if (found) {
             if (remove) {
                 /* TODO: remove by path */
-                //block_tree_remove_path(tr, tree_path);
+                // block_tree_remove_path(tr, tree_path);
                 /* TODO: pass mac */
-                block_tree_remove(tr, tree, hash, block_mac_to_block(tr, &block_mac));
+                block_tree_remove(tr, tree, hash,
+                                  block_mac_to_block(tr, &block_mac));
             }
             *block_mac_out = block_mac;
             return true;
@@ -689,8 +686,8 @@ static bool file_tree_lookup(struct block_mac *block_mac_out,
         block_tree_path_next(tree_path);
     }
     if (LOCAL_TRACE >= TRACE_LEVEL_READ) {
-        pr_read("%s: hash 0x%llx does not match 0x%llx\n",
-                __func__, hash, block_tree_path_get_key(tree_path));
+        pr_read("%s: hash 0x%llx does not match 0x%llx\n", __func__, hash,
+                block_tree_path_get_key(tree_path));
         block_tree_print(tr, tree);
     }
     return false;
@@ -707,12 +704,11 @@ static bool file_tree_lookup(struct block_mac *block_mac_out,
  *
  * Return: %true if file was created, %false otherwise.
  */
-static bool file_create(struct block_mac *block_mac_out,
-                        struct transaction *tr,
-                        const char *path)
-{
+static bool file_create(struct block_mac* block_mac_out,
+                        struct transaction* tr,
+                        const char* path) {
     data_block_t block;
-    struct file_entry *file_entry;
+    struct file_entry* file_entry;
     obj_ref_t file_entry_ref = OBJ_REF_INITIAL_VALUE(file_entry_ref);
     data_block_t hash;
 
@@ -720,8 +716,8 @@ static bool file_create(struct block_mac *block_mac_out,
 
     block = block_allocate(tr);
 
-    pr_write("create file, %s, hash 0x%llx, at block %lld\n",
-             path, hash, block);
+    pr_write("create file, %s, hash 0x%llx, at block %lld\n", path, hash,
+             block);
 
     if (tr->failed) {
         pr_warn("transaction failed, abort\n");
@@ -758,8 +754,7 @@ err:
  *
  * Return: %true if file is removed in @tr, %false otherwise.
  */
-static bool file_is_removed(struct transaction *tr, data_block_t block)
-{
+static bool file_is_removed(struct transaction* tr, data_block_t block) {
     struct block_tree_path tree_path;
 
     block_tree_walk(tr, &tr->files_removed, block, false, &tree_path);
@@ -776,10 +771,9 @@ static bool file_is_removed(struct transaction *tr, data_block_t block)
  *
  * Return: %true if file is updated in @tr, %false otherwise.
  */
-static bool file_check_updated(struct transaction *tr,
-                               const struct block_mac *committed_block_mac,
-                               struct block_mac *block_mac_out)
-{
+static bool file_check_updated(struct transaction* tr,
+                               const struct block_mac* committed_block_mac,
+                               struct block_mac* block_mac_out) {
     struct block_tree_path tree_path;
     data_block_t block = block_mac_to_block(tr, committed_block_mac);
 
@@ -809,12 +803,11 @@ static bool file_check_updated(struct transaction *tr,
  * Return: %true if @file_path was found in @tr->fs->files but not found in
  * @tr->files_removed, %false otherwise.
  */
-static bool file_lookup_not_removed(struct block_mac *block_mac_out,
-                                    struct block_mac *committed_block_mac_out,
-                                    struct transaction *tr,
-                                    struct block_tree_path *tree_path,
-                                    const char *file_path)
-{
+static bool file_lookup_not_removed(struct block_mac* block_mac_out,
+                                    struct block_mac* committed_block_mac_out,
+                                    struct transaction* tr,
+                                    struct block_tree_path* tree_path,
+                                    const char* file_path) {
     bool found;
     struct block_mac block_mac;
 
@@ -822,8 +815,8 @@ static bool file_lookup_not_removed(struct block_mac *block_mac_out,
                              file_path, false);
     if (!found || file_is_removed(tr, block_mac_to_block(tr, &block_mac))) {
         if (found) {
-            pr_read("file %s, %lld in removed\n",
-                    file_path, block_mac_to_block(tr, &block_mac));
+            pr_read("file %s, %lld in removed\n", file_path,
+                    block_mac_to_block(tr, &block_mac));
         } else {
             pr_read("file %s not in tr->fs->files\n", file_path);
         }
@@ -833,14 +826,15 @@ static bool file_lookup_not_removed(struct block_mac *block_mac_out,
 
     block_tree_walk(tr, &tr->files_updated, block_mac_to_block(tr, &block_mac),
                     false, tree_path);
-    if (block_tree_path_get_key(tree_path) == block_mac_to_block(tr, &block_mac)) {
+    if (block_tree_path_get_key(tree_path) ==
+        block_mac_to_block(tr, &block_mac)) {
         pr_read("file %s, %lld, already updated in this transaction, use new copy %lld\n",
                 file_path, block_mac_to_block(tr, &block_mac),
                 block_tree_path_get_data(tree_path));
         block_mac = block_tree_path_get_data_block_mac(tree_path);
     }
-    pr_read("file %s, %lld, found in tr->fs->files\n",
-            file_path, block_mac_to_block(tr, &block_mac));
+    pr_read("file %s, %lld, found in tr->fs->files\n", file_path,
+            block_mac_to_block(tr, &block_mac));
 
     /*
      * TODO: mark file (or blocks) in_use so other writers to the same file
@@ -859,10 +853,9 @@ static bool file_lookup_not_removed(struct block_mac *block_mac_out,
  *
  * Return: file handle of open file if file is open in @tr, NULL otherwise.
  */
-static struct file_handle *file_find_open(struct transaction *tr,
-                                          const struct block_mac *block_mac)
-{
-    struct file_handle *file;
+static struct file_handle* file_find_open(struct transaction* tr,
+                                          const struct block_mac* block_mac) {
+    struct file_handle* file;
 
     list_for_every_entry(&tr->open_files, file, struct file_handle, node) {
         if (block_mac_same_block(tr, &file->block_mac, block_mac)) {
@@ -881,12 +874,13 @@ static struct file_handle *file_find_open(struct transaction *tr,
  *              uncommitted files added by @tr.
  * @state:      client state object containing function to call for each file.
  */
-bool file_iterate(struct transaction *tr, const char *start_path, bool added,
-                  struct file_iterate_state *state)
-{
+bool file_iterate(struct transaction* tr,
+                  const char* start_path,
+                  bool added,
+                  struct file_iterate_state* state) {
     struct block_tree_path tree_path;
     struct block_mac block_mac;
-    struct block_tree *tree = added ? &tr->files_added : &tr->fs->files;
+    struct block_tree* tree = added ? &tr->files_added : &tr->fs->files;
     bool found;
     bool stop;
     bool removed = false;
@@ -894,8 +888,8 @@ bool file_iterate(struct transaction *tr, const char *start_path, bool added,
     if (start_path == NULL) {
         block_tree_walk(tr, tree, 0, true, &tree_path);
     } else {
-        found = file_tree_lookup(&block_mac, tr, tree, &tree_path,
-                                 start_path, false);
+        found = file_tree_lookup(&block_mac, tr, tree, &tree_path, start_path,
+                                 false);
         if (!found) {
             return false;
         }
@@ -928,26 +922,28 @@ bool file_iterate(struct transaction *tr, const char *start_path, bool added,
  *
  * Return: %true if file was opened, %false if file could not be opeened.
  */
-bool file_open(struct transaction *tr, const char *path,
-               struct file_handle *file, enum file_create_mode create)
-{
+bool file_open(struct transaction* tr,
+               const char* path,
+               struct file_handle* file,
+               enum file_create_mode create) {
     bool found;
     struct block_mac block_mac;
-    struct block_mac committed_block_mac = BLOCK_MAC_INITIAL_VALUE(committed_block_mac);
+    struct block_mac committed_block_mac =
+            BLOCK_MAC_INITIAL_VALUE(committed_block_mac);
     struct block_tree_path tree_path;
-    const struct file_entry *file_entry_ro;
+    const struct file_entry* file_entry_ro;
     obj_ref_t file_entry_ref = OBJ_REF_INITIAL_VALUE(file_entry_ref);
 
     assert(tr->fs);
 
-    found = file_tree_lookup(&block_mac, tr, &tr->files_added, &tree_path,
-                             path, false);
+    found = file_tree_lookup(&block_mac, tr, &tr->files_added, &tree_path, path,
+                             false);
     if (found) {
         goto found;
     }
 
-    found = file_lookup_not_removed(&block_mac, &committed_block_mac,
-                                    tr, &tree_path, path);
+    found = file_lookup_not_removed(&block_mac, &committed_block_mac, tr,
+                                    &tree_path, path);
     if (found) {
         goto found;
     }
@@ -993,8 +989,7 @@ created:
  *
  * Must be called before freeing @file after a successful file_open call.
  */
-void file_close(struct file_handle *file)
-{
+void file_close(struct file_handle* file) {
     list_delete(&file->node);
 }
 
@@ -1005,24 +1000,23 @@ void file_close(struct file_handle *file)
  *
  * Return: %true if file was found, %false otherwise.
  */
-bool file_delete(struct transaction *tr, const char *path)
-{
+bool file_delete(struct transaction* tr, const char* path) {
     bool found;
     struct block_mac block_mac;
     struct block_mac old_block_mac;
     bool in_files = false;
-    const struct file_entry *file_entry;
+    const struct file_entry* file_entry;
     obj_ref_t file_entry_ref = OBJ_REF_INITIAL_VALUE(file_entry_ref);
     struct block_map block_map = BLOCK_MAP_INITIAL_VALUE(block_map);
     struct block_tree_path tree_path;
-    struct file_handle *open_file;
+    struct file_handle* open_file;
 
-    found = file_tree_lookup(&block_mac, tr, &tr->files_added, &tree_path,
-                             path, true);
+    found = file_tree_lookup(&block_mac, tr, &tr->files_added, &tree_path, path,
+                             true);
     if (!found) {
         pr_read("file %s not in tr->files_added\n", path);
-        found = file_lookup_not_removed(&block_mac, &old_block_mac,
-                                        tr, &tree_path, path);
+        found = file_lookup_not_removed(&block_mac, &old_block_mac, tr,
+                                        &tree_path, path);
         if (!found) {
             pr_warn("file %s not found\n", path);
             return false;
@@ -1030,8 +1024,8 @@ bool file_delete(struct transaction *tr, const char *path)
         in_files = true;
     }
 
-    pr_write("delete file, %s, at block %lld\n",
-             path, block_mac_to_block(tr, &block_mac));
+    pr_write("delete file, %s, at block %lld\n", path,
+             block_mac_to_block(tr, &block_mac));
 
     file_entry = block_get(tr, &block_mac, NULL, &file_entry_ref);
     if (!file_entry) {
@@ -1058,7 +1052,7 @@ bool file_delete(struct transaction *tr, const char *path)
                 return false;
             }
         }
-        block_tree_insert_block_mac(tr,&tr->files_removed,
+        block_tree_insert_block_mac(tr, &tr->files_removed,
                                     block_mac_to_block(tr, &old_block_mac),
                                     old_block_mac);
     }
@@ -1084,9 +1078,10 @@ bool file_delete(struct transaction *tr, const char *path)
  *
  * Return: %true if file was moved, %false otherwise.
  */
-bool file_move(struct transaction *tr, struct file_handle *file,
-               const char *dest_path, enum file_create_mode dest_create)
-{
+bool file_move(struct transaction* tr,
+               struct file_handle* file,
+               const char* dest_path,
+               enum file_create_mode dest_create) {
     assert(tr->fs);
     struct block_mac block_mac;
     struct block_mac committed_block_mac;
@@ -1131,17 +1126,18 @@ bool file_move(struct transaction *tr, struct file_handle *file,
  * @tr:         Transaction object.
  * @func:       Function to call.
  */
-static void file_for_each_open(struct transaction *tr,
-                               void (*func)(struct transaction *tr,
-                                            struct transaction *file_tr,
-                                            struct file_handle *file))
-{
-    struct transaction *tmp_tr;
-    struct transaction *other_tr;
-    struct file_handle *file;
+static void file_for_each_open(struct transaction* tr,
+                               void (*func)(struct transaction* tr,
+                                            struct transaction* file_tr,
+                                            struct file_handle* file)) {
+    struct transaction* tmp_tr;
+    struct transaction* other_tr;
+    struct file_handle* file;
 
-    list_for_every_entry_safe(&tr->fs->transactions, other_tr, tmp_tr, struct transaction, node) {
-        list_for_every_entry(&other_tr->open_files, file, struct file_handle, node) {
+    list_for_every_entry_safe(&tr->fs->transactions, other_tr, tmp_tr,
+                              struct transaction, node) {
+        list_for_every_entry(&other_tr->open_files, file, struct file_handle,
+                             node) {
             func(tr, other_tr, file);
         }
     }
@@ -1153,22 +1149,21 @@ static void file_for_each_open(struct transaction *tr,
  * @file_tr:    Transaction that @file was found in.
  * @file:       File handle object.
  */
-static void file_restore_to_commit(struct transaction *tr,
-                                   struct transaction *file_tr,
-                                   struct file_handle *file)
-{
-    struct block_mac *src = &file->committed_block_mac;
-    struct block_mac *dest = &file->to_commit_block_mac;
+static void file_restore_to_commit(struct transaction* tr,
+                                   struct transaction* file_tr,
+                                   struct file_handle* file) {
+    struct block_mac* src = &file->committed_block_mac;
+    struct block_mac* dest = &file->to_commit_block_mac;
     if (block_mac_same_block(tr, src, dest)) {
         assert(block_mac_eq(tr, src, dest));
         return;
     }
-    pr_write("file handle %p, abort block %lld/%lld -> %lld, size %lld -> %lld\n",
-             file,
-             block_mac_to_block(tr, &file->committed_block_mac),
-             block_mac_to_block(tr, &file->block_mac),
-             block_mac_to_block(tr, &file->to_commit_block_mac),
-             file->size, file->to_commit_size);
+    pr_write(
+            "file handle %p, abort block %lld/%lld -> %lld, size %lld -> %lld\n",
+            file, block_mac_to_block(tr, &file->committed_block_mac),
+            block_mac_to_block(tr, &file->block_mac),
+            block_mac_to_block(tr, &file->to_commit_block_mac), file->size,
+            file->to_commit_size);
     block_mac_copy(tr, dest, src);
 }
 
@@ -1181,12 +1176,11 @@ static void file_restore_to_commit(struct transaction *tr,
  * Copies to_commit to commited and current state and fails conflicting
  * transactions.
  */
-static void file_apply_to_commit(struct transaction *tr,
-                                 struct transaction *file_tr,
-                                 struct file_handle *file)
-{
-    struct block_mac *src = &file->to_commit_block_mac;
-    struct block_mac *dest = &file->committed_block_mac;
+static void file_apply_to_commit(struct transaction* tr,
+                                 struct transaction* file_tr,
+                                 struct file_handle* file) {
+    struct block_mac* src = &file->to_commit_block_mac;
+    struct block_mac* dest = &file->committed_block_mac;
 
     if (tr == file_tr) {
         file->used_by_tr = false;
@@ -1194,30 +1188,28 @@ static void file_apply_to_commit(struct transaction *tr,
 
     if (block_mac_same_block(tr, src, dest)) {
         assert(block_mac_eq(tr, src, dest));
-        pr_write("file handle %p, unchanged file at %lld\n",
-                 file, block_mac_to_block(tr, &file->committed_block_mac));
+        pr_write("file handle %p, unchanged file at %lld\n", file,
+                 block_mac_to_block(tr, &file->committed_block_mac));
         return;
     }
 
     if (file_tr != tr) {
         if (file->used_by_tr) {
             pr_warn("file handle %p, conflict %lld != %lld || used_by_tr %d\n",
-                    file,
-                    block_mac_to_block(tr, &file->committed_block_mac),
-                    block_mac_to_block(tr, &file->block_mac),
-                    file->used_by_tr);
+                    file, block_mac_to_block(tr, &file->committed_block_mac),
+                    block_mac_to_block(tr, &file->block_mac), file->used_by_tr);
             assert(!file_tr->failed);
             transaction_fail(file_tr);
         }
         assert(block_mac_same_block(tr, dest, &file->block_mac));
     }
 
-    pr_write("file handle %p, apply block %lld/%lld -> %lld, size %lld -> %lld\n",
-             file,
-             block_mac_to_block(tr, &file->committed_block_mac),
-             block_mac_to_block(tr, &file->block_mac),
-             block_mac_to_block(tr, &file->to_commit_block_mac),
-             file->size, file->to_commit_size);
+    pr_write(
+            "file handle %p, apply block %lld/%lld -> %lld, size %lld -> %lld\n",
+            file, block_mac_to_block(tr, &file->committed_block_mac),
+            block_mac_to_block(tr, &file->block_mac),
+            block_mac_to_block(tr, &file->to_commit_block_mac), file->size,
+            file->to_commit_size);
 
     block_mac_copy(tr, dest, src);
     if (tr == file_tr) {
@@ -1235,8 +1227,7 @@ static void file_apply_to_commit(struct transaction *tr,
  *
  * Revert open file changes done by file_transaction_complete.
  */
-void file_transaction_complete_failed(struct transaction *tr)
-{
+void file_transaction_complete_failed(struct transaction* tr) {
     file_for_each_open(tr, file_restore_to_commit);
 }
 
@@ -1251,35 +1242,35 @@ void file_transaction_complete_failed(struct transaction *tr)
  *
  * Prepare update of open files referring to the file at @old_block_mac.
  */
-static void file_update_block_mac_tr(struct transaction *tr,
-                                     struct transaction *other_tr,
-                                     const struct block_mac *old_block_mac,
+static void file_update_block_mac_tr(struct transaction* tr,
+                                     struct transaction* other_tr,
+                                     const struct block_mac* old_block_mac,
                                      bool old_block_no_mac,
-                                     const struct block_mac *new_block_mac,
-                                     data_block_t new_size)
-{
-    struct file_handle *file;
+                                     const struct block_mac* new_block_mac,
+                                     data_block_t new_size) {
+    struct file_handle* file;
 
     assert(block_mac_valid(tr, old_block_mac) || other_tr == tr);
-    list_for_every_entry(&other_tr->open_files, file, struct file_handle, node) {
-        if (block_mac_valid(tr, old_block_mac) ?
-                !block_mac_same_block(tr, &file->committed_block_mac, old_block_mac) :
-                !block_mac_same_block(tr, &file->block_mac, new_block_mac)) {
-            pr_write("file handle %p, unrelated %lld != %lld\n",
-                     file, block_mac_to_block(tr, &file->committed_block_mac),
+    list_for_every_entry(&other_tr->open_files, file, struct file_handle,
+                         node) {
+        if (block_mac_valid(tr, old_block_mac)
+                    ? !block_mac_same_block(tr, &file->committed_block_mac,
+                                            old_block_mac)
+                    : !block_mac_same_block(tr, &file->block_mac,
+                                            new_block_mac)) {
+            pr_write("file handle %p, unrelated %lld != %lld\n", file,
+                     block_mac_to_block(tr, &file->committed_block_mac),
                      block_mac_to_block(tr, new_block_mac));
             continue; /*unrelated file */
         }
-        assert(old_block_no_mac ||
-               !block_mac_valid(tr, old_block_mac) ||
+        assert(old_block_no_mac || !block_mac_valid(tr, old_block_mac) ||
                block_mac_eq(tr, &file->committed_block_mac, old_block_mac));
 
-        pr_write("file handle %p, stage block %lld/%lld -> %lld, size %lld -> %lld\n",
-                 file,
-                 block_mac_to_block(tr, &file->committed_block_mac),
-                 block_mac_to_block(tr, &file->block_mac),
-                 block_mac_to_block(tr, new_block_mac),
-                 file->size, new_size);
+        pr_write(
+                "file handle %p, stage block %lld/%lld -> %lld, size %lld -> %lld\n",
+                file, block_mac_to_block(tr, &file->committed_block_mac),
+                block_mac_to_block(tr, &file->block_mac),
+                block_mac_to_block(tr, new_block_mac), file->size, new_size);
 
         block_mac_copy(tr, &file->to_commit_block_mac, new_block_mac);
         file->to_commit_size = new_size;
@@ -1297,14 +1288,13 @@ static void file_update_block_mac_tr(struct transaction *tr,
  * Update other open files referring to the same file as @src_file with the
  * size, block and mac from @src_file.
  */
-static void file_update_block_mac_all(struct transaction *tr,
-                                      const struct block_mac *old_block_mac,
+static void file_update_block_mac_all(struct transaction* tr,
+                                      const struct block_mac* old_block_mac,
                                       bool old_block_no_mac,
-                                      const struct block_mac *new_block_mac,
-                                      data_block_t new_size)
-{
-    struct transaction *tmp_tr;
-    struct transaction *other_tr;
+                                      const struct block_mac* new_block_mac,
+                                      data_block_t new_size) {
+    struct transaction* tmp_tr;
+    struct transaction* other_tr;
 
     list_for_every_entry_safe(&tr->fs->transactions, other_tr, tmp_tr,
                               struct transaction, node) {
@@ -1322,11 +1312,10 @@ static void file_update_block_mac_all(struct transaction *tr,
  * Called by transaction_complete, which will update the super-block and
  * @tr->fs->files if the transaction succeeds.
  */
-void file_transaction_complete(struct transaction *tr,
-                               struct block_mac *new_files_block_mac)
-{
+void file_transaction_complete(struct transaction* tr,
+                               struct block_mac* new_files_block_mac) {
     bool found;
-    const struct file_entry *file_entry_ro;
+    const struct file_entry* file_entry_ro;
     obj_ref_t file_entry_ref = OBJ_REF_INITIAL_VALUE(file_entry_ref);
     struct block_tree_path tree_path;
     struct block_tree_path tmp_tree_path;
@@ -1357,8 +1346,8 @@ void file_transaction_complete(struct transaction *tr,
                  block_mac_to_block(tr, &old_file),
                  block_mac_to_block(tr, &file), file_entry_ro->info.path);
 
-        file_update_block_mac_all(tr, &old_file, true,
-                                  &file, file_entry_ro->info.size);
+        file_update_block_mac_all(tr, &old_file, true, &file,
+                                  file_entry_ro->info.size);
 
         hash = path_hash(tr, file_entry_ro->info.path);
 
@@ -1369,16 +1358,15 @@ void file_transaction_complete(struct transaction *tr,
             return;
         }
 
-        block_tree_update_block_mac(tr, &new_files,
-                                    hash, old_file,
-                                    hash, file);
+        block_tree_update_block_mac(tr, &new_files, hash, old_file, hash, file);
 
         if (tr->failed) {
             pr_warn("transaction failed, abort\n");
             return;
         }
 
-        assert(block_mac_to_block(tr, &old_file) != block_mac_to_block(tr, &file));
+        assert(block_mac_to_block(tr, &old_file) !=
+               block_mac_to_block(tr, &file));
         block_tree_path_next(&tree_path);
     }
 
@@ -1396,13 +1384,13 @@ void file_transaction_complete(struct transaction *tr,
         }
         assert(file_entry_ro);
 
-        pr_write("delete file at %lld, %s\n",
-                 block_mac_to_block(tr, &file), file_entry_ro->info.path);
+        pr_write("delete file at %lld, %s\n", block_mac_to_block(tr, &file),
+                 file_entry_ro->info.path);
 
         file_update_block_mac_all(tr, &file, false, &clear_block_mac, 0);
 
-        found = file_tree_lookup(&old_file, tr, &new_files,
-                                 &tmp_tree_path, file_entry_ro->info.path, true);
+        found = file_tree_lookup(&old_file, tr, &new_files, &tmp_tree_path,
+                                 file_entry_ro->info.path, true);
         block_put(file_entry_ro, &file_entry_ref);
 
         if (tr->failed) {
@@ -1411,7 +1399,8 @@ void file_transaction_complete(struct transaction *tr,
         }
 
         assert(found);
-        assert(block_mac_to_block(tr, &old_file) == block_mac_to_block(tr, &file));
+        assert(block_mac_to_block(tr, &old_file) ==
+               block_mac_to_block(tr, &file));
         block_tree_path_next(&tree_path);
     }
     block_tree_walk(tr, &tr->files_added, 0, true, &tree_path);
@@ -1427,21 +1416,21 @@ void file_transaction_complete(struct transaction *tr,
             return;
         }
         assert(file_entry_ro);
-        pr_write("add file at %lld, %s\n",
-                 block_mac_to_block(tr, &file), file_entry_ro->info.path);
+        pr_write("add file at %lld, %s\n", block_mac_to_block(tr, &file),
+                 file_entry_ro->info.path);
 
         if (file_tree_lookup(&old_file, tr, &new_files, &tmp_tree_path,
                              file_entry_ro->info.path, false)) {
             block_put(file_entry_ro, &file_entry_ref);
             pr_err("add file at %lld, %s, failed, conflicts with %lld\n",
-                   block_mac_to_block(tr, &file),
-                   file_entry_ro->info.path, block_mac_to_block(tr, &old_file));
+                   block_mac_to_block(tr, &file), file_entry_ro->info.path,
+                   block_mac_to_block(tr, &old_file));
             transaction_fail(tr);
             return;
         }
 
-        file_update_block_mac_tr(tr, tr, &clear_block_mac, false,
-                                 &file, file_entry_ro->info.size);
+        file_update_block_mac_tr(tr, tr, &clear_block_mac, false, &file,
+                                 file_entry_ro->info.size);
 
         hash = path_hash(tr, file_entry_ro->info.path);
         block_put(file_entry_ro, &file_entry_ref);
@@ -1469,18 +1458,17 @@ void file_transaction_complete(struct transaction *tr,
  *
  * Return: %true if @file was modified by @tr, %false otherwise.
  */
-static bool transaction_changed_file(struct transaction *tr,
-                                     struct file_handle *file)
-{
-    return !block_mac_same_block(tr, &file->committed_block_mac, &file->block_mac);
+static bool transaction_changed_file(struct transaction* tr,
+                                     struct file_handle* file) {
+    return !block_mac_same_block(tr, &file->committed_block_mac,
+                                 &file->block_mac);
 }
 
 /**
  * file_transaction_success - Update all file handles modified by transaction
  * @tr:         Transaction object.
  */
-void file_transaction_success(struct transaction *tr)
-{
+void file_transaction_success(struct transaction* tr) {
     file_for_each_open(tr, file_apply_to_commit);
 }
 
@@ -1492,16 +1480,15 @@ void file_transaction_success(struct transaction *tr)
  *
  * Return: %true if @sz was set, %false otherwise.
  */
-static bool file_read_size(struct transaction *tr,
-                           const struct block_mac *block_mac,
-                           data_block_t *sz)
-{
-    const struct file_entry *file_entry_ro;
+static bool file_read_size(struct transaction* tr,
+                           const struct block_mac* block_mac,
+                           data_block_t* sz) {
+    const struct file_entry* file_entry_ro;
     obj_ref_t ref = OBJ_REF_INITIAL_VALUE(ref);
 
     if (!block_mac_valid(tr, block_mac)) {
-         *sz = 0;
-         return true;
+        *sz = 0;
+        return true;
     }
 
     file_entry_ro = block_get_no_tr_fail(tr, block_mac, NULL, &ref);
@@ -1520,9 +1507,8 @@ static bool file_read_size(struct transaction *tr,
  * Revert all file handles modified by @tr to the state of the files before @tr
  * was activeted. File handles for files crreated by @tr become invalid.
  */
-void file_transaction_failed(struct transaction *tr)
-{
-    struct file_handle *file;
+void file_transaction_failed(struct transaction* tr) {
+    struct file_handle* file;
     bool success;
 
     list_for_every_entry(&tr->open_files, file, struct file_handle, node) {

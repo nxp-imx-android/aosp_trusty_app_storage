@@ -49,14 +49,14 @@
  */
 struct transaction {
     struct list_node node;
-    struct fs *fs;
+    struct fs* fs;
     struct list_node open_files;
     bool failed;
     bool complete;
     data_block_t min_free_block;
     data_block_t last_free_block;
     data_block_t last_tmp_free_block;
-    struct block_set *new_free_set;
+    struct block_set* new_free_set;
     struct block_set tmp_allocated;
     struct block_set allocated;
     struct block_set freed;
@@ -66,16 +66,14 @@ struct transaction {
     struct block_tree files_removed;
 };
 
-void transaction_init(struct transaction *tr,
-                      struct fs *fs,
-                      bool activate);
-void transaction_free(struct transaction *tr);
-void transaction_activate(struct transaction *tr);
-void transaction_fail(struct transaction *tr);
-void transaction_complete(struct transaction *tr);
+void transaction_init(struct transaction* tr, struct fs* fs, bool activate);
+void transaction_free(struct transaction* tr);
+void transaction_activate(struct transaction* tr);
+void transaction_fail(struct transaction* tr);
+void transaction_complete(struct transaction* tr);
 
-static inline bool transaction_is_active(struct transaction *tr) {
+static inline bool transaction_is_active(struct transaction* tr) {
     return list_in_list(&tr->allocated.node);
 };
 
-bool transaction_block_need_copy(struct transaction *tr, data_block_t block);
+bool transaction_block_need_copy(struct transaction* tr, data_block_t block);

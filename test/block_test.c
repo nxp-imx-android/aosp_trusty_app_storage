@@ -28,15 +28,14 @@
 #include "../block_cache.h"
 #include "../block_map.h"
 #include "../block_set.h"
-#include "../debug_stats.h"
 #include "../crypt.h"
+#include "../debug_stats.h"
 #include "../file.h"
 #include "../transaction.h"
 
 #include <time.h>
 
-long gettime(uint32_t clock_id, uint32_t flags, int64_t *time)
-{
+long gettime(uint32_t clock_id, uint32_t flags, int64_t* time) {
     int ret;
     struct timespec ts;
     assert(!clock_id);
@@ -94,9 +93,9 @@ struct block {
     bool loaded;
     bool dirty;
     bool dirty_ref;
-    struct block *parent;
-    struct block_mac *block_mac_in_parent;
-    const char *used_by_str;
+    struct block* parent;
+    struct block_mac* block_mac_in_parent;
+    const char* used_by_str;
     data_block_t used_by_block;
 };
 static struct block blocks[BLOCK_COUNT];
@@ -105,16 +104,18 @@ static const struct key key;
 static bool print_test_verbose = false;
 static bool print_block_tree_test_verbose = false;
 
-static void block_test_start_read(struct block_device *dev, data_block_t block)
-{
+static void block_test_start_read(struct block_device* dev,
+                                  data_block_t block) {
     assert(dev->block_size <= BLOCK_SIZE);
     assert(block < countof(blocks));
-    block_cache_complete_read(dev, block, blocks[block].data, dev->block_size, false);
+    block_cache_complete_read(dev, block, blocks[block].data, dev->block_size,
+                              false);
 }
 
-static void block_test_start_write(struct block_device *dev, data_block_t block,
-                                   const void *data, size_t data_size)
-{
+static void block_test_start_write(struct block_device* dev,
+                                   data_block_t block,
+                                   const void* data,
+                                   size_t data_size) {
     assert(block < countof(blocks));
     assert(data_size <= sizeof(blocks[block].data));
     memcpy(blocks[block].data, data, data_size);
@@ -122,8 +123,7 @@ static void block_test_start_write(struct block_device *dev, data_block_t block,
 }
 
 #if FULL_ASSERT
-static void block_clear_used_by(void)
-{
+static void block_clear_used_by(void) {
     size_t block;
     for (block = 0; block < countof(blocks); block++) {
         blocks[block].used_by_str = NULL;
@@ -132,9 +132,8 @@ static void block_clear_used_by(void)
 }
 
 static void block_set_used_by(data_block_t block,
-                              const char *used_by_str,
-                              data_block_t used_by_block)
-{
+                              const char* used_by_str,
+                              data_block_t used_by_block) {
     assert(block < countof(blocks));
 
     if (!blocks[block].used_by_str) {
@@ -145,12 +144,11 @@ static void block_set_used_by(data_block_t block,
     assert(blocks[block].used_by_block == used_by_block);
 }
 
-static void mark_block_tree_in_use(struct transaction *tr,
-                                   struct block_tree *block_tree,
+static void mark_block_tree_in_use(struct transaction* tr,
+                                   struct block_tree* block_tree,
                                    bool mark_data_used,
-                                   const char *used_by_str,
-                                   data_block_t used_by_block)
-{
+                                   const char* used_by_str,
+                                   data_block_t used_by_block) {
     struct block_tree_path path;
     uint i;
 
@@ -166,18 +164,17 @@ static void mark_block_tree_in_use(struct transaction *tr,
                               used_by_str, used_by_block);
         }
         if (mark_data_used) {
-            block_set_used_by(block_tree_path_get_data(&path),
-                              used_by_str, used_by_block);
+            block_set_used_by(block_tree_path_get_data(&path), used_by_str,
+                              used_by_block);
         }
         block_tree_path_next(&path);
     }
 }
 
-static void mark_files_in_use(struct transaction *tr)
-{
-    void file_block_map_init(struct transaction *tr,
-                             struct block_map *block_map,
-                             const struct block_mac *file);
+static void mark_files_in_use(struct transaction* tr) {
+    void file_block_map_init(struct transaction * tr,
+                             struct block_map * block_map,
+                             const struct block_mac* file);
 
     struct block_tree_path path;
     struct block_map block_map;
@@ -186,13 +183,13 @@ static void mark_files_in_use(struct transaction *tr)
     while (block_tree_path_get_key(&path)) {
         struct block_mac block_mac = block_tree_path_get_data_block_mac(&path);
         file_block_map_init(tr, &block_map, &block_mac);
-        mark_block_tree_in_use(tr, &block_map.tree, true, "file", block_mac_to_block(tr, &block_mac));
+        mark_block_tree_in_use(tr, &block_map.tree, true, "file",
+                               block_mac_to_block(tr, &block_mac));
         block_tree_path_next(&path);
     }
 }
 
-static void check_fs_prepare(struct transaction *tr)
-{
+static void check_fs_prepare(struct transaction* tr) {
     data_block_t block;
 
     block_clear_used_by();
@@ -214,15 +211,14 @@ static void check_fs_prepare(struct transaction *tr)
         block++;
     }
 
-    mark_block_tree_in_use(tr, &tr->fs->free.block_tree, false, "free_tree_node", 0);
+    mark_block_tree_in_use(tr, &tr->fs->free.block_tree, false,
+                           "free_tree_node", 0);
 
     mark_block_tree_in_use(tr, &tr->fs->files, true, "files", 0);
     mark_files_in_use(tr);
-
 }
 
-static bool check_fs_finish(struct transaction *tr)
-{
+static bool check_fs_finish(struct transaction* tr) {
     bool valid = true;
     data_block_t block;
 
@@ -242,8 +238,9 @@ static bool check_fs_finish(struct transaction *tr)
     return valid;
 }
 
-static bool check_fs_allocated(struct transaction *tr, data_block_t *allocated, size_t allocated_count)
-{
+static bool check_fs_allocated(struct transaction* tr,
+                               data_block_t* allocated,
+                               size_t allocated_count) {
     size_t i;
 
     check_fs_prepare(tr);
@@ -255,14 +252,12 @@ static bool check_fs_allocated(struct transaction *tr, data_block_t *allocated, 
     return check_fs_finish(tr);
 }
 
-static bool check_fs(struct transaction *tr)
-{
+static bool check_fs(struct transaction* tr) {
     return check_fs_allocated(tr, NULL, 0);
 }
 #endif
 
-static void empty_test(struct transaction *tr)
-{
+static void empty_test(struct transaction* tr) {
     struct block_range range;
 
     range.start = 4;
@@ -276,55 +271,43 @@ static void empty_test(struct transaction *tr)
 }
 
 typedef uint16_t (*keyfunc_t)(uint index, uint rindex, uint maxindex);
-static uint16_t inc_inc_key(uint index, uint rindex, uint maxindex)
-{
+static uint16_t inc_inc_key(uint index, uint rindex, uint maxindex) {
     return rindex ?: index;
 }
 
-static uint16_t inc_dec_key(uint index, uint rindex, uint maxindex)
-{
+static uint16_t inc_dec_key(uint index, uint rindex, uint maxindex) {
     return index;
 }
 
-static uint16_t dec_inc_key(uint index, uint rindex, uint maxindex)
-{
+static uint16_t dec_inc_key(uint index, uint rindex, uint maxindex) {
     return maxindex + 1 - index;
 }
 
-static uint16_t dec_dec_key(uint index, uint rindex, uint maxindex)
-{
+static uint16_t dec_dec_key(uint index, uint rindex, uint maxindex) {
     return maxindex + 1 - (rindex ?: index);
 }
 
-static uint16_t same_key(uint index, uint rindex, uint maxindex)
-{
+static uint16_t same_key(uint index, uint rindex, uint maxindex) {
     return 1;
 }
 
-static uint16_t rand_key(uint index, uint rindex, uint maxindex)
-{
+static uint16_t rand_key(uint index, uint rindex, uint maxindex) {
     uint16_t key;
 
-    RAND_bytes((uint8_t *)&key, sizeof(key));
+    RAND_bytes((uint8_t*)&key, sizeof(key));
 
     return key ?: 1; /* 0 key is not currently supported */
 }
 
 keyfunc_t keyfuncs[] = {
-    inc_inc_key,
-    inc_dec_key,
-    dec_inc_key,
-    dec_dec_key,
-    same_key,
-    rand_key,
+        inc_inc_key, inc_dec_key, dec_inc_key, dec_dec_key, same_key, rand_key,
 };
 
-static void block_tree_test_etc(struct transaction *tr,
+static void block_tree_test_etc(struct transaction* tr,
                                 uint order,
                                 uint count,
                                 uint commit_interval,
-                                keyfunc_t keyfunc)
-{
+                                keyfunc_t keyfunc) {
     uint i;
     uint ri;
     uint16_t key;
@@ -335,7 +318,8 @@ static void block_tree_test_etc(struct transaction *tr,
     const size_t key_size = sizeof(key);
     const size_t header_size = sizeof(struct iv) + 8;
     const size_t child_size = sizeof(struct block_mac);
-    size_t block_size = header_size + key_size * (order - 1) + child_size * order;
+    size_t block_size =
+            header_size + key_size * (order - 1) + child_size * order;
 
     if (block_size > tr->fs->dev->block_size) {
         printf("block tree order %d does not fit in block. block size %zd > %zd, skip test\n",
@@ -368,7 +352,8 @@ static void block_tree_test_etc(struct transaction *tr,
             transaction_activate(tr);
         }
         if (print_block_tree_test_verbose) {
-            printf("block tree order %d after %d inserts, last %d:\n", order, i, key);
+            printf("block tree order %d after %d inserts, last %d:\n", order, i,
+                   key);
             block_tree_print(tr, &tree);
         }
     }
@@ -387,7 +372,8 @@ static void block_tree_test_etc(struct transaction *tr,
         assert(key = block_tree_path_get_key(&path));
         assert(block_tree_path_get_data(&path));
         if (print_block_tree_test_verbose) {
-            printf("block tree order %d, remove %d (%d):\n", order, key, tmpkey);
+            printf("block tree order %d, remove %d (%d):\n", order, key,
+                   tmpkey);
         }
         block_tree_remove(tr, &tree, key, block_tree_path_get_data(&path));
         if (tr->failed) {
@@ -406,14 +392,15 @@ static void block_tree_test_etc(struct transaction *tr,
     }
 
     if (commit_interval) {
-        block_discard_dirty_by_block(tr->fs->dev, block_mac_to_block(tr, &tree.root));
+        block_discard_dirty_by_block(tr->fs->dev,
+                                     block_mac_to_block(tr, &tree.root));
         block_free(tr, block_mac_to_block(tr, &tree.root));
     }
 }
 
-static void block_tree_keyfuncs_test(struct transaction *tr,
-                                     uint order, uint count)
-{
+static void block_tree_keyfuncs_test(struct transaction* tr,
+                                     uint order,
+                                     uint count) {
     uint commit_interval;
     uint i;
 
@@ -424,8 +411,7 @@ static void block_tree_keyfuncs_test(struct transaction *tr,
     }
 }
 
-static void block_tree_test(struct transaction *tr)
-{
+static void block_tree_test(struct transaction* tr) {
     uint order;
 
     block_tree_keyfuncs_test(tr, 6, 5); /* test leaf node only */
@@ -440,8 +426,7 @@ static void block_tree_test(struct transaction *tr)
     }
 }
 
-static void block_set_test(struct transaction *tr)
-{
+static void block_set_test(struct transaction* tr) {
     struct block_set sets[3];
     uint si, i;
 
@@ -450,25 +435,25 @@ static void block_set_test(struct transaction *tr)
     }
 
     for (i = 0; i < 10; i++) {
-       for (si = 0; si < countof(sets); si++) {
-           block_set_add_block(tr, &sets[si], 2 + i * 3 + si);
-       }
+        for (si = 0; si < countof(sets); si++) {
+            block_set_add_block(tr, &sets[si], 2 + i * 3 + si);
+        }
     }
     for (si = 0; si < countof(sets); si++) {
-       assert(!block_set_overlap(tr, &sets[si], &sets[(si + 1) % countof(sets)]));
+        assert(!block_set_overlap(tr, &sets[si],
+                                  &sets[(si + 1) % countof(sets)]));
     }
     for (si = 1; si < countof(sets); si++) {
-       block_set_add_block(tr, &sets[0], 2 + 5 * 3 + si);
+        block_set_add_block(tr, &sets[0], 2 + 5 * 3 + si);
     }
     for (si = 1; si < countof(sets); si++) {
-       assert(block_set_overlap(tr, &sets[si], &sets[0]));
-       assert(block_set_overlap(tr, &sets[0], &sets[si]));
-       assert(si < 2 || !block_set_overlap(tr, &sets[si], &sets[si - 1]));
+        assert(block_set_overlap(tr, &sets[si], &sets[0]));
+        assert(block_set_overlap(tr, &sets[0], &sets[si]));
+        assert(si < 2 || !block_set_overlap(tr, &sets[si], &sets[si - 1]));
     }
 }
 
-static void block_tree_allocate_all_test(struct transaction *tr)
-{
+static void block_tree_allocate_all_test(struct transaction* tr) {
     uint i;
 
     for (i = 0; i < countof(keyfuncs); i++) {
@@ -479,8 +464,7 @@ static void block_tree_allocate_all_test(struct transaction *tr)
         transaction_activate(tr);
     }
 }
-static void block_map_test(struct transaction *tr)
-{
+static void block_map_test(struct transaction* tr) {
     uint i;
     struct block_mac block_mac = BLOCK_MAC_INITIAL_VALUE(block_mac);
     struct block_map block_map = BLOCK_MAP_INITIAL_VALUE(block_map);
@@ -499,8 +483,10 @@ static void block_map_test(struct transaction *tr)
     block_map_free(tr, &block_map);
 }
 
-static void free_frag_etc_test(struct transaction *tr, int start, int end, int inc)
-{
+static void free_frag_etc_test(struct transaction* tr,
+                               int start,
+                               int end,
+                               int inc) {
     int i;
 
     for (i = start; i < end; i += inc) {
@@ -509,12 +495,11 @@ static void free_frag_etc_test(struct transaction *tr, int start, int end, int i
     }
 }
 
-static void allocate_2_transactions_test_etc(struct transaction *tr,
+static void allocate_2_transactions_test_etc(struct transaction* tr,
                                              data_block_t blocks1[],
                                              size_t blocks1_count,
                                              data_block_t blocks2[],
-                                             size_t blocks2_count)
-{
+                                             size_t blocks2_count) {
     uint i;
     struct transaction tr1;
     struct transaction tr2;
@@ -522,7 +507,6 @@ static void allocate_2_transactions_test_etc(struct transaction *tr,
 
     transaction_init(&tr1, tr->fs, true);
     transaction_init(&tr2, tr->fs, true);
-
 
     for (i = 0; i < blocks_max_count; i++) {
         if (i < blocks1_count) {
@@ -572,12 +556,11 @@ static void allocate_2_transactions_test_etc(struct transaction *tr,
     transaction_free(&tr2);
 }
 
-static void free_test_etc(struct transaction *tr,
+static void free_test_etc(struct transaction* tr,
                           data_block_t blocks1[],
                           size_t blocks1_count,
                           data_block_t blocks2[],
-                          size_t blocks2_count)
-{
+                          size_t blocks2_count) {
     uint i;
     struct transaction tr1;
     struct transaction tr2;
@@ -635,7 +618,9 @@ static void free_test_etc(struct transaction *tr,
 enum {
     test_free_start = BLOCK_SIZE > 112 ? 20 : 200,
     test_free_split = test_free_start + (BLOCK_SIZE > 112 ? 60 : 20),
-    test_free_end = BLOCK_SIZE > 96 ? BLOCK_COUNT : BLOCK_SIZE > 80 ? BLOCK_COUNT - 8 : BLOCK_COUNT - 16,
+    test_free_end = BLOCK_SIZE > 96 ? BLOCK_COUNT
+                                    : BLOCK_SIZE > 80 ? BLOCK_COUNT - 8
+                                                      : BLOCK_COUNT - 16,
     test_free_increment = BLOCK_SIZE > 64 ? 2 : 20,
 
     allocated_size = BLOCK_SIZE > 128 ? 40 : 10,
@@ -644,8 +629,7 @@ enum {
 static data_block_t allocated[allocated_size];
 static data_block_t allocated2[allocated2_size];
 
-static void allocate_frag_test(struct transaction *tr)
-{
+static void allocate_frag_test(struct transaction* tr) {
     int i;
     struct block_range range;
 
@@ -694,8 +678,7 @@ static void allocate_frag_test(struct transaction *tr)
 #endif
 }
 
-static void allocate_free_same_test(struct transaction *tr)
-{
+static void allocate_free_same_test(struct transaction* tr) {
     uint i;
     printf("%s: start allocate then free same test\n", __func__);
     for (i = 0; i < countof(allocated); i++) {
@@ -728,15 +711,15 @@ static void allocate_free_same_test(struct transaction *tr)
     printf("%s: start allocate then free same test, done\n", __func__);
 }
 
-static void allocate_free_other_test(struct transaction *tr)
-{
+static void allocate_free_other_test(struct transaction* tr) {
     uint i;
 
     printf("%s: start allocate then free some other test\n", __func__);
     for (i = 0; i < countof(allocated); i++) {
         allocated[i] = block_allocate(tr);
         if (print_test_verbose) {
-            printf("tr.tmp_allocated after allocate %d, %lld:\n", i, allocated[i]);
+            printf("tr.tmp_allocated after allocate %d, %lld:\n", i,
+                   allocated[i]);
             block_set_print(tr, &tr->tmp_allocated);
             printf("tr.allocated after allocate %d, %lld:\n", i, allocated[i]);
             block_set_print(tr, &tr->allocated);
@@ -781,8 +764,7 @@ static void allocate_free_other_test(struct transaction *tr)
     printf("%s: start allocate then free some other test, done\n", __func__);
 }
 
-static void free_frag_rem_test(struct transaction *tr)
-{
+static void free_frag_rem_test(struct transaction* tr) {
     int i;
     printf("%s: start free rem test\n", __func__);
     free_frag_etc_test(tr, test_free_split, test_free_end, test_free_increment);
@@ -798,16 +780,16 @@ static void free_frag_rem_test(struct transaction *tr)
     printf("%s: start free rem test, done\n", __func__);
 }
 
-static void free_test(struct transaction *tr)
-{
+static void free_test(struct transaction* tr) {
     uint i;
 
     free_test_etc(tr, allocated, countof(allocated), NULL, 0);
 
     i = 0;
     do {
-        // TODO: use this version, currently does not work since ranges aer not merged accross nodes
-        //i = block_set_find_next_block(&fs.free, i, false);
+        // TODO: use this version, currently does not work since ranges aer not
+        // merged accross nodes
+        // i = block_set_find_next_block(&fs.free, i, false);
         while (block_set_find_next_block(tr, &tr->fs->free, i, true) == i) {
             i++;
         }
@@ -817,34 +799,30 @@ static void free_test(struct transaction *tr)
     } while (i);
 }
 
-static void allocate_2_transactions_test(struct transaction *tr)
-{
+static void allocate_2_transactions_test(struct transaction* tr) {
     printf("%s: start allocate 2 transactions test\n", __func__);
     allocate_2_transactions_test_etc(tr, allocated, countof(allocated),
                                      allocated2, countof(allocated2));
     printf("%s: allocate 2 transactions test done\n", __func__);
 }
 
-static void free_2_transactions_same_test(struct transaction *tr)
-{
+static void free_2_transactions_same_test(struct transaction* tr) {
     printf("%s: start free 2 transactions same test\n", __func__);
-    free_test_etc(tr, allocated, countof(allocated),
-                                      allocated, countof(allocated));
+    free_test_etc(tr, allocated, countof(allocated), allocated,
+                  countof(allocated));
     full_assert(check_fs_allocated(tr, allocated2, countof(allocated2)));
     printf("%s: free 2 transactions same test done\n", __func__);
 }
 
-static void free_2_transactions_same_test_2(struct transaction *tr)
-{
+static void free_2_transactions_same_test_2(struct transaction* tr) {
     printf("%s: start free 2 transactions same test 2\n", __func__);
-    free_test_etc(tr, allocated2, countof(allocated2),
-                                      allocated2, countof(allocated2));
+    free_test_etc(tr, allocated2, countof(allocated2), allocated2,
+                  countof(allocated2));
     full_assert(check_fs(tr));
     printf("%s: free 2 transactions same test 2 done\n", __func__);
 }
 
-static void allocate_all_test(struct transaction *tr)
-{
+static void allocate_all_test(struct transaction* tr) {
     while (block_allocate(tr)) {
         assert(!tr->failed);
     }
@@ -853,38 +831,35 @@ static void allocate_all_test(struct transaction *tr)
     transaction_activate(tr);
 }
 
-static void open_test_file_etc(struct transaction *tr,
-                               struct file_handle *file,
-                               const char *path,
+static void open_test_file_etc(struct transaction* tr,
+                               struct file_handle* file,
+                               const char* path,
                                enum file_create_mode create,
-                               bool expect_failure)
-{
+                               bool expect_failure) {
     bool found;
     found = file_open(tr, path, file, create);
     if (print_test_verbose) {
-        printf("%s: lookup file %s, create %d, got %lld:\n", __func__,
-               path, create, block_mac_to_block(tr, &file->block_mac));
+        printf("%s: lookup file %s, create %d, got %lld:\n", __func__, path,
+               create, block_mac_to_block(tr, &file->block_mac));
     }
 
     assert(found == !expect_failure);
     assert(!found || block_mac_valid(tr, &file->block_mac));
 }
 
-static void open_test_file(struct transaction *tr,
-                           struct file_handle *file,
-                           const char *path,
-                           enum file_create_mode create)
-{
+static void open_test_file(struct transaction* tr,
+                           struct file_handle* file,
+                           const char* path,
+                           enum file_create_mode create) {
     open_test_file_etc(tr, file, path, create, false);
 }
 
-static void file_allocate_all_test(struct transaction *master_tr,
+static void file_allocate_all_test(struct transaction* master_tr,
                                    uint tr_count,
                                    int success_count,
                                    int step_size,
-                                   const char *path,
-                                   enum file_create_mode create)
-{
+                                   const char* path,
+                                   enum file_create_mode create) {
     uint i;
     uint j;
     uint done;
@@ -894,7 +869,7 @@ static void file_allocate_all_test(struct transaction *master_tr,
     struct transaction tr[tr_count];
     int written_count[tr_count];
     size_t file_block_size = master_tr->fs->dev->block_size - sizeof(struct iv);
-    void *block_data_rw;
+    void* block_data_rw;
     obj_ref_t ref = OBJ_REF_INITIAL_VALUE(ref);
 
     for (i = 0; i < tr_count; i++) {
@@ -915,7 +890,8 @@ static void file_allocate_all_test(struct transaction *master_tr,
                     assert(j);
                     continue;
                 }
-                block_data_rw = file_get_block_write(&tr[i], &file[i], j, true, &ref);
+                block_data_rw =
+                        file_get_block_write(&tr[i], &file[i], j, true, &ref);
                 if (!block_data_rw) {
                     done++;
                     continue;
@@ -963,10 +939,9 @@ static void file_allocate_all_test(struct transaction *master_tr,
     }
 }
 
-static void file_create_all_test(struct transaction *tr)
-{
+static void file_create_all_test(struct transaction* tr) {
     int i;
-    char path[4+8+1];
+    char path[4 + 8 + 1];
     struct file_handle file;
 
     bool found;
@@ -986,36 +961,36 @@ static void file_create_all_test(struct transaction *tr)
 }
 
 /* run tests on already open file */
-static void file_test_open(struct transaction *tr,
-                           struct file_handle *file,
+static void file_test_open(struct transaction* tr,
+                           struct file_handle* file,
                            int allocate,
                            int read,
                            int free,
-                           int id)
-{
+                           int id) {
     int i;
-    int *block_data_rw;
+    int* block_data_rw;
     obj_ref_t ref = OBJ_REF_INITIAL_VALUE(ref);
-    const int *block_data_ro;
+    const int* block_data_ro;
     size_t file_block_size = tr->fs->dev->block_size - sizeof(struct iv);
 
     if (allocate) {
         for (i = 0; i < allocate; i++) {
             block_data_rw = file_get_block_write(tr, file, i, true, &ref);
             if (print_test_verbose) {
-                printf("%s: allocate file block %d, %lld:\n",
-                       __func__, i, data_to_block_num(block_data_rw));
+                printf("%s: allocate file block %d, %lld:\n", __func__, i,
+                       data_to_block_num(block_data_rw));
             }
             assert(block_data_rw);
             /* TODO: store iv in file block map */
-            block_data_rw = (void *)block_data_rw + sizeof(struct iv);
-            //block_data_rw = block_get_cleared(block)+ sizeof(struct iv);
+            block_data_rw = (void*)block_data_rw + sizeof(struct iv);
+            // block_data_rw = block_get_cleared(block)+ sizeof(struct iv);
             block_data_rw[0] = i;
             block_data_rw[1] = ~i;
             block_data_rw[2] = id;
             block_data_rw[3] = ~id;
             file_block_put_dirty(tr, file, i,
-                                 (void *)block_data_rw - sizeof(struct iv), &ref);
+                                 (void*)block_data_rw - sizeof(struct iv),
+                                 &ref);
         }
         if (file->size < i * file_block_size) {
             file_set_size(tr, file, i * file_block_size);
@@ -1034,15 +1009,15 @@ static void file_test_open(struct transaction *tr,
                 break;
             }
             if (print_test_verbose) {
-                printf("%s: found file block %d, %lld:\n",
-                       __func__, i, data_to_block_num(block_data_ro));
+                printf("%s: found file block %d, %lld:\n", __func__, i,
+                       data_to_block_num(block_data_ro));
             }
-            block_data_ro = (void *)block_data_ro + sizeof(struct iv);
+            block_data_ro = (void*)block_data_ro + sizeof(struct iv);
             assert(block_data_ro[0] == i);
             assert(block_data_ro[1] == ~i);
             assert(block_data_ro[2] == id);
             assert(block_data_ro[3] == ~id);
-            file_block_put((void *)block_data_ro - sizeof(struct iv), &ref);
+            file_block_put((void*)block_data_ro - sizeof(struct iv), &ref);
         }
         assert(i == read);
         assert(file->size >= i * file_block_size);
@@ -1054,8 +1029,8 @@ static void file_test_open(struct transaction *tr,
             block_data_ro = file_get_block(tr, file, i, &ref);
             if (block_data_ro) {
                 file_block_put(block_data_ro, &ref);
-                printf("%s: file block %d, %lld not deleted\n",
-                       __func__, i, data_to_block_num(block_data_ro));
+                printf("%s: file block %d, %lld not deleted\n", __func__, i,
+                       data_to_block_num(block_data_ro));
                 break;
             }
         }
@@ -1067,8 +1042,7 @@ static void file_test_open(struct transaction *tr,
     }
 }
 
-static void file_test_commit(struct transaction *tr, bool commit)
-{
+static void file_test_commit(struct transaction* tr, bool commit) {
     if (commit) {
         transaction_complete(tr);
         assert(!tr->failed);
@@ -1076,13 +1050,12 @@ static void file_test_commit(struct transaction *tr, bool commit)
     }
 }
 
-static void file_move_expect(struct transaction *tr,
-                             const char *src_path,
+static void file_move_expect(struct transaction* tr,
+                             const char* src_path,
                              enum file_create_mode src_create,
-                             const char *dest_path,
+                             const char* dest_path,
                              enum file_create_mode dest_create,
-                             bool expect)
-{
+                             bool expect) {
     struct file_handle file;
     bool moved;
 
@@ -1096,36 +1069,33 @@ static void file_move_expect(struct transaction *tr,
     file_close(&file);
 }
 
-static void file_move_expect_fail(struct transaction *tr,
-                                  const char *src_path,
+static void file_move_expect_fail(struct transaction* tr,
+                                  const char* src_path,
                                   enum file_create_mode src_create,
-                                  const char *dest_path,
-                                  enum file_create_mode dest_create)
-{
+                                  const char* dest_path,
+                                  enum file_create_mode dest_create) {
     file_move_expect(tr, src_path, src_create, dest_path, dest_create, false);
 }
 
-static void file_move_expect_success(struct transaction *tr,
-                                     const char *src_path,
+static void file_move_expect_success(struct transaction* tr,
+                                     const char* src_path,
                                      enum file_create_mode src_create,
-                                     const char *dest_path,
-                                     enum file_create_mode dest_create)
-{
+                                     const char* dest_path,
+                                     enum file_create_mode dest_create) {
     file_move_expect(tr, src_path, src_create, dest_path, dest_create, true);
 }
 
-static void file_test_etc(struct transaction *tr,
+static void file_test_etc(struct transaction* tr,
                           bool commit,
-                          const char *path,
+                          const char* path,
                           enum file_create_mode create,
-                          const char *move_path,
+                          const char* move_path,
                           enum file_create_mode move_create,
                           int allocate,
                           int read,
                           int free,
                           bool delete,
-                          int id)
-{
+                          int id) {
     bool deleted;
     struct file_handle file;
 
@@ -1143,8 +1113,8 @@ static void file_test_etc(struct transaction *tr,
 
     if (delete) {
         if (print_test_verbose) {
-            printf("%s: delete file %s, at %lld:\n",
-                   __func__, path, block_mac_to_block(tr, &file.block_mac));
+            printf("%s: delete file %s, at %lld:\n", __func__, path,
+                   block_mac_to_block(tr, &file.block_mac));
         }
         deleted = file_delete(tr, path);
         file_test_commit(tr, commit);
@@ -1154,21 +1124,20 @@ static void file_test_etc(struct transaction *tr,
     file_close(&file);
 }
 
-static void file_test(struct transaction *tr,
-                      const char *path,
+static void file_test(struct transaction* tr,
+                      const char* path,
                       enum file_create_mode create,
                       int allocate,
                       int read,
                       int free,
                       bool delete,
-                      int id)
-{
+                      int id) {
     file_test_etc(tr, false, path, create, NULL, FILE_OPEN_NO_CREATE, allocate,
                   read, free, delete, id);
 }
 
-static void file_test_split_tr(struct transaction *tr,
-                               const char *path,
+static void file_test_split_tr(struct transaction* tr,
+                               const char* path,
                                enum file_create_mode create,
                                int open_count,
                                int allocate_file_index,
@@ -1177,8 +1146,7 @@ static void file_test_split_tr(struct transaction *tr,
                                int read,
                                int free,
                                bool delete,
-                               int id)
-{
+                               int id) {
     bool deleted;
     int i;
     struct file_handle file[open_count];
@@ -1187,7 +1155,8 @@ static void file_test_split_tr(struct transaction *tr,
     assert(allocate_index < open_count);
 
     for (i = 0; i < open_count; i++) {
-        open_test_file(tr, &file[i], path, (i == 0) ? create : FILE_OPEN_NO_CREATE);
+        open_test_file(tr, &file[i], path,
+                       (i == 0) ? create : FILE_OPEN_NO_CREATE);
         assert(file[i].size == 0 || i > allocate_index);
         if (i == allocate_index) {
             file_test_open(tr, &file[allocate_file_index], allocate, 0, 0, id);
@@ -1225,8 +1194,8 @@ static void file_test_split_tr(struct transaction *tr,
 
     if (delete) {
         if (print_test_verbose) {
-            printf("%s: delete file %s, at %lld:\n",
-                   __func__, path, block_mac_to_block(tr, &file[i].block_mac));
+            printf("%s: delete file %s, at %lld:\n", __func__, path,
+                   block_mac_to_block(tr, &file[i].block_mac));
         }
         deleted = file_delete(tr, path);
         assert(deleted);
@@ -1237,14 +1206,13 @@ static void file_test_split_tr(struct transaction *tr,
     }
 }
 
-static void file_read_after_delete_test(struct transaction *tr)
-{
-    const char *path = "test1s";
+static void file_read_after_delete_test(struct transaction* tr) {
+    const char* path = "test1s";
     struct file_handle file;
     struct file_handle file2;
     obj_ref_t ref = OBJ_REF_INITIAL_VALUE(ref);
-    const void *block_data_ro;
-    void *block_data_rw;
+    const void* block_data_ro;
+    void* block_data_rw;
     struct transaction tr2;
 
     transaction_init(&tr2, tr->fs, true);
@@ -1301,33 +1269,28 @@ static void file_read_after_delete_test(struct transaction *tr)
 static const int file_test_block_count = BLOCK_SIZE > 64 ? 40 : 10;
 static const int file_test_many_file_count = BLOCK_SIZE > 80 ? 40 : 10;
 
-static void file_create1_small_test(struct transaction *tr)
-{
+static void file_create1_small_test(struct transaction* tr) {
     file_test(tr, "test1s", FILE_OPEN_CREATE_EXCLUSIVE, 0, 0, 0, false, 1);
 }
 
-static void file_write1_small_test(struct transaction *tr)
-{
+static void file_write1_small_test(struct transaction* tr) {
     file_test(tr, "test1s", FILE_OPEN_NO_CREATE, 1, 0, 0, false, 1);
 }
 
-static void file_delete1_small_test(struct transaction *tr)
-{
+static void file_delete1_small_test(struct transaction* tr) {
     file_test(tr, "test1s", FILE_OPEN_NO_CREATE, 0, 1, 1, true, 1);
 }
 
-static void file_create_write_delete1_small_test(struct transaction *tr)
-{
+static void file_create_write_delete1_small_test(struct transaction* tr) {
     file_test(tr, "test1s", FILE_OPEN_CREATE_EXCLUSIVE, 1, 1, 1, true, 1);
 }
 
-static void file_splittr1_small_test(struct transaction *tr)
-{
-    file_test_split_tr(tr, "test1s", FILE_OPEN_NO_CREATE, 1, 0, 0, 1, 1, 0, false, 1);
+static void file_splittr1_small_test(struct transaction* tr) {
+    file_test_split_tr(tr, "test1s", FILE_OPEN_NO_CREATE, 1, 0, 0, 1, 1, 0,
+                       false, 1);
 }
 
-static void file_splittr1o4_small_test(struct transaction *tr)
-{
+static void file_splittr1o4_small_test(struct transaction* tr) {
 #if 0
     /*
      * Disabled test: Current file code does not allow having the same
@@ -1343,13 +1306,12 @@ static void file_splittr1o4_small_test(struct transaction *tr)
 #endif
 }
 
-static void file_splittr1c_small_test(struct transaction *tr)
-{
-    file_test_split_tr(tr, "test1s", FILE_OPEN_CREATE_EXCLUSIVE, 1, 0, 0, 1, 1, 1, true, 1);
+static void file_splittr1c_small_test(struct transaction* tr) {
+    file_test_split_tr(tr, "test1s", FILE_OPEN_CREATE_EXCLUSIVE, 1, 0, 0, 1, 1,
+                       1, true, 1);
 }
 
-static void file_splittr1o4c_small_test(struct transaction *tr)
-{
+static void file_splittr1o4c_small_test(struct transaction* tr) {
 #if 0
     /*
      * Disabled test: Current file code does not allow having the same
@@ -1359,8 +1321,7 @@ static void file_splittr1o4c_small_test(struct transaction *tr)
 #endif
 }
 
-static void file_splittr1o4cl_small_test(struct transaction *tr)
-{
+static void file_splittr1o4cl_small_test(struct transaction* tr) {
 #if 0
     /*
      * Disabled test: Current file code does not allow having the same
@@ -1370,114 +1331,124 @@ static void file_splittr1o4cl_small_test(struct transaction *tr)
 #endif
 }
 
-static void file_create1_test(struct transaction *tr)
-{
+static void file_create1_test(struct transaction* tr) {
     file_test(tr, "test1", FILE_OPEN_CREATE_EXCLUSIVE, 0, 0, 0, false, 1);
 }
 
-static void file_write1h_test(struct transaction *tr)
-{
-    file_test(tr, "test1", FILE_OPEN_NO_CREATE, file_test_block_count / 2, 0, 0, false, 1);
+static void file_write1h_test(struct transaction* tr) {
+    file_test(tr, "test1", FILE_OPEN_NO_CREATE, file_test_block_count / 2, 0, 0,
+              false, 1);
 }
 
-static void file_write1_test(struct transaction *tr)
-{
-    file_test(tr, "test1", FILE_OPEN_NO_CREATE, file_test_block_count, 0, 0, false, 1);
+static void file_write1_test(struct transaction* tr) {
+    file_test(tr, "test1", FILE_OPEN_NO_CREATE, file_test_block_count, 0, 0,
+              false, 1);
 }
 
-static void file_delete1_test(struct transaction *tr)
-{
-    file_test(tr, "test1", FILE_OPEN_NO_CREATE, 0, file_test_block_count, file_test_block_count, true, 1);
+static void file_delete1_test(struct transaction* tr) {
+    file_test(tr, "test1", FILE_OPEN_NO_CREATE, 0, file_test_block_count,
+              file_test_block_count, true, 1);
 }
 
-static void file_delete_create_write1_test(struct transaction *tr)
-{
-    file_test(tr, "test1", FILE_OPEN_NO_CREATE, 0, file_test_block_count, file_test_block_count, true, 1);
-    file_test(tr, "test1", FILE_OPEN_CREATE_EXCLUSIVE, file_test_block_count, 0, 0, false, 1);
+static void file_delete_create_write1_test(struct transaction* tr) {
+    file_test(tr, "test1", FILE_OPEN_NO_CREATE, 0, file_test_block_count,
+              file_test_block_count, true, 1);
+    file_test(tr, "test1", FILE_OPEN_CREATE_EXCLUSIVE, file_test_block_count, 0,
+              0, false, 1);
 }
 
-static void file_delete1_no_free_test(struct transaction *tr)
-{
+static void file_delete1_no_free_test(struct transaction* tr) {
     file_test(tr, "test1", FILE_OPEN_NO_CREATE, 0, 0, 0, true, 1);
 }
 
-static void file_move12_test(struct transaction *tr)
-{
-    file_test_etc(tr, false, "test1", FILE_OPEN_NO_CREATE, "test2", FILE_OPEN_CREATE_EXCLUSIVE,
-                  0, file_test_block_count, 0, false, 1);
+static void file_move12_test(struct transaction* tr) {
+    file_test_etc(tr, false, "test1", FILE_OPEN_NO_CREATE, "test2",
+                  FILE_OPEN_CREATE_EXCLUSIVE, 0, file_test_block_count, 0,
+                  false, 1);
 }
 
-static void file_move21_test(struct transaction *tr)
-{
-    file_test_etc(tr, true, "test2", FILE_OPEN_NO_CREATE, "test1", FILE_OPEN_CREATE_EXCLUSIVE,
-                  0, file_test_block_count, 0, false, 1);
+static void file_move21_test(struct transaction* tr) {
+    file_test_etc(tr, true, "test2", FILE_OPEN_NO_CREATE, "test1",
+                  FILE_OPEN_CREATE_EXCLUSIVE, 0, file_test_block_count, 0,
+                  false, 1);
 }
 
-static void file_create2_test(struct transaction *tr)
-{
-    file_test(tr, "test1", FILE_OPEN_CREATE_EXCLUSIVE, file_test_block_count, 0, 0, false, 2);
-    file_test(tr, "test2", FILE_OPEN_CREATE_EXCLUSIVE, file_test_block_count, 0, 0, false, 3);
+static void file_create2_test(struct transaction* tr) {
+    file_test(tr, "test1", FILE_OPEN_CREATE_EXCLUSIVE, file_test_block_count, 0,
+              0, false, 2);
+    file_test(tr, "test2", FILE_OPEN_CREATE_EXCLUSIVE, file_test_block_count, 0,
+              0, false, 3);
 }
 
-static void file_move_test(struct transaction *tr)
-{
-    file_test(tr, "test1", FILE_OPEN_CREATE_EXCLUSIVE, file_test_block_count, 0, 0, false, 2);
-    file_test_etc(tr, false, "test1", FILE_OPEN_NO_CREATE, "test2", FILE_OPEN_CREATE_EXCLUSIVE,
-                  0, file_test_block_count, 0, false, 2);
-    file_test(tr, "test2", FILE_OPEN_NO_CREATE, 0, file_test_block_count, file_test_block_count, true, 2);
+static void file_move_test(struct transaction* tr) {
+    file_test(tr, "test1", FILE_OPEN_CREATE_EXCLUSIVE, file_test_block_count, 0,
+              0, false, 2);
+    file_test_etc(tr, false, "test1", FILE_OPEN_NO_CREATE, "test2",
+                  FILE_OPEN_CREATE_EXCLUSIVE, 0, file_test_block_count, 0,
+                  false, 2);
+    file_test(tr, "test2", FILE_OPEN_NO_CREATE, 0, file_test_block_count,
+              file_test_block_count, true, 2);
 
-    file_test(tr, "test1", FILE_OPEN_CREATE_EXCLUSIVE, file_test_block_count, 0, 0, false, 2);
-    file_test(tr, "test2", FILE_OPEN_CREATE_EXCLUSIVE, file_test_block_count, 0, 0, false, 3);
+    file_test(tr, "test1", FILE_OPEN_CREATE_EXCLUSIVE, file_test_block_count, 0,
+              0, false, 2);
+    file_test(tr, "test2", FILE_OPEN_CREATE_EXCLUSIVE, file_test_block_count, 0,
+              0, false, 3);
 
-    file_test(tr, "test1", FILE_OPEN_NO_CREATE, 0, file_test_block_count, false, false, 2);
-    file_test(tr, "test2", FILE_OPEN_NO_CREATE, 0, file_test_block_count, false, false, 3);
+    file_test(tr, "test1", FILE_OPEN_NO_CREATE, 0, file_test_block_count, false,
+              false, 2);
+    file_test(tr, "test2", FILE_OPEN_NO_CREATE, 0, file_test_block_count, false,
+              false, 3);
 
-    file_move_expect_fail(tr, "test1", FILE_OPEN_NO_CREATE,
-                          "test3", FILE_OPEN_NO_CREATE);
+    file_move_expect_fail(tr, "test1", FILE_OPEN_NO_CREATE, "test3",
+                          FILE_OPEN_NO_CREATE);
 
-    file_move_expect_fail(tr, "test1", FILE_OPEN_NO_CREATE,
-                          "test2", FILE_OPEN_CREATE_EXCLUSIVE);
+    file_move_expect_fail(tr, "test1", FILE_OPEN_NO_CREATE, "test2",
+                          FILE_OPEN_CREATE_EXCLUSIVE);
 
-    file_move_expect_fail(tr, "test1", FILE_OPEN_NO_CREATE,
-                          "test1", FILE_OPEN_CREATE_EXCLUSIVE);
+    file_move_expect_fail(tr, "test1", FILE_OPEN_NO_CREATE, "test1",
+                          FILE_OPEN_CREATE_EXCLUSIVE);
 
-    file_move_expect_success(tr, "test1", FILE_OPEN_NO_CREATE,
-                             "test1", FILE_OPEN_NO_CREATE);
+    file_move_expect_success(tr, "test1", FILE_OPEN_NO_CREATE, "test1",
+                             FILE_OPEN_NO_CREATE);
 
     transaction_complete(tr);
     assert(!tr->failed);
     transaction_activate(tr);
 
-    file_move_expect_fail(tr, "test1", FILE_OPEN_NO_CREATE,
-                          "test3", FILE_OPEN_NO_CREATE);
+    file_move_expect_fail(tr, "test1", FILE_OPEN_NO_CREATE, "test3",
+                          FILE_OPEN_NO_CREATE);
 
-    file_move_expect_fail(tr, "test1", FILE_OPEN_NO_CREATE,
-                          "test2", FILE_OPEN_CREATE_EXCLUSIVE);
+    file_move_expect_fail(tr, "test1", FILE_OPEN_NO_CREATE, "test2",
+                          FILE_OPEN_CREATE_EXCLUSIVE);
 
-    file_move_expect_fail(tr, "test1", FILE_OPEN_NO_CREATE,
-                          "test1", FILE_OPEN_CREATE_EXCLUSIVE);
+    file_move_expect_fail(tr, "test1", FILE_OPEN_NO_CREATE, "test1",
+                          FILE_OPEN_CREATE_EXCLUSIVE);
 
-    file_move_expect_success(tr, "test1", FILE_OPEN_NO_CREATE,
-                             "test1", FILE_OPEN_NO_CREATE);
+    file_move_expect_success(tr, "test1", FILE_OPEN_NO_CREATE, "test1",
+                             FILE_OPEN_NO_CREATE);
 
-    file_test_etc(tr, false, "test1", FILE_OPEN_NO_CREATE, "test2", FILE_OPEN_NO_CREATE,
-                  0, file_test_block_count, 0, false, 2);
+    file_test_etc(tr, false, "test1", FILE_OPEN_NO_CREATE, "test2",
+                  FILE_OPEN_NO_CREATE, 0, file_test_block_count, 0, false, 2);
 
-    file_test(tr, "test2", FILE_OPEN_NO_CREATE, 0, file_test_block_count, false, false, 2);
+    file_test(tr, "test2", FILE_OPEN_NO_CREATE, 0, file_test_block_count, false,
+              false, 2);
 
-    file_test(tr, "test2", FILE_OPEN_NO_CREATE, 0, file_test_block_count, file_test_block_count, true, 2);
+    file_test(tr, "test2", FILE_OPEN_NO_CREATE, 0, file_test_block_count,
+              file_test_block_count, true, 2);
 }
 
-static void file_delete2_test(struct transaction *tr)
-{
-    file_test(tr, "test1", FILE_OPEN_NO_CREATE, 0, file_test_block_count, false, false, 2);
-    file_test(tr, "test2", FILE_OPEN_NO_CREATE, 0, file_test_block_count, false, false, 3);
-    file_test(tr, "test1", FILE_OPEN_NO_CREATE, 0, file_test_block_count, file_test_block_count, file_test_block_count, 2);
-    file_test(tr, "test2", FILE_OPEN_NO_CREATE, 0, file_test_block_count, file_test_block_count, file_test_block_count, 3);
+static void file_delete2_test(struct transaction* tr) {
+    file_test(tr, "test1", FILE_OPEN_NO_CREATE, 0, file_test_block_count, false,
+              false, 2);
+    file_test(tr, "test2", FILE_OPEN_NO_CREATE, 0, file_test_block_count, false,
+              false, 3);
+    file_test(tr, "test1", FILE_OPEN_NO_CREATE, 0, file_test_block_count,
+              file_test_block_count, file_test_block_count, 2);
+    file_test(tr, "test2", FILE_OPEN_NO_CREATE, 0, file_test_block_count,
+              file_test_block_count, file_test_block_count, 3);
 }
 
-static void file_create2_read_after_commit_test(struct transaction *tr)
-{
+static void file_create2_read_after_commit_test(struct transaction* tr) {
     int i;
     struct file_handle file[2];
 
@@ -1496,9 +1467,7 @@ static void file_create2_read_after_commit_test(struct transaction *tr)
     }
 }
 
-
-static void file_create3_conflict_test(struct transaction *tr)
-{
+static void file_create3_conflict_test(struct transaction* tr) {
     struct transaction tr1;
     struct transaction tr2;
     struct transaction tr3;
@@ -1528,8 +1497,7 @@ static void file_create3_conflict_test(struct transaction *tr)
     transaction_free(&tr3);
 }
 
-static void file_create_delete_2_transaction_test(struct transaction *tr)
-{
+static void file_create_delete_2_transaction_test(struct transaction* tr) {
     struct transaction tr1;
     struct transaction tr2;
 
@@ -1562,8 +1530,7 @@ static void file_create_delete_2_transaction_test(struct transaction *tr)
     transaction_free(&tr2);
 }
 
-static void file_create_many_test(struct transaction *tr)
-{
+static void file_create_many_test(struct transaction* tr) {
     char path[10];
     int i;
     for (i = 0; i < file_test_many_file_count; i++) {
@@ -1572,8 +1539,7 @@ static void file_create_many_test(struct transaction *tr)
     }
 }
 
-static void file_delete_many_test(struct transaction *tr)
-{
+static void file_delete_many_test(struct transaction* tr) {
     char path[10];
     int i;
 
@@ -1592,14 +1558,14 @@ struct file_iterate_many_state {
     char last_path[10];
 };
 
-static bool file_iterate_many_iter(struct file_iterate_state *iter,
-                                   struct transaction *tr,
-                                   const struct block_mac *block_mac,
-                                   bool added, bool removed)
-{
-    struct file_iterate_many_state *miter =
-        containerof(iter, struct file_iterate_many_state, iter);
-    const struct file_info *file_info;
+static bool file_iterate_many_iter(struct file_iterate_state* iter,
+                                   struct transaction* tr,
+                                   const struct block_mac* block_mac,
+                                   bool added,
+                                   bool removed) {
+    struct file_iterate_many_state* miter =
+            containerof(iter, struct file_iterate_many_state, iter);
+    const struct file_info* file_info;
     obj_ref_t ref = OBJ_REF_INITIAL_VALUE(ref);
     int i;
     int ret;
@@ -1622,12 +1588,11 @@ static bool file_iterate_many_iter(struct file_iterate_state *iter,
     return miter->stop;
 }
 
-static void file_iterate_many_test(struct transaction *tr)
-{
+static void file_iterate_many_test(struct transaction* tr) {
     struct file_iterate_many_state state = {
-        .iter.file =  file_iterate_many_iter,
-        .found = 0,
-        .stop = false,
+            .iter.file = file_iterate_many_iter,
+            .found = 0,
+            .stop = false,
     };
     uint64_t last_found = 0;
     bool ret;
@@ -1654,46 +1619,38 @@ static void file_iterate_many_test(struct transaction *tr)
     assert(ret);
 }
 
-
-static void file_allocate_all1_test(struct transaction *tr)
-{
+static void file_allocate_all1_test(struct transaction* tr) {
     file_allocate_all_test(tr, 1, 0, 1, "test1", FILE_OPEN_CREATE);
 }
 
-static void file_allocate_all_2tr_1_test(struct transaction *tr)
-{
+static void file_allocate_all_2tr_1_test(struct transaction* tr) {
     file_allocate_all_test(tr, 2, 0, 1, "test1", FILE_OPEN_CREATE);
 }
 
-static void file_allocate_all_8tr_1_test(struct transaction *tr)
-{
+static void file_allocate_all_8tr_1_test(struct transaction* tr) {
     file_allocate_all_test(tr, 8, 0, 1, "test1", FILE_OPEN_CREATE);
 }
 
-static void file_allocate_all_complete1_test(struct transaction *tr)
-{
+static void file_allocate_all_complete1_test(struct transaction* tr) {
     file_allocate_all_test(tr, 1, 1, 1, "test1", FILE_OPEN_CREATE);
 }
 
-static void file_allocate_all_complete_multi1_test(struct transaction *tr)
-{
+static void file_allocate_all_complete_multi1_test(struct transaction* tr) {
     file_allocate_all_test(tr, 2, 8, 10, "test1", FILE_OPEN_CREATE);
 }
 
-static void file_allocate_leave_10_test(struct transaction *tr)
-{
+static void file_allocate_leave_10_test(struct transaction* tr) {
     file_allocate_all_test(tr, 1, 1, 10, "test1", FILE_OPEN_CREATE);
 }
 
-static void future_fs_version_test(struct transaction *tr)
-{
+static void future_fs_version_test(struct transaction* tr) {
     obj_ref_t super_ref = OBJ_REF_INITIAL_VALUE(super_ref);
-    struct fs *fs = tr->fs;
-    const struct key *key = fs->key;
-    struct block_device *dev = fs->dev;
-    struct block_device *super_dev = fs->super_dev;
-    const void *super_ro;
-    uint32_t *super_rw;
+    struct fs* fs = tr->fs;
+    const struct key* key = fs->key;
+    struct block_device* dev = fs->dev;
+    struct block_device* super_dev = fs->super_dev;
+    const void* super_ro;
+    uint32_t* super_rw;
     data_block_t block;
     int ret;
 
@@ -1749,136 +1706,137 @@ static void file_allocate_leave_10_test2(struct transaction *tr)
 }
 #endif
 
-#define TEST(a, ...) {.name = #a, .func = (a), ##__VA_ARGS__}
+#define TEST(a, ...) \
+    { .name = #a, .func = (a), ##__VA_ARGS__ }
 struct {
-    const char *name;
+    const char* name;
     bool no_free_check;
-    void (*func)(struct transaction *tr);
-} tests[]= {
-    TEST(empty_test),
-    TEST(empty_test),
-    TEST(block_tree_test),
-    TEST(block_set_test),
-    TEST(block_map_test),
-    TEST(allocate_frag_test, .no_free_check = true),
-    TEST(allocate_free_same_test, .no_free_check = true),
-    TEST(allocate_free_other_test, .no_free_check = true),
-    TEST(free_frag_rem_test, .no_free_check = true),
-    TEST(free_test),
-    TEST(allocate_2_transactions_test, .no_free_check = true),
-    TEST(free_2_transactions_same_test, .no_free_check = true),
-    TEST(free_2_transactions_same_test_2),
-    TEST(allocate_all_test),
-    TEST(block_tree_allocate_all_test),
-    TEST(file_create1_small_test),
-    TEST(file_write1_small_test),
-    TEST(file_delete1_small_test),
-    TEST(file_read_after_delete_test),
-    TEST(file_create1_small_test),
-    TEST(file_splittr1_small_test),
-    TEST(file_delete1_small_test),
-    TEST(file_create1_small_test),
-    TEST(file_splittr1o4_small_test),
-    TEST(file_delete1_small_test),
-    TEST(file_create_write_delete1_small_test),
-    TEST(file_splittr1c_small_test),
-    TEST(file_splittr1o4c_small_test),
-    TEST(file_splittr1o4cl_small_test),
-    TEST(file_create1_test),
-    TEST(file_write1h_test),
-    TEST(file_write1_test),
-    TEST(file_delete1_test),
-    TEST(file_create2_test),
-    TEST(file_delete2_test),
-    TEST(file_create2_read_after_commit_test),
-    TEST(file_delete2_test),
-    TEST(file_move_test),
-    TEST(file_create1_test),
-    TEST(file_write1_test),
-    TEST(file_move12_test),
-    TEST(file_move21_test),
-    TEST(file_delete1_test),
-    TEST(file_create3_conflict_test),
-    TEST(file_create_delete_2_transaction_test),
-    TEST(file_create_many_test),
-    TEST(file_create1_small_test),
-    TEST(file_write1_small_test),
-    TEST(file_write1_small_test),
-    TEST(file_delete1_small_test),
-    TEST(file_iterate_many_test),
-    TEST(file_delete_many_test),
-    TEST(file_create1_test),
-    TEST(file_allocate_all1_test),
-    TEST(file_write1_test),
-    TEST(file_delete1_no_free_test),
-    TEST(file_allocate_all1_test),
-    TEST(file_create_all_test),
-    TEST(file_create1_test),
-    TEST(file_write1_test),
-    TEST(file_delete_create_write1_test),
-    TEST(file_write1_test),
-    TEST(file_delete1_test),
-    TEST(file_allocate_all_2tr_1_test),
-    TEST(file_allocate_all_8tr_1_test),
-    TEST(file_create1_test),
-    TEST(file_allocate_all_complete1_test),
-    TEST(file_delete1_no_free_test),
-    TEST(file_allocate_all_complete1_test),
-    TEST(file_delete1_no_free_test),
-    TEST(file_create1_test),
-    TEST(file_allocate_all_complete_multi1_test),
-    TEST(file_delete1_no_free_test),
-    TEST(file_allocate_all_complete_multi1_test),
-    TEST(file_delete1_no_free_test),
-    TEST(file_create1_test),
-    TEST(file_allocate_leave_10_test),
-    TEST(file_create1_small_test),
-    TEST(file_write1_small_test),
-    TEST(file_delete1_small_test),
-    TEST(file_create1_small_test),
-    TEST(file_splittr1_small_test),
-    TEST(file_delete1_small_test),
-    TEST(file_create1_small_test),
-    TEST(file_splittr1o4_small_test),
-    TEST(file_delete1_small_test),
-    TEST(file_allocate_all1_test),
-//    TEST(file_write1_test),
-//    TEST(file_allocate_leave_10_test2),
-    TEST(file_delete1_no_free_test),
-    TEST(future_fs_version_test),
+    void (*func)(struct transaction* tr);
+} tests[] = {
+        TEST(empty_test),
+        TEST(empty_test),
+        TEST(block_tree_test),
+        TEST(block_set_test),
+        TEST(block_map_test),
+        TEST(allocate_frag_test, .no_free_check = true),
+        TEST(allocate_free_same_test, .no_free_check = true),
+        TEST(allocate_free_other_test, .no_free_check = true),
+        TEST(free_frag_rem_test, .no_free_check = true),
+        TEST(free_test),
+        TEST(allocate_2_transactions_test, .no_free_check = true),
+        TEST(free_2_transactions_same_test, .no_free_check = true),
+        TEST(free_2_transactions_same_test_2),
+        TEST(allocate_all_test),
+        TEST(block_tree_allocate_all_test),
+        TEST(file_create1_small_test),
+        TEST(file_write1_small_test),
+        TEST(file_delete1_small_test),
+        TEST(file_read_after_delete_test),
+        TEST(file_create1_small_test),
+        TEST(file_splittr1_small_test),
+        TEST(file_delete1_small_test),
+        TEST(file_create1_small_test),
+        TEST(file_splittr1o4_small_test),
+        TEST(file_delete1_small_test),
+        TEST(file_create_write_delete1_small_test),
+        TEST(file_splittr1c_small_test),
+        TEST(file_splittr1o4c_small_test),
+        TEST(file_splittr1o4cl_small_test),
+        TEST(file_create1_test),
+        TEST(file_write1h_test),
+        TEST(file_write1_test),
+        TEST(file_delete1_test),
+        TEST(file_create2_test),
+        TEST(file_delete2_test),
+        TEST(file_create2_read_after_commit_test),
+        TEST(file_delete2_test),
+        TEST(file_move_test),
+        TEST(file_create1_test),
+        TEST(file_write1_test),
+        TEST(file_move12_test),
+        TEST(file_move21_test),
+        TEST(file_delete1_test),
+        TEST(file_create3_conflict_test),
+        TEST(file_create_delete_2_transaction_test),
+        TEST(file_create_many_test),
+        TEST(file_create1_small_test),
+        TEST(file_write1_small_test),
+        TEST(file_write1_small_test),
+        TEST(file_delete1_small_test),
+        TEST(file_iterate_many_test),
+        TEST(file_delete_many_test),
+        TEST(file_create1_test),
+        TEST(file_allocate_all1_test),
+        TEST(file_write1_test),
+        TEST(file_delete1_no_free_test),
+        TEST(file_allocate_all1_test),
+        TEST(file_create_all_test),
+        TEST(file_create1_test),
+        TEST(file_write1_test),
+        TEST(file_delete_create_write1_test),
+        TEST(file_write1_test),
+        TEST(file_delete1_test),
+        TEST(file_allocate_all_2tr_1_test),
+        TEST(file_allocate_all_8tr_1_test),
+        TEST(file_create1_test),
+        TEST(file_allocate_all_complete1_test),
+        TEST(file_delete1_no_free_test),
+        TEST(file_allocate_all_complete1_test),
+        TEST(file_delete1_no_free_test),
+        TEST(file_create1_test),
+        TEST(file_allocate_all_complete_multi1_test),
+        TEST(file_delete1_no_free_test),
+        TEST(file_allocate_all_complete_multi1_test),
+        TEST(file_delete1_no_free_test),
+        TEST(file_create1_test),
+        TEST(file_allocate_leave_10_test),
+        TEST(file_create1_small_test),
+        TEST(file_write1_small_test),
+        TEST(file_delete1_small_test),
+        TEST(file_create1_small_test),
+        TEST(file_splittr1_small_test),
+        TEST(file_delete1_small_test),
+        TEST(file_create1_small_test),
+        TEST(file_splittr1o4_small_test),
+        TEST(file_delete1_small_test),
+        TEST(file_allocate_all1_test),
+        //    TEST(file_write1_test),
+        //    TEST(file_allocate_leave_10_test2),
+        TEST(file_delete1_no_free_test),
+        TEST(future_fs_version_test),
 };
 
-int main(int argc, const char *argv[])
-{
-    //struct block_set_node *node;
+int main(int argc, const char* argv[]) {
+    // struct block_set_node *node;
     struct block_device dev = {
-        .start_read = block_test_start_read,
-        .start_write = block_test_start_write,
-        .block_count = BLOCK_COUNT,
-        .block_size = 256,
-        .block_num_size = 8,
-        .mac_size = 16,
-        .tamper_detecting = true,
-        .io_ops = LIST_INITIAL_VALUE(dev.io_ops),
+            .start_read = block_test_start_read,
+            .start_write = block_test_start_write,
+            .block_count = BLOCK_COUNT,
+            .block_size = 256,
+            .block_num_size = 8,
+            .mac_size = 16,
+            .tamper_detecting = true,
+            .io_ops = LIST_INITIAL_VALUE(dev.io_ops),
     };
     struct block_device dev256 = {
-        .start_read = block_test_start_read,
-        .start_write = block_test_start_write,
-        .block_count = 0x10000,
-        .block_size = 256,
-        .block_num_size = 2,
-        .mac_size = 2,
-        .tamper_detecting = true,
-        .io_ops = LIST_INITIAL_VALUE(dev256.io_ops),
+            .start_read = block_test_start_read,
+            .start_write = block_test_start_write,
+            .block_count = 0x10000,
+            .block_size = 256,
+            .block_num_size = 2,
+            .mac_size = 2,
+            .tamper_detecting = true,
+            .io_ops = LIST_INITIAL_VALUE(dev256.io_ops),
     };
     struct fs fs = {
-        .dev = &dev,
-        .transactions = LIST_INITIAL_VALUE(fs.transactions),
-        .allocated = LIST_INITIAL_VALUE(fs.allocated),
-        .files = {
-            .copy_on_write = true,
-            //.allow_copy_on_write = true,
-        },
+            .dev = &dev,
+            .transactions = LIST_INITIAL_VALUE(fs.transactions),
+            .allocated = LIST_INITIAL_VALUE(fs.allocated),
+            .files =
+                    {
+                            .copy_on_write = true,
+                            //.allow_copy_on_write = true,
+                    },
     };
     struct transaction tr = {};
     uint i;
@@ -1912,7 +1870,7 @@ int main(int argc, const char *argv[])
         if (!tests[i].no_free_check) {
             full_assert(check_fs(&tr));
         }
-        if (0) { // per test stats
+        if (0) {  // per test stats
             stats_timer_print();
             stats_timer_reset();
         }

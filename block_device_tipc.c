@@ -27,8 +27,8 @@
 #include "block_cache.h"
 #include "client_tipc.h"
 #include "ipc.h"
-#include "tipc_ns.h"
 #include "rpmb.h"
+#include "tipc_ns.h"
 
 #ifdef APP_STORAGE_RPMB_BLOCK_SIZE
 #define BLOCK_SIZE_RPMB (APP_STORAGE_RPMB_BLOCK_SIZE)
@@ -41,7 +41,7 @@
 #define BLOCK_COUNT_RPMB (0) /* Auto detect */
 #endif
 #ifdef APP_STORAGE_MAIN_BLOCK_SIZE
-#define BLOCK_SIZE_MAIN  (APP_STORAGE_MAIN_BLOCK_SIZE)
+#define BLOCK_SIZE_MAIN (APP_STORAGE_MAIN_BLOCK_SIZE)
 #else
 #define BLOCK_SIZE_MAIN (2048)
 #endif
@@ -54,7 +54,7 @@
 #define BLOCK_SIZE_RPMB_BLOCKS (BLOCK_SIZE_RPMB / RPMB_BUF_SIZE)
 
 STATIC_ASSERT(BLOCK_SIZE_RPMB_BLOCKS == 1 || BLOCK_SIZE_RPMB_BLOCKS == 2);
-STATIC_ASSERT(BLOCK_SIZE_RPMB_BLOCKS * RPMB_BUF_SIZE == BLOCK_SIZE_RPMB);
+STATIC_ASSERT((BLOCK_SIZE_RPMB_BLOCKS * RPMB_BUF_SIZE) == BLOCK_SIZE_RPMB);
 
 STATIC_ASSERT(BLOCK_COUNT_RPMB == 0 || BLOCK_COUNT_RPMB >= 8);
 
@@ -62,22 +62,22 @@ STATIC_ASSERT(BLOCK_SIZE_MAIN >= 256);
 STATIC_ASSERT(BLOCK_COUNT_MAIN >= 8);
 STATIC_ASSERT(BLOCK_SIZE_MAIN >= BLOCK_SIZE_RPMB);
 
-#define SS_ERR(args...)  fprintf(stderr, "ss: " args)
-#define SS_WARN(args...)  fprintf(stderr, "ss: " args)
-#define SS_DBG_IO(args...)  do {} while(0)
+#define SS_ERR(args...) fprintf(stderr, "ss: " args)
+#define SS_WARN(args...) fprintf(stderr, "ss: " args)
+#define SS_DBG_IO(args...) \
+    do {                   \
+    } while (0)
 
-static int rpmb_check(struct block_device_tipc *state, uint16_t block)
-{
+static int rpmb_check(struct block_device_tipc* state, uint16_t block) {
     int ret;
     uint8_t tmp[RPMB_BUF_SIZE];
     ret = rpmb_read(state->rpmb_state, tmp, block, 1);
-    SS_DBG_IO("%s: check rpmb_block %d, ret %d\n",
-              __func__, block, ret);
+    SS_DBG_IO("%s: check rpmb_block %d, ret %d\n", __func__, block, ret);
     return ret;
 }
 
-static uint32_t rpmb_search_size(struct block_device_tipc *state, uint16_t hint)
-{
+static uint32_t rpmb_search_size(struct block_device_tipc* state,
+                                 uint16_t hint) {
     int ret;
     uint32_t low = 0;
     uint16_t high = ~0;
@@ -102,23 +102,21 @@ static uint32_t rpmb_search_size(struct block_device_tipc *state, uint16_t hint)
             curr = curr + 1;
         }
     }
-    assert ((uint32_t)high + 1 == low);
+    assert((uint32_t)high + 1 == low);
     return low;
 }
 
-static struct block_device_rpmb *dev_rpmb_to_state(struct block_device *dev)
-{
+static struct block_device_rpmb* dev_rpmb_to_state(struct block_device* dev) {
     assert(dev);
     return containerof(dev, struct block_device_rpmb, dev);
 }
 
-static void block_device_tipc_rpmb_start_read(struct block_device *dev,
-                                              data_block_t block)
-{
+static void block_device_tipc_rpmb_start_read(struct block_device* dev,
+                                              data_block_t block) {
     int ret;
     uint8_t tmp[BLOCK_SIZE_RPMB]; /* TODO: pass data in? */
     uint16_t rpmb_block;
-    struct block_device_rpmb *dev_rpmb = dev_rpmb_to_state(dev);
+    struct block_device_rpmb* dev_rpmb = dev_rpmb_to_state(dev);
 
     assert(block < dev->block_count);
     rpmb_block = block + dev_rpmb->base;
@@ -127,20 +125,19 @@ static void block_device_tipc_rpmb_start_read(struct block_device *dev,
                     rpmb_block * BLOCK_SIZE_RPMB_BLOCKS,
                     BLOCK_SIZE_RPMB_BLOCKS);
 
-    SS_DBG_IO("%s: block %lld, base %d, rpmb_block %d, ret %d\n",
-              __func__, block, dev_rpmb->base, rpmb_block, ret);
+    SS_DBG_IO("%s: block %lld, base %d, rpmb_block %d, ret %d\n", __func__,
+              block, dev_rpmb->base, rpmb_block, ret);
 
     block_cache_complete_read(dev, block, tmp, BLOCK_SIZE_RPMB, !!ret);
 }
 
-static void block_device_tipc_rpmb_start_write(struct block_device *dev,
+static void block_device_tipc_rpmb_start_write(struct block_device* dev,
                                                data_block_t block,
-                                               const void *data,
-                                               size_t data_size)
-{
+                                               const void* data,
+                                               size_t data_size) {
     int ret;
     uint16_t rpmb_block;
-    struct block_device_rpmb *dev_rpmb = dev_rpmb_to_state(dev);
+    struct block_device_rpmb* dev_rpmb = dev_rpmb_to_state(dev);
 
     assert(data_size == BLOCK_SIZE_RPMB);
     assert(block < dev->block_count);
@@ -151,44 +148,40 @@ static void block_device_tipc_rpmb_start_write(struct block_device *dev,
                      rpmb_block * BLOCK_SIZE_RPMB_BLOCKS,
                      BLOCK_SIZE_RPMB_BLOCKS, true);
 
-    SS_DBG_IO("%s: block %lld, base %d, rpmb_block %d, ret %d\n",
-              __func__, block, dev_rpmb->base, rpmb_block, ret);
+    SS_DBG_IO("%s: block %lld, base %d, rpmb_block %d, ret %d\n", __func__,
+              block, dev_rpmb->base, rpmb_block, ret);
 
     block_cache_complete_write(dev, block, !!ret);
 }
 
-static void block_device_tipc_rpmb_wait_for_io(struct block_device *dev)
-{
+static void block_device_tipc_rpmb_wait_for_io(struct block_device* dev) {
     assert(0); /* TODO: use async read/write */
 }
 
-
-static struct block_device_tipc *dev_ns_to_state(struct block_device *dev)
-{
+static struct block_device_tipc* dev_ns_to_state(struct block_device* dev) {
     assert(dev);
     return containerof(dev, struct block_device_tipc, dev_ns);
 }
 
-static void block_device_tipc_ns_start_read(struct block_device *dev, data_block_t block)
-{
+static void block_device_tipc_ns_start_read(struct block_device* dev,
+                                            data_block_t block) {
     int ret;
     uint8_t tmp[BLOCK_SIZE_MAIN]; /* TODO: pass data in? */
-    struct block_device_tipc *state = dev_ns_to_state(dev);
+    struct block_device_tipc* state = dev_ns_to_state(dev);
 
     ret = ns_read_pos(state->ipc_handle, state->ns_handle,
                       block * BLOCK_SIZE_MAIN, tmp, BLOCK_SIZE_MAIN);
     SS_DBG_IO("%s: block %lld, ret %d\n", __func__, block, ret);
-    block_cache_complete_read(dev, block, tmp,
-                              BLOCK_SIZE_MAIN, ret != BLOCK_SIZE_MAIN);
+    block_cache_complete_read(dev, block, tmp, BLOCK_SIZE_MAIN,
+                              ret != BLOCK_SIZE_MAIN);
 }
 
-static void block_device_tipc_ns_start_write(struct block_device *dev,
+static void block_device_tipc_ns_start_write(struct block_device* dev,
                                              data_block_t block,
-                                             const void *data,
-                                             size_t data_size)
-{
+                                             const void* data,
+                                             size_t data_size) {
     int ret;
-    struct block_device_tipc *state = dev_ns_to_state(dev);
+    struct block_device_tipc* state = dev_ns_to_state(dev);
 
     assert(data_size == BLOCK_SIZE_MAIN);
 
@@ -198,16 +191,14 @@ static void block_device_tipc_ns_start_write(struct block_device *dev,
     block_cache_complete_write(dev, block, ret != BLOCK_SIZE_MAIN);
 }
 
-static void block_device_tipc_ns_wait_for_io(struct block_device *dev)
-{
+static void block_device_tipc_ns_wait_for_io(struct block_device* dev) {
     assert(0); /* TODO: use async read/write */
 }
 
-static void block_device_tipc_init_dev_rpmb(struct block_device_rpmb *dev_rpmb,
-                                            struct block_device_tipc *state,
+static void block_device_tipc_init_dev_rpmb(struct block_device_rpmb* dev_rpmb,
+                                            struct block_device_tipc* state,
                                             uint16_t base,
-                                            uint32_t block_count)
-{
+                                            uint32_t block_count) {
     dev_rpmb->dev.start_read = block_device_tipc_rpmb_start_read;
     dev_rpmb->dev.start_write = block_device_tipc_rpmb_start_write;
     dev_rpmb->dev.wait_for_io = block_device_tipc_rpmb_wait_for_io;
@@ -221,11 +212,10 @@ static void block_device_tipc_init_dev_rpmb(struct block_device_rpmb *dev_rpmb,
     dev_rpmb->base = base;
 }
 
-int block_device_tipc_init(struct block_device_tipc *state,
+int block_device_tipc_init(struct block_device_tipc* state,
                            handle_t ipc_handle,
-                           const struct key *fs_key,
-                           const struct rpmb_key *rpmb_key)
-{
+                           const struct key* fs_key,
+                           const struct rpmb_key* rpmb_key) {
     int ret;
     bool new_ns_fs;
     uint8_t dummy;
@@ -247,11 +237,13 @@ int block_device_tipc_init(struct block_device_tipc *state,
         rpmb_block_count = BLOCK_COUNT_RPMB;
         ret = rpmb_check(state, rpmb_block_count * BLOCK_SIZE_RPMB_BLOCKS - 1);
         if (ret) {
-            SS_ERR("%s: bad static rpmb size, %d\n", __func__, rpmb_block_count);
+            SS_ERR("%s: bad static rpmb size, %d\n", __func__,
+                   rpmb_block_count);
             goto err_bad_rpmb_size;
         }
     } else {
-        rpmb_block_count = rpmb_search_size(state, 0); /* TODO: get hint from ns */
+        rpmb_block_count =
+                rpmb_search_size(state, 0); /* TODO: get hint from ns */
         rpmb_block_count /= BLOCK_SIZE_RPMB_BLOCKS;
     }
     if (rpmb_block_count < rpmb_part2_base) {
@@ -264,8 +256,8 @@ int block_device_tipc_init(struct block_device_tipc *state,
                                     rpmb_block_count - rpmb_part2_base);
 
     /* TODO: allow non-rpmb based tamper proof storage */
-    ret = fs_init(&state->tr_state_rpmb, fs_key,
-                  &state->dev_rpmb.dev, &state->dev_rpmb.dev, false);
+    ret = fs_init(&state->tr_state_rpmb, fs_key, &state->dev_rpmb.dev,
+                  &state->dev_rpmb.dev, false);
     if (ret < 0) {
         goto err_init_tr_state_rpmb;
     }
@@ -303,17 +295,17 @@ int block_device_tipc_init(struct block_device_tipc *state,
     }
 
     /* Request empty file system if file is empty */
-    ret = ns_read_pos(state->ipc_handle, state->ns_handle, 0,
-                      &dummy, sizeof(dummy));
+    ret = ns_read_pos(state->ipc_handle, state->ns_handle, 0, &dummy,
+                      sizeof(dummy));
     new_ns_fs = ret < (int)sizeof(dummy);
 
     state->fs_ns.tr_state = &state->tr_state_ns;
 
-    block_device_tipc_init_dev_rpmb(&state->dev_ns_rpmb, state,
-                                    rpmb_part1_base, rpmb_part1_block_count);
+    block_device_tipc_init_dev_rpmb(&state->dev_ns_rpmb, state, rpmb_part1_base,
+                                    rpmb_part1_block_count);
 
-    ret = fs_init(&state->tr_state_ns, fs_key,
-                  &state->dev_ns, &state->dev_ns_rpmb.dev, new_ns_fs);
+    ret = fs_init(&state->tr_state_ns, fs_key, &state->dev_ns,
+                  &state->dev_ns_rpmb.dev, new_ns_fs);
     if (ret < 0) {
         goto err_init_fs_ns_tr_state;
     }
@@ -341,8 +333,7 @@ err_rpmb_init:
     return ret;
 }
 
-void block_device_tipc_uninit(struct block_device_tipc *state)
-{
+void block_device_tipc_uninit(struct block_device_tipc* state) {
     if (state->dev_ns.block_count) {
         ipc_port_destroy(&state->fs_ns.client_ctx);
         /* undo fs_init */

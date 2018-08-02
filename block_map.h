@@ -22,32 +22,36 @@ struct block_map {
     struct block_tree tree;
 };
 
-#define BLOCK_MAP_INITIAL_VALUE(block_map) { \
-    .tree = BLOCK_TREE_INITIAL_VALUE(block_map.tree), \
-}
+#define BLOCK_MAP_INITIAL_VALUE(block_map) \
+    { .tree = BLOCK_TREE_INITIAL_VALUE(block_map.tree), }
 
 struct block_map_path {
     struct block_tree_path path;
 };
 
-void block_map_init(const struct transaction *tr,
-                    struct block_map *block_map,
-                    const struct block_mac *root,
+void block_map_init(const struct transaction* tr,
+                    struct block_map* block_map,
+                    const struct block_mac* root,
                     size_t block_size);
 
-bool block_map_get(struct transaction *tr,
-                   struct block_map *block_map,
+bool block_map_get(struct transaction* tr,
+                   struct block_map* block_map,
                    data_block_t index,
-                   struct block_mac *block_mac);
+                   struct block_mac* block_mac);
 
-void block_map_set(struct transaction *tr, struct block_map *block_map,
-                   data_block_t index, const struct block_mac *block_mac);
+void block_map_set(struct transaction* tr,
+                   struct block_map* block_map,
+                   data_block_t index,
+                   const struct block_mac* block_mac);
 
-void block_map_put_dirty(struct transaction *tr, struct block_map *block_map,
-                         data_block_t index, void *data, obj_ref_t *data_ref);
+void block_map_put_dirty(struct transaction* tr,
+                         struct block_map* block_map,
+                         data_block_t index,
+                         void* data,
+                         obj_ref_t* data_ref);
 
-void block_map_truncate(struct transaction *tr,
-                        struct block_map *block_map,
+void block_map_truncate(struct transaction* tr,
+                        struct block_map* block_map,
                         data_block_t index);
 
-void block_map_free(struct transaction *tr, struct block_map *block_map);
+void block_map_free(struct transaction* tr, struct block_map* block_map);

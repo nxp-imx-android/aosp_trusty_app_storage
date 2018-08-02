@@ -27,7 +27,8 @@
 #define full_assert assert
 #else
 #define full_assert(x) \
-    do { } while(0)
+    do {               \
+    } while (0)
 #endif
 
 #include "block_mac.h"
@@ -58,13 +59,13 @@
  */
 
 struct fs {
-    struct block_device *dev;
+    struct block_device* dev;
     struct list_node transactions;
     struct list_node allocated;
     struct block_set free;
     struct block_tree files;
-    struct block_device *super_dev;
-    const struct key *key;
+    struct block_device* super_dev;
+    const struct key* key;
     data_block_t super_block[2];
     uint super_block_version;
     uint written_super_block_version;
@@ -74,12 +75,12 @@ struct fs {
     data_block_t reserved_count;
 };
 
-bool update_super_block(struct transaction *tr,
-                        const struct block_mac *free,
-                        const struct block_mac *files);
+bool update_super_block(struct transaction* tr,
+                        const struct block_mac* free,
+                        const struct block_mac* files);
 
-int fs_init(struct fs *fs,
-            const struct key *key,
-            struct block_device *dev,
-            struct block_device *super_dev,
+int fs_init(struct fs* fs,
+            const struct key* key,
+            struct block_device* dev,
+            struct block_device* super_dev,
             bool clear);

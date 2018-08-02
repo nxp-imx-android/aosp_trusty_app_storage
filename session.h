@@ -32,10 +32,9 @@
  * @proxy_ctx:    the context object on the proxy channel
  */
 struct storage_session {
-	uint32_t magic;
-	struct block_device_tipc block_device;
-	struct key key;
+    uint32_t magic;
+    struct block_device_tipc block_device;
+    struct key key;
 
-	struct ipc_channel_context proxy_ctx;
+    struct ipc_channel_context proxy_ctx;
 };
-

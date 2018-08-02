@@ -56,63 +56,64 @@ struct block_set {
     bool updating;
 };
 
-#define BLOCK_SET_INITIAL_VALUE(block_set) { \
-    .node = LIST_INITIAL_CLEARED_VALUE, \
-    .block_tree = BLOCK_TREE_INITIAL_VALUE(block_set.block_tree), \
-    .initial_range = BLOCK_RANGE_INITIAL_VALUE(block_set.initial_range), \
-    .updating = 0, \
-}
+#define BLOCK_SET_INITIAL_VALUE(block_set)                                   \
+    {                                                                        \
+        .node = LIST_INITIAL_CLEARED_VALUE,                                  \
+        .block_tree = BLOCK_TREE_INITIAL_VALUE(block_set.block_tree),        \
+        .initial_range = BLOCK_RANGE_INITIAL_VALUE(block_set.initial_range), \
+        .updating = 0,                                                       \
+    }
 
 struct transaction;
 struct fs;
 
-void block_set_print(struct transaction *tr, struct block_set *set);
-bool block_set_check(struct transaction *tr, struct block_set *set);
+void block_set_print(struct transaction* tr, struct block_set* set);
+bool block_set_check(struct transaction* tr, struct block_set* set);
 
-bool block_set_block_in_set(struct transaction *tr,
-                            struct block_set *set,
+bool block_set_block_in_set(struct transaction* tr,
+                            struct block_set* set,
                             data_block_t block);
-bool block_set_range_in_set(struct transaction *tr,
-                            struct block_set *set,
+bool block_set_range_in_set(struct transaction* tr,
+                            struct block_set* set,
                             struct block_range range);
-bool block_set_range_not_in_set(struct transaction *tr,
-                                struct block_set *set,
+bool block_set_range_not_in_set(struct transaction* tr,
+                                struct block_set* set,
                                 struct block_range range);
 
-data_block_t block_set_find_next_block(struct transaction *tr,
-                                       struct block_set *set,
+data_block_t block_set_find_next_block(struct transaction* tr,
+                                       struct block_set* set,
                                        data_block_t min_block,
                                        bool in_set);
 
-struct block_range block_set_find_next_range(struct transaction *tr,
-                                             struct block_set *set,
+struct block_range block_set_find_next_range(struct transaction* tr,
+                                             struct block_set* set,
                                              data_block_t min_block);
 
-bool block_set_overlap(struct transaction *tr,
-                       struct block_set *set_a,
-                       struct block_set *set_b);
+bool block_set_overlap(struct transaction* tr,
+                       struct block_set* set_a,
+                       struct block_set* set_b);
 
-void block_set_add_range(struct transaction *tr,
-                         struct block_set *set,
+void block_set_add_range(struct transaction* tr,
+                         struct block_set* set,
                          struct block_range range);
 
-void block_set_add_block(struct transaction *tr,
-                         struct block_set *set,
+void block_set_add_block(struct transaction* tr,
+                         struct block_set* set,
                          data_block_t block);
 
-void block_set_remove_range(struct transaction *tr,
-                            struct block_set *set,
+void block_set_remove_range(struct transaction* tr,
+                            struct block_set* set,
                             struct block_range range);
 
-void block_set_remove_block(struct transaction *tr,
-                            struct block_set *set,
+void block_set_remove_block(struct transaction* tr,
+                            struct block_set* set,
                             data_block_t block);
 
-void block_set_init(struct fs *fs, struct block_set *set);
+void block_set_init(struct fs* fs, struct block_set* set);
 
-void block_set_add_initial_range(struct block_set *set,
+void block_set_add_initial_range(struct block_set* set,
                                  struct block_range range);
 
-void block_set_copy(struct transaction *tr,
-                    struct block_set *dest,
-                    const struct block_set *src);
+void block_set_copy(struct transaction* tr,
+                    struct block_set* dest,
+                    const struct block_set* src);
