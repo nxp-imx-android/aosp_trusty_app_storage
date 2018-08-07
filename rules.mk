@@ -47,3 +47,6 @@ MODULE_DEPS += \
 	trusty/user/app/storage/test \
 
 include make/module.mk
+
+# Build host side unit tests for mock storage implementation.
+include trusty/user/app/storage/storage_mock/test_mock_storage_rules.mk
