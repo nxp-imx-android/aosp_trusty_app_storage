@@ -41,7 +41,7 @@ MODULE_DEPS := \
 	app/trusty \
 	trusty/user/base/interface/storage \
 	trusty/user/base/lib/hwkey \
-	lib/libc-trusty \
+	trusty/user/base/lib/libc-trusty \
 	external/boringssl \
 
 MODULE_DEPS += \
