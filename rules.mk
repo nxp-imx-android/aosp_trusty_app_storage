@@ -39,8 +39,8 @@ MODULE_SRCS := \
 
 MODULE_DEPS := \
 	app/trusty \
-	interface/storage \
-	lib/hwkey \
+	trusty/user/base/interface/storage \
+	trusty/user/base/lib/hwkey \
 	lib/libc-trusty \
 	external/boringssl \
 
