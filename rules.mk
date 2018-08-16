@@ -38,7 +38,6 @@ MODULE_SRCS := \
 	$(LOCAL_DIR)/transaction.c \
 
 MODULE_DEPS := \
-	app/trusty \
 	trusty/user/base/interface/storage \
 	trusty/user/base/lib/hwkey \
 	trusty/user/base/lib/libc-trusty \
