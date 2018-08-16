@@ -44,6 +44,6 @@ MODULE_DEPS := \
 	external/boringssl \
 
 MODULE_DEPS += \
-	app/storage/test \
+	trusty/user/app/storage/test \
 
 include make/module.mk
