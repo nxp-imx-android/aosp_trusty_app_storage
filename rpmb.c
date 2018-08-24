@@ -14,6 +14,9 @@
  * limitations under the License.
  */
 
+#include "rpmb.h"
+#include "rpmb_protocol.h"
+
 #include <ctype.h>
 #include <errno.h>
 #include <stdbool.h>
@@ -25,119 +28,13 @@
 #include <openssl/mem.h>
 #include <openssl/rand.h>
 
-#include "rpmb.h"
-
 #define RPMB_DEBUG 0
-
-#define MMC_READ_MULTIPLE_BLOCK 18
-#define MMC_WRITE_MULTIPLE_BLOCK 25
-#define MMC_RELIABLE_WRITE_FLAG (1 << 31)
-
-#define MMC_RSP_PRESENT (1 << 0)
-#define MMC_RSP_CRC (1 << 2)
-#define MMC_RSP_OPCODE (1 << 4)
-#define MMC_CMD_ADTC (1 << 5)
-#define MMC_RSP_SPI_S1 (1 << 7)
-#define MMC_RSP_R1 (MMC_RSP_PRESENT | MMC_RSP_CRC | MMC_RSP_OPCODE)
-#define MMC_RSP_SPI_R1 (MMC_RSP_SPI_S1)
-
-struct rpmb_nonce {
-    uint8_t byte[16];
-};
-
-struct rpmb_u16 {
-    uint8_t byte[2];
-};
-
-struct rpmb_u32 {
-    uint8_t byte[4];
-};
-
-struct rpmb_packet {
-    uint8_t pad[196];
-    struct rpmb_key key_mac;
-    uint8_t data[256];
-    struct rpmb_nonce nonce;
-    struct rpmb_u32 write_counter;
-    struct rpmb_u16 address;
-    struct rpmb_u16 block_count;
-    struct rpmb_u16 result;
-    struct rpmb_u16 req_resp;
-};
-
-enum rpmb_request {
-    RPMB_REQ_PROGRAM_KEY = 0x0001,
-    RPMB_REQ_GET_COUNTER = 0x0002,
-    RPMB_REQ_DATA_WRITE = 0x0003,
-    RPMB_REQ_DATA_READ = 0x0004,
-    RPMB_REQ_RESULT_READ = 0x0005,
-};
-
-enum rpmb_response {
-    RPMB_RESP_PROGRAM_KEY = 0x0100,
-    RPMB_RESP_GET_COUNTER = 0x0200,
-    RPMB_RESP_DATA_WRITE = 0x0300,
-    RPMB_RESP_DATA_READ = 0x0400,
-};
-
-enum rpmb_result {
-    RPMB_RES_OK = 0x0000,
-    RPMB_RES_GENERAL_FAILURE = 0x0001,
-    RPMB_RES_AUTH_FAILURE = 0x0002,
-    RPMB_RES_COUNT_FAILURE = 0x0003,
-    RPMB_RES_ADDR_FAILURE = 0x0004,
-    RPMB_RES_WRITE_FAILURE = 0x0005,
-    RPMB_RES_READ_FAILURE = 0x0006,
-    RPMB_RES_NO_AUTH_KEY = 0x0007,
-
-    RPMB_RES_WRITE_COUNTER_EXPIRED = 0x0080,
-};
 
 struct rpmb_state {
     struct rpmb_key key;
     void* mmc_handle;
     uint32_t write_counter;
 };
-
-static struct rpmb_u16 rpmb_u16(uint16_t val) {
-    struct rpmb_u16 ret = {{
-            val >> 8,
-            val >> 0,
-    }};
-    return ret;
-}
-
-static struct rpmb_u32 rpmb_u32(uint32_t val) {
-    struct rpmb_u32 ret = {{
-            val >> 24,
-            val >> 16,
-            val >> 8,
-            val >> 0,
-    }};
-    return ret;
-}
-
-static uint16_t rpmb_get_u16(struct rpmb_u16 u16) {
-    size_t i;
-    uint16_t val;
-
-    val = 0;
-    for (i = 0; i < sizeof(u16.byte); i++)
-        val = val << 8 | u16.byte[i];
-
-    return val;
-}
-
-static uint32_t rpmb_get_u32(struct rpmb_u32 u32) {
-    size_t i;
-    uint32_t val;
-
-    val = 0;
-    for (i = 0; i < sizeof(u32.byte); i++)
-        val = val << 8 | u32.byte[i];
-
-    return val;
-}
 
 #if RPMB_DEBUG
 #define rpmb_dprintf(fmt, ...) fprintf(stderr, fmt, ##__VA_ARGS__)

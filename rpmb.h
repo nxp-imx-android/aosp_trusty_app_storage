@@ -17,6 +17,10 @@
 #ifndef __RPMB_H__
 #define __RPMB_H__
 
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+
 struct rpmb_key {
     uint8_t byte[32];
 };
