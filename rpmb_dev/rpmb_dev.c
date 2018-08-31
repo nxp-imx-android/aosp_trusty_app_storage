@@ -533,7 +533,7 @@ int main(int argc, char** argv) {
     rpmb_dev_process_cmd(&s);
 
     ret = write(cmdres_fd, s.res, sizeof(s.res[0]) * s.res_count);
-    if (ret != sizeof(s.res[0]) * s.res_count) {
+    if (ret != (int)sizeof(s.res[0]) * s.res_count) {
         fprintf(stderr, "rpmb_dev: Failed to write response file: %d, %s\n",
                 ret, strerror(errno));
         return EXIT_FAILURE;
