@@ -36,6 +36,25 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
+
+HMAC_CTX* HMAC_CTX_new(void) {
+    HMAC_CTX* ctx = malloc(sizeof(*ctx));
+    if (ctx != NULL) {
+        HMAC_CTX_init(ctx);
+    }
+    return ctx;
+}
+
+void HMAC_CTX_free(HMAC_CTX* ctx) {
+    if (ctx != NULL) {
+        HMAC_CTX_cleanup(ctx);
+        free(ctx);
+    }
+}
+
+#endif
+
 #define MAX_WRITE_COUNTER (0xffffffff)
 
 struct rpmb_data_header {
