@@ -25,7 +25,6 @@ HOST_INCLUDE_DIRS += \
 	lib/interface/storage/include \
 
 HOST_FLAGS := \
-	-fno-permissive \
 	-Wno-deprecated-declarations \
 	-DSTORAGE_FAKE \
 
