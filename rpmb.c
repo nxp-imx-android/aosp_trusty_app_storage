@@ -17,6 +17,7 @@
 #include "rpmb.h"
 #include "rpmb_protocol.h"
 
+#include <assert.h>
 #include <ctype.h>
 #include <errno.h>
 #include <stdbool.h>
@@ -29,6 +30,7 @@
 #include <openssl/rand.h>
 
 #define RPMB_DEBUG 0
+#define MAX_PACKET_COUNT 2
 
 struct rpmb_state {
     struct rpmb_key key;
@@ -228,14 +230,16 @@ int rpmb_read(struct rpmb_state* state,
             .address = rpmb_u16(addr),
             .req_resp = rpmb_u16(RPMB_REQ_DATA_READ),
     };
-    struct rpmb_packet res[count];
+    struct rpmb_packet res[MAX_PACKET_COUNT];
     uint8_t* bufp;
+
+    assert(count <= MAX_PACKET_COUNT);
 
     if (!state)
         return -EINVAL;
 
     ret = rpmb_send(state->mmc_handle, NULL, 0, &cmd, sizeof(cmd), res,
-                    sizeof(res), false);
+                    sizeof(res[0]) * count, false);
     if (ret < 0)
         return ret;
 
@@ -278,11 +282,13 @@ static int rpmb_write_data(struct rpmb_state* state,
     int i;
     int ret;
     struct rpmb_key mac;
-    struct rpmb_packet cmd[count];
+    struct rpmb_packet cmd[MAX_PACKET_COUNT];
     struct rpmb_packet rescmd = {
             .req_resp = rpmb_u16(RPMB_REQ_RESULT_READ),
     };
     struct rpmb_packet res;
+
+    assert(count <= MAX_PACKET_COUNT);
 
     rpmb_dprintf("rpmb: write data, addr %d, count %d\n", addr, count);
     for (i = 0; i < count; i++) {
@@ -298,7 +304,7 @@ static int rpmb_write_data(struct rpmb_state* state,
     if (ret < 0)
         return ret;
 
-    ret = rpmb_send(state->mmc_handle, cmd, sizeof(cmd), &rescmd,
+    ret = rpmb_send(state->mmc_handle, cmd, sizeof(cmd[0]) * count, &rescmd,
                     sizeof(rescmd), &res, sizeof(res), sync);
     if (ret < 0)
         return ret;

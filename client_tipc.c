@@ -1140,7 +1140,7 @@ static int send_response(struct storage_client_session* session,
         ++resp_buf_count;
     }
 
-    iovec_t resp_bufs[resp_buf_count];
+    iovec_t resp_bufs[2];
 
     msg->cmd |= STORAGE_RESP_BIT;
     msg->flags = 0;
