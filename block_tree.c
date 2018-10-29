@@ -151,8 +151,9 @@ static bool is_zero(const void* data, size_t size) {
  * Return: Maximum number of keys that fit in a leaf node or in and internal
  * node.
  */
-static uint block_tree_max_key_count(const struct block_tree* tree, bool leaf) {
-    uint key_count = tree->key_count[leaf];
+static unsigned int block_tree_max_key_count(const struct block_tree* tree,
+                                             bool leaf) {
+    unsigned int key_count = tree->key_count[leaf];
     assert(key_count);
     assert(key_count * tree->key_size < tree->block_size);
 
@@ -166,7 +167,7 @@ static uint block_tree_max_key_count(const struct block_tree* tree, bool leaf) {
  *
  * Return: Maximum number of keys that fit @node_ro.
  */
-static uint block_tree_node_max_key_count(
+static unsigned int block_tree_node_max_key_count(
         const struct block_tree* tree,
         const struct block_tree_node* node_ro) {
     return block_tree_max_key_count(tree, block_tree_node_is_leaf(node_ro));
@@ -207,15 +208,15 @@ enum block_tree_shift_mode {
  */
 static void block_tree_node_shift(const struct block_tree* tree,
                                   struct block_tree_node* node_rw,
-                                  uint dest_index,
-                                  uint src_index,
+                                  unsigned int dest_index,
+                                  unsigned int src_index,
                                   enum block_tree_shift_mode shift_mode,
                                   const void* new_key,
                                   const void* new_data,
                                   void* overflow_key,
                                   void* overflow_data) {
     bool is_leaf = block_tree_node_is_leaf(node_rw);
-    uint max_count = tree->key_count[is_leaf];
+    unsigned int max_count = tree->key_count[is_leaf];
 
     int i;
     void* base;
@@ -224,7 +225,7 @@ static void block_tree_node_shift(const struct block_tree* tree,
     const void* src;
     void* dest;
     size_t size;
-    uint clear_index;
+    unsigned int clear_index;
 
     assert(max_count);
     assert(dest_index <= max_count + !is_leaf + 1);
@@ -335,11 +336,11 @@ static void block_tree_node_merge_entries(
         const struct block_tree* tree,
         struct block_tree_node* node_rw,
         const struct block_tree_node* src_node_ro,
-        uint dest_index,
-        uint count,
+        unsigned int dest_index,
+        unsigned int count,
         const void* merge_key) {
     bool is_leaf = block_tree_node_is_leaf(node_rw);
-    uint max_count = tree->key_count[is_leaf];
+    unsigned int max_count = tree->key_count[is_leaf];
     void* dest_key;
     enum block_tree_shift_mode shift_mode = SHIFT_LEAF_OR_LEFT_CHILD;
     if (!is_leaf) {
@@ -367,8 +368,8 @@ static void block_tree_node_merge_entries(
  */
 static void block_tree_node_shift_down(const struct block_tree* tree,
                                        struct block_tree_node* node_rw,
-                                       uint dest_index,
-                                       uint src_index,
+                                       unsigned int dest_index,
+                                       unsigned int src_index,
                                        enum block_tree_shift_mode shift_mode) {
     assert(dest_index < src_index);
     block_tree_node_shift(tree, node_rw, dest_index, src_index, shift_mode,
@@ -386,7 +387,7 @@ static void block_tree_node_shift_down(const struct block_tree* tree,
  */
 static void block_tree_node_clear_end(const struct block_tree* tree,
                                       struct block_tree_node* node_rw,
-                                      uint start_index) {
+                                      unsigned int start_index) {
     block_tree_node_shift_down(tree, node_rw, start_index, ~0,
                                block_tree_node_is_leaf(node_rw)
                                        ? SHIFT_LEAF_OR_LEFT_CHILD
@@ -408,7 +409,7 @@ static void block_tree_node_clear_end(const struct block_tree* tree,
  */
 static void block_tree_node_insert(const struct block_tree* tree,
                                    struct block_tree_node* node_rw,
-                                   uint index,
+                                   unsigned int index,
                                    enum block_tree_shift_mode shift_mode,
                                    const void* new_key,
                                    const void* new_data,
@@ -432,7 +433,7 @@ static data_block_t block_tree_node_get_key(
         const struct block_tree* tree,
         data_block_t node_block,
         const struct block_tree_node* node_ro,
-        uint index) {
+        unsigned int index) {
     data_block_t key = 0;
     const void* keyp;
     const size_t key_count = block_tree_node_max_key_count(tree, node_ro);
@@ -464,7 +465,7 @@ static data_block_t block_tree_node_get_key(
  */
 static void block_tree_node_set_key(const struct block_tree* tree,
                                     struct block_tree_node* node_rw,
-                                    uint index,
+                                    unsigned int index,
                                     data_block_t new_key) {
     const size_t key_size = tree->key_size;
     const size_t key_count = block_tree_node_max_key_count(tree, node_rw);
@@ -487,7 +488,7 @@ static void block_tree_node_set_key(const struct block_tree* tree,
 static const void* block_tree_node_get_child_data(
         const struct block_tree* tree,
         const struct block_tree_node* node_ro,
-        uint index) {
+        unsigned int index) {
     bool is_leaf = block_tree_node_is_leaf(node_ro);
     const size_t max_key_count = tree->key_count[is_leaf];
     const size_t child_data_size = tree->child_data_size[is_leaf];
@@ -533,7 +534,7 @@ static const struct block_mac* block_tree_node_get_child(
         const struct block_tree* tree,
         data_block_t node_block,
         const struct block_tree_node* node_ro,
-        uint index) {
+        unsigned int index) {
     const struct block_mac* child = NULL;
     const size_t key_count = block_tree_node_max_key_count(tree, node_ro);
 
@@ -572,7 +573,7 @@ static struct block_mac block_tree_node_get_data(
         const struct block_tree* tree,
         data_block_t node_block,
         const struct block_tree_node* node_ro,
-        uint index) {
+        unsigned int index) {
     struct block_mac block_mac_ret = BLOCK_MAC_INITIAL_VALUE(block_mac_ret);
     const struct block_mac* datap = NULL;
     const size_t max_key_count = block_tree_node_max_key_count(tree, node_ro);
@@ -615,7 +616,7 @@ static void block_tree_node_print_internal(
         const struct block_tree* tree,
         data_block_t node_block,
         const struct block_tree_node* node_ro) {
-    uint i;
+    unsigned int i;
     const struct block_mac* child;
     const size_t key_count = block_tree_node_max_key_count(tree, node_ro);
 
@@ -651,7 +652,7 @@ static void block_tree_node_print_leaf(const struct transaction* tr,
                                        const struct block_tree* tree,
                                        data_block_t node_block,
                                        const struct block_tree_node* node_ro) {
-    uint i;
+    unsigned int i;
     data_block_t key;
     struct block_mac data;
     const size_t key_count = block_tree_node_max_key_count(tree, node_ro);
@@ -755,7 +756,7 @@ static bool block_tree_node_check(const struct transaction* tr,
                                   data_block_t node_block,
                                   data_block_t min_key,
                                   data_block_t max_key) {
-    uint i;
+    unsigned int i;
     data_block_t key;
     data_block_t prev_key = 0;
     int empty_count;
@@ -834,7 +835,7 @@ static int block_tree_check_sub_tree(struct transaction* tr,
                                      data_block_t max_key,
                                      bool updating) {
     const struct block_tree_node* node_ro;
-    uint i;
+    unsigned int i;
     int last_child = 0;
     int empty_count;
     int depth;
@@ -1074,7 +1075,8 @@ static bool block_tree_node_full(const struct block_tree* tree,
  *
  * Return: minimum number of keys required for non-root leaf or internal nodes.
  */
-static uint block_tree_min_key_count(const struct block_tree* tree, bool leaf) {
+static unsigned int block_tree_min_key_count(const struct block_tree* tree,
+                                             bool leaf) {
     return block_tree_max_key_count(tree, leaf) / 2;
 }
 
@@ -1351,8 +1353,8 @@ void block_tree_path_next(struct block_tree_path* path) {
             OBJ_REF_INITIAL_VALUE(ref[1]),
     };
     bool ref_index = 0;
-    uint index;
-    uint depth;
+    unsigned int index;
+    unsigned int depth;
     const struct block_mac* block_mac;
     data_block_t prev_key;
     data_block_t next_key;
@@ -1635,7 +1637,7 @@ void block_tree_path_put_dirty(struct transaction* tr,
                                int path_index,
                                void* data,
                                obj_ref_t* data_ref) {
-    uint index;
+    unsigned int index;
     struct block_mac* block_mac;
     struct block_tree_node* parent_node_rw;
     bool parent_is_leaf;
@@ -1740,7 +1742,7 @@ void block_tree_update_key(struct transaction* tr,
                            int path_index,
                            data_block_t new_key) {
     const struct block_mac* block_mac;
-    uint index;
+    unsigned int index;
     struct block_tree_node* node_rw;
     obj_ref_t node_ref = OBJ_REF_INITIAL_VALUE(node_ref);
 
@@ -1803,8 +1805,8 @@ void block_tree_update_key(struct transaction* tr,
 static int block_tree_node_get_key_count(
         const struct block_tree* tree,
         const struct block_tree_node* node_ro) {
-    uint i;
-    uint max_key_count = block_tree_node_max_key_count(tree, node_ro);
+    unsigned int i;
+    unsigned int max_key_count = block_tree_node_max_key_count(tree, node_ro);
 
     for (i = 0; i < max_key_count; i++) {
         if (!block_tree_node_get_key(tree, ~0, node_ro, i)) {
@@ -1828,8 +1830,8 @@ static void block_tree_node_leaf_remove_entry(
         const struct block_tree* tree,
         const struct block_mac* node_block_mac,
         struct block_tree_node* node_rw,
-        uint index) {
-    uint max_key_count = block_tree_node_max_key_count(tree, node_rw);
+        unsigned int index) {
+    unsigned int max_key_count = block_tree_node_max_key_count(tree, node_rw);
 
     if (print_internal_changes) {
         printf("%s: index %d:", __func__, index);
@@ -1876,7 +1878,7 @@ static void block_tree_node_split(struct transaction* tr,
     struct block_mac right;
     const struct block_mac* block_mac;
     const struct block_mac* parent_block_mac;
-    uint parent_index;
+    unsigned int parent_index;
     int split_index;
     data_block_t parent_key;
     data_block_t overflow_key = 0;
@@ -2341,8 +2343,8 @@ static void block_tree_node_merge(struct transaction* tr,
     obj_ref_t* merge_node_ref = &node_ref2;
     const struct block_mac* block_mac;
     struct block_mac merge_block;
-    uint src_index;
-    uint dest_index;
+    unsigned int src_index;
+    unsigned int dest_index;
     data_block_t key;
     data_block_t parent_key;
     int index;
@@ -2818,7 +2820,7 @@ void block_tree_update_block_mac(struct transaction* tr,
     const struct block_mac* block_mac;
     data_block_t prev_key;
     data_block_t next_key;
-    uint index;
+    unsigned int index;
     size_t max_key_count;
 
     assert(!tr->failed);

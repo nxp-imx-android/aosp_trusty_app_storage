@@ -111,4 +111,4 @@ void block_put(const void* data, obj_ref_t* ref);
 
 data_block_t data_to_block_num(const void* data); /* test api, remove ? */
 
-uint block_cache_debug_get_ref_block_count(void);
+unsigned int block_cache_debug_get_ref_block_count(void);

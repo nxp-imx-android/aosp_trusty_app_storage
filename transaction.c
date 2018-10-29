@@ -203,7 +203,7 @@ void transaction_free(struct transaction* tr) {
  * set.
  */
 static void check_free_tree(struct transaction* tr, struct block_set* free) {
-    uint i;
+    unsigned int i;
     struct block_tree_path path;
 
     block_tree_walk(tr, &free->block_tree, 0, true, &path);

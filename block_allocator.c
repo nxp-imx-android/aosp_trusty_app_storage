@@ -55,8 +55,8 @@ struct block_allocator_queue_entry {
  */
 struct block_allocator_queue {
     struct block_allocator_queue_entry entry[BLOCK_ALLOCATOR_QUEUE_LEN];
-    uint head;
-    uint tail;
+    unsigned int head;
+    unsigned int tail;
     bool updating;
 };
 
@@ -79,7 +79,8 @@ static bool block_allocator_queue_empty(struct block_allocator_queue* q) {
  *
  * Return: number of etnries in @q.
  */
-static uint block_allocator_queue_count(struct block_allocator_queue* q) {
+static unsigned int block_allocator_queue_count(
+        struct block_allocator_queue* q) {
     return (q->tail + countof(q->entry) - q->head) % countof(q->entry);
 }
 
@@ -93,7 +94,7 @@ static uint block_allocator_queue_count(struct block_allocator_queue* q) {
  */
 static int block_allocator_queue_find(struct block_allocator_queue* q,
                                       data_block_t block) {
-    uint i;
+    unsigned int i;
 
     assert(q->head < countof(q->entry));
     assert(q->tail < countof(q->entry));
@@ -117,7 +118,7 @@ static int block_allocator_queue_find(struct block_allocator_queue* q,
  */
 static void block_allocator_queue_add_dummy(struct block_allocator_queue* q) {
     assert(block_allocator_queue_empty(q));
-    uint new_tail = (q->tail + 1) % countof(q->entry);
+    unsigned int new_tail = (q->tail + 1) % countof(q->entry);
     q->entry[q->tail].removed = true;
     q->tail = new_tail;
     pr_write("index %d\n", q->tail);
@@ -135,8 +136,8 @@ static void block_allocator_queue_add(struct block_allocator_queue* q,
                                       bool is_tmp,
                                       bool is_free) {
     int ret;
-    uint index;
-    uint new_tail;
+    unsigned int index;
+    unsigned int new_tail;
 
     ret = block_allocator_queue_find(q, block);
     if (ret >= 0) {

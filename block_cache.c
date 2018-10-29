@@ -119,7 +119,7 @@ static void block_cache_complete_io(struct block_device* dev) {
  */
 static struct block_cache_entry* block_cache_pop_io_op(struct block_device* dev,
                                                        data_block_t block,
-                                                       uint io_op) {
+                                                       unsigned int io_op) {
     struct block_cache_entry* entry;
 
     list_for_every_entry(&dev->io_ops, entry, struct block_cache_entry,
@@ -350,8 +350,8 @@ static void block_cache_entry_clean(struct block_cache_entry* entry) {
  * Return: A score value indicating in what order entries that are close in the
  * lru should be replaced.
  */
-static uint block_cache_entry_score(struct block_cache_entry* entry,
-                                    uint index) {
+static unsigned int block_cache_entry_score(struct block_cache_entry* entry,
+                                            unsigned int index) {
     if (!entry->dev) {
         return ~0;
     }
@@ -377,10 +377,10 @@ static struct block_cache_entry* block_cache_lookup(struct fs* fs,
                                                     bool allocate) {
     struct block_cache_entry* entry;
     struct block_cache_entry* unused_entry = NULL;
-    uint unused_entry_score = 0;
-    uint score;
-    uint available = 0;
-    uint in_use = 0;
+    unsigned int unused_entry_score = 0;
+    unsigned int score;
+    unsigned int available = 0;
+    unsigned int in_use = 0;
 
     assert(dev);
     assert(fs || !allocate);
@@ -1267,8 +1267,8 @@ data_block_t data_to_block_num(const void* data) {
  *
  * Return: number of blocks in cache that have references.
  */
-uint block_cache_debug_get_ref_block_count(void) {
-    uint count = 0;
+unsigned int block_cache_debug_get_ref_block_count(void) {
+    unsigned int count = 0;
     struct block_cache_entry* entry;
 
     list_for_every_entry(&block_cache_lru, entry, struct block_cache_entry,

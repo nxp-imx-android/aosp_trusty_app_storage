@@ -102,7 +102,7 @@ struct block_tree {
  */
 struct block_tree_path_entry {
     struct block_mac block_mac;
-    uint index;
+    unsigned int index;
     data_block_t prev_key;
     data_block_t next_key;
 };
@@ -118,7 +118,7 @@ struct block_tree_path_entry {
  */
 struct block_tree_path {
     struct block_tree_path_entry entry[BLOCK_TREE_MAX_DEPTH];
-    uint count;
+    unsigned int count;
     struct block_mac data;
     struct transaction* tr;
     struct block_tree* tree;

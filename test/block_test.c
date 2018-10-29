@@ -150,7 +150,7 @@ static void mark_block_tree_in_use(struct transaction* tr,
                                    const char* used_by_str,
                                    data_block_t used_by_block) {
     struct block_tree_path path;
-    uint i;
+    unsigned int i;
 
     block_tree_walk(tr, block_tree, 0, true, &path);
     if (path.count) {
@@ -270,28 +270,42 @@ static void empty_test(struct transaction* tr) {
     }
 }
 
-typedef uint16_t (*keyfunc_t)(uint index, uint rindex, uint maxindex);
-static uint16_t inc_inc_key(uint index, uint rindex, uint maxindex) {
+typedef uint16_t (*keyfunc_t)(unsigned int index,
+                              unsigned int rindex,
+                              unsigned int maxindex);
+static uint16_t inc_inc_key(unsigned int index,
+                            unsigned int rindex,
+                            unsigned int maxindex) {
     return rindex ?: index;
 }
 
-static uint16_t inc_dec_key(uint index, uint rindex, uint maxindex) {
+static uint16_t inc_dec_key(unsigned int index,
+                            unsigned int rindex,
+                            unsigned int maxindex) {
     return index;
 }
 
-static uint16_t dec_inc_key(uint index, uint rindex, uint maxindex) {
+static uint16_t dec_inc_key(unsigned int index,
+                            unsigned int rindex,
+                            unsigned int maxindex) {
     return maxindex + 1 - index;
 }
 
-static uint16_t dec_dec_key(uint index, uint rindex, uint maxindex) {
+static uint16_t dec_dec_key(unsigned int index,
+                            unsigned int rindex,
+                            unsigned int maxindex) {
     return maxindex + 1 - (rindex ?: index);
 }
 
-static uint16_t same_key(uint index, uint rindex, uint maxindex) {
+static uint16_t same_key(unsigned int index,
+                         unsigned int rindex,
+                         unsigned int maxindex) {
     return 1;
 }
 
-static uint16_t rand_key(uint index, uint rindex, uint maxindex) {
+static uint16_t rand_key(unsigned int index,
+                         unsigned int rindex,
+                         unsigned int maxindex) {
     uint16_t key;
 
     RAND_bytes((uint8_t*)&key, sizeof(key));
@@ -304,15 +318,15 @@ keyfunc_t keyfuncs[] = {
 };
 
 static void block_tree_test_etc(struct transaction* tr,
-                                uint order,
-                                uint count,
-                                uint commit_interval,
+                                unsigned int order,
+                                unsigned int count,
+                                unsigned int commit_interval,
                                 keyfunc_t keyfunc) {
-    uint i;
-    uint ri;
+    unsigned int i;
+    unsigned int ri;
     uint16_t key;
     uint16_t tmpkey;
-    uint commit_count = 0;
+    unsigned int commit_count = 0;
     struct block_tree tree = BLOCK_TREE_INITIAL_VALUE(tree);
     struct block_tree_path path;
     const size_t key_size = sizeof(key);
@@ -399,10 +413,10 @@ static void block_tree_test_etc(struct transaction* tr,
 }
 
 static void block_tree_keyfuncs_test(struct transaction* tr,
-                                     uint order,
-                                     uint count) {
-    uint commit_interval;
-    uint i;
+                                     unsigned int order,
+                                     unsigned int count) {
+    unsigned int commit_interval;
+    unsigned int i;
 
     for (commit_interval = 0; commit_interval < 2; commit_interval++) {
         for (i = 0; i < countof(keyfuncs); i++) {
@@ -412,7 +426,7 @@ static void block_tree_keyfuncs_test(struct transaction* tr,
 }
 
 static void block_tree_test(struct transaction* tr) {
-    uint order;
+    unsigned int order;
 
     block_tree_keyfuncs_test(tr, 6, 5); /* test leaf node only */
     block_tree_keyfuncs_test(tr, 6, 10);
@@ -428,7 +442,7 @@ static void block_tree_test(struct transaction* tr) {
 
 static void block_set_test(struct transaction* tr) {
     struct block_set sets[3];
-    uint si, i;
+    unsigned int si, i;
 
     for (si = 0; si < countof(sets); si++) {
         block_set_init(tr->fs, &sets[si]);
@@ -454,7 +468,7 @@ static void block_set_test(struct transaction* tr) {
 }
 
 static void block_tree_allocate_all_test(struct transaction* tr) {
-    uint i;
+    unsigned int i;
 
     for (i = 0; i < countof(keyfuncs); i++) {
         assert(!tr->failed);
@@ -465,7 +479,7 @@ static void block_tree_allocate_all_test(struct transaction* tr) {
     }
 }
 static void block_map_test(struct transaction* tr) {
-    uint i;
+    unsigned int i;
     struct block_mac block_mac = BLOCK_MAC_INITIAL_VALUE(block_mac);
     struct block_map block_map = BLOCK_MAP_INITIAL_VALUE(block_map);
 
@@ -500,7 +514,7 @@ static void allocate_2_transactions_test_etc(struct transaction* tr,
                                              size_t blocks1_count,
                                              data_block_t blocks2[],
                                              size_t blocks2_count) {
-    uint i;
+    unsigned int i;
     struct transaction tr1;
     struct transaction tr2;
     size_t blocks_max_count = MAX(blocks1_count, blocks2_count);
@@ -561,7 +575,7 @@ static void free_test_etc(struct transaction* tr,
                           size_t blocks1_count,
                           data_block_t blocks2[],
                           size_t blocks2_count) {
-    uint i;
+    unsigned int i;
     struct transaction tr1;
     struct transaction tr2;
     size_t blocks_max_count = MAX(blocks1_count, blocks2_count);
@@ -679,7 +693,7 @@ static void allocate_frag_test(struct transaction* tr) {
 }
 
 static void allocate_free_same_test(struct transaction* tr) {
-    uint i;
+    unsigned int i;
     printf("%s: start allocate then free same test\n", __func__);
     for (i = 0; i < countof(allocated); i++) {
         allocated[i] = block_allocate(tr);
@@ -712,7 +726,7 @@ static void allocate_free_same_test(struct transaction* tr) {
 }
 
 static void allocate_free_other_test(struct transaction* tr) {
-    uint i;
+    unsigned int i;
 
     printf("%s: start allocate then free some other test\n", __func__);
     for (i = 0; i < countof(allocated); i++) {
@@ -781,7 +795,7 @@ static void free_frag_rem_test(struct transaction* tr) {
 }
 
 static void free_test(struct transaction* tr) {
-    uint i;
+    unsigned int i;
 
     free_test_etc(tr, allocated, countof(allocated), NULL, 0);
 
@@ -855,15 +869,15 @@ static void open_test_file(struct transaction* tr,
 }
 
 static void file_allocate_all_test(struct transaction* master_tr,
-                                   uint tr_count,
+                                   unsigned int tr_count,
                                    int success_count,
                                    int step_size,
                                    const char* path,
                                    enum file_create_mode create) {
-    uint i;
-    uint j;
-    uint done;
-    uint count;
+    unsigned int i;
+    unsigned int j;
+    unsigned int done;
+    unsigned int count;
     struct file_handle file[tr_count];
     data_block_t file_size[tr_count];
     struct transaction tr[tr_count];
@@ -1839,7 +1853,7 @@ int main(int argc, const char* argv[]) {
                     },
     };
     struct transaction tr = {};
-    uint i;
+    unsigned int i;
     bool test_remount = true;
 
     if (argc > 1) {

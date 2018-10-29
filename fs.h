@@ -67,8 +67,8 @@ struct fs {
     struct block_device* super_dev;
     const struct key* key;
     data_block_t super_block[2];
-    uint super_block_version;
-    uint written_super_block_version;
+    unsigned int super_block_version;
+    unsigned int written_super_block_version;
     data_block_t min_block_num;
     size_t block_num_size;
     size_t mac_size;

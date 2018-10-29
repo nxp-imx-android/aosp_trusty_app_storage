@@ -106,9 +106,9 @@ struct ipc_port_context {
  */
 int sync_ipc_send_msg(handle_t session,
                       iovec_t* tx_iovecs,
-                      uint tx_iovec_count,
+                      unsigned int tx_iovec_count,
                       iovec_t* rx_iovecs,
-                      uint rx_iovec_count);
+                      unsigned int rx_iovec_count);
 
 int ipc_port_create(struct ipc_port_context* contextp,
                     const char* port_name,

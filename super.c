@@ -103,8 +103,8 @@ bool update_super_block(struct transaction* tr,
                         const struct block_mac* files) {
     struct super_block* super_rw;
     obj_ref_t super_ref = OBJ_REF_INITIAL_VALUE(super_ref);
-    uint ver;
-    uint index;
+    unsigned int ver;
+    unsigned int index;
     uint32_t block_size = tr->fs->super_dev->block_size;
 
     assert(block_size >= sizeof(struct super_block));
@@ -209,9 +209,9 @@ static bool super_block_valid(const struct block_device* dev,
  */
 static bool use_new_super(const struct block_device* dev,
                           const struct super_block* new_super,
-                          uint new_super_index,
+                          unsigned int new_super_index,
                           const struct super_block* old_super) {
-    uint dv;
+    unsigned int dv;
     if (!super_block_valid(dev, new_super)) {
         return false;
     }
@@ -320,7 +320,7 @@ static int fs_init_from_super(struct fs* fs,
  * version (regardless of its other content), -1 if not.
  */
 static int load_super_block(struct fs* fs, bool clear) {
-    uint i;
+    unsigned int i;
     int ret;
     const struct super_block* new_super;
     obj_ref_t new_super_ref = OBJ_REF_INITIAL_VALUE(new_super_ref);
