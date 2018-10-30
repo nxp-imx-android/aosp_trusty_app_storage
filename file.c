@@ -15,6 +15,7 @@
  */
 
 #include <assert.h>
+#include <lk/macros.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -27,7 +28,6 @@
 #include "file.h"
 #include "transaction.h"
 
-#define DIV_ROUND_UP(n, d) (((n) + (d)-1) / (d))
 #define BIT_MASK(x) \
     (((x) >= sizeof(unsigned long long) * 8) ? (0ULL - 1) : ((1ULL << (x)) - 1))
 
