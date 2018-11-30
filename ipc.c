@@ -18,13 +18,14 @@
 #include <lk/list.h>
 #include <stdlib.h>
 #include <trusty_ipc.h>
+#include <trusty_log.h>
 #include <uapi/err.h>
 
 #include "ipc.h"
 
 #define MSG_BUF_MAX_SIZE 4096
 
-#define TLOGE(args...) fprintf(stderr, "ipc: " args)
+#define TLOG_TAG "ss-ipc"
 
 static void* msg_buf;
 static size_t msg_buf_size;
