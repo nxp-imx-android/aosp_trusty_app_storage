@@ -248,7 +248,7 @@ static enum storage_err storage_file_delete(
     char path_buf[FS_PATH_MAX];
 
     if (req_size < sizeof(*req)) {
-        SS_ERR("%s: invalid request size (%zd)\n", __func__, req_size);
+        SS_ERR("%s: invalid request size (%zu)\n", __func__, req_size);
         return STORAGE_ERR_NOT_VALID;
     }
 
@@ -343,7 +343,7 @@ static enum storage_err storage_file_move(
     struct file_handle tmp_file;
 
     if (req_size < sizeof(*req)) {
-        SS_ERR("%s: invalid request size (%zd)\n", __func__, req_size);
+        SS_ERR("%s: invalid request size (%zu)\n", __func__, req_size);
         return STORAGE_ERR_NOT_VALID;
     }
 
@@ -373,8 +373,8 @@ static enum storage_err storage_file_move(
 
     old_len = req->old_name_len;
     if (old_len >= fname_len) {
-        SS_ERR("%s: invalid old filename length %u >= %u\n", __func__, old_len,
-               fname_len);
+        SS_ERR("%s: invalid old filename length %zu >= %zu\n", __func__,
+               old_len, fname_len);
         return STORAGE_ERR_NOT_VALID;
     }
     new_len = fname_len - old_len;
@@ -460,7 +460,7 @@ static int storage_file_open(struct storage_msg* msg,
     enum file_create_mode file_create_mode;
 
     if (req_size < sizeof(*req)) {
-        SS_ERR("%s: invalid request size (%zd)\n", __func__, req_size);
+        SS_ERR("%s: invalid request size (%zu)\n", __func__, req_size);
         result = STORAGE_ERR_NOT_VALID;
         goto err_invalid_size;
     }
@@ -566,7 +566,7 @@ static enum storage_err storage_file_close(
     struct file_handle* file;
 
     if (req_size < sizeof(*req)) {
-        SS_ERR("%s: invalid request size (%zd)\n", __func__, req_size);
+        SS_ERR("%s: invalid request size (%zu)\n", __func__, req_size);
         return STORAGE_ERR_NOT_VALID;
     }
 
@@ -609,7 +609,7 @@ static int storage_file_read(struct storage_msg* msg,
     size_t block_offset;
 
     if (req_size < sizeof(*req)) {
-        SS_ERR("%s: invalid request size (%zd)\n", __func__, req_size);
+        SS_ERR("%s: invalid request size (%zu)\n", __func__, req_size);
         result = STORAGE_ERR_NOT_VALID;
         goto err_invalid_input;
     }
@@ -623,7 +623,7 @@ static int storage_file_read(struct storage_msg* msg,
 
     buflen = req->size;
     if (buflen > STORAGE_MAX_BUFFER_SIZE - sizeof(*msg)) {
-        SS_ERR("can't read more than %d bytes, requested %zd\n",
+        SS_ERR("can't read more than %d bytes, requested %zu\n",
                STORAGE_MAX_BUFFER_SIZE, buflen);
         result = STORAGE_ERR_NOT_VALID;
         goto err_invalid_input;
@@ -740,7 +740,7 @@ static enum storage_err storage_file_write(
     size_t block_offset;
 
     if (req_size <= sizeof(*req)) {
-        SS_ERR("%s: invalid request size (%zd)\n", __func__, req_size);
+        SS_ERR("%s: invalid request size (%zu)\n", __func__, req_size);
         return STORAGE_ERR_NOT_VALID;
     }
 
@@ -900,7 +900,7 @@ static int storage_file_list(struct storage_msg* msg,
     };
 
     if (req_size < sizeof(*req)) {
-        SS_ERR("%s: invalid request size (%zd)\n", __func__, req_size);
+        SS_ERR("%s: invalid request size (%zu)\n", __func__, req_size);
         result = STORAGE_ERR_NOT_VALID;
         goto err_invalid_input;
     }
@@ -984,7 +984,7 @@ static int storage_file_get_size(struct storage_msg* msg,
     size_t out_size = 0;
 
     if (req_size != sizeof(*req)) {
-        SS_ERR("%s: inavlid request size (%zd)\n", __func__, req_size);
+        SS_ERR("%s: inavlid request size (%zu)\n", __func__, req_size);
         result = STORAGE_ERR_NOT_VALID;
         goto err_invalid_input;
     }
@@ -1020,7 +1020,7 @@ static enum storage_err storage_file_set_size(
     uint64_t new_size;
 
     if (req_size != sizeof(*req)) {
-        SS_ERR("%s: inavlid request size (%zd)\n", __func__, req_size);
+        SS_ERR("%s: inavlid request size (%zu)\n", __func__, req_size);
         return STORAGE_ERR_NOT_VALID;
     }
 
@@ -1181,7 +1181,7 @@ static int client_handle_msg(struct ipc_channel_context* ctx,
     session = chan_context_to_client_session(ctx);
 
     if (msg_size < sizeof(struct storage_msg)) {
-        SS_ERR("%s: invalid message of size (%zd)\n", __func__, msg_size);
+        SS_ERR("%s: invalid message of size (%zu)\n", __func__, msg_size);
         struct storage_msg err_msg = {.cmd = STORAGE_RESP_MSG_ERR};
         send_result(session, &err_msg, STORAGE_ERR_NOT_VALID);
         return ERR_NOT_VALID; /* would force to close connection */

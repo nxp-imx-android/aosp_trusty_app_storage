@@ -144,7 +144,7 @@ static int do_handle_msg(struct ipc_channel_context* ctx, const uevent_t* ev) {
     }
 
     if (msg_inf.len > MSG_BUF_MAX_SIZE) {
-        TLOGE("%s: message too large %d\n", __func__, msg_inf.len);
+        TLOGE("%s: message too large %zu\n", __func__, msg_inf.len);
         put_msg(chan, msg_inf.id);
         return ERR_NOT_ENOUGH_BUFFER;
     }
@@ -285,9 +285,9 @@ static int wait_to_send(handle_t session, struct ipc_msg* msg) {
 
 int sync_ipc_send_msg(handle_t session,
                       iovec_t* tx_iovecs,
-                      size_t tx_iovec_count,
+                      unsigned int tx_iovec_count,
                       iovec_t* rx_iovecs,
-                      size_t rx_iovec_count) {
+                      unsigned int rx_iovec_count) {
     struct ipc_msg tx_msg = {
             .iov = tx_iovecs,
             .num_iov = tx_iovec_count,
@@ -318,7 +318,7 @@ int sync_ipc_send_msg(handle_t session,
 
     size_t min_len = rx_iovecs[0].len;
     if (inf.len < min_len) {
-        TLOGE("%s: invalid response length (%d)\n", __func__, inf.len);
+        TLOGE("%s: invalid response length (%zu)\n", __func__, inf.len);
         put_msg(session, inf.id);
         return ERR_NOT_VALID;
     }
@@ -330,8 +330,8 @@ int sync_ipc_send_msg(handle_t session,
     }
 
     if (resp_size < inf.len) {
-        TLOGE("%s: response buffer too short (%d < %d) \n", __func__, resp_size,
-              inf.len);
+        TLOGE("%s: response buffer too short (%zu < %zu) \n", __func__,
+              resp_size, inf.len);
         put_msg(session, inf.id);
         return ERR_BAD_LEN;
     }
@@ -346,7 +346,7 @@ int sync_ipc_send_msg(handle_t session,
     size_t read_len = (size_t)rc;
     if (read_len != inf.len) {
         // data read in does not match message length
-        TLOGE("%s: invalid response length (%d)\n", __func__, read_len);
+        TLOGE("%s: invalid response length (%zu)\n", __func__, read_len);
         return ERR_IO;
     }
 
