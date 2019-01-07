@@ -15,6 +15,7 @@
  */
 
 #include <assert.h>
+#include <inttypes.h>
 #include <lk/reflist.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -162,7 +163,7 @@ void block_cache_complete_read(struct block_device* dev,
     entry = block_cache_pop_io_op(dev, block, BLOCK_CACHE_IO_OP_READ);
     assert(!entry->loaded);
     if (failed) {
-        printf("%s: load block %lld failed\n", __func__, entry->block);
+        printf("%s: load block %" PRIu64 " failed\n", __func__, entry->block);
         return;
     }
     assert(!failed);
@@ -179,7 +180,7 @@ void block_cache_complete_read(struct block_device* dev,
 
     /* TODO: check mac here instead of when getting data from the cache? */
     if (print_block_load) {
-        printf("%s: load/decrypt block %lld complete\n", __func__,
+        printf("%s: load/decrypt block %" PRIu64 " complete\n", __func__,
                entry->block);
     }
 
@@ -202,11 +203,13 @@ void block_cache_complete_write(struct block_device* dev,
 
     entry = block_cache_pop_io_op(dev, block, BLOCK_CACHE_IO_OP_WRITE);
     if (print_block_store) {
-        printf("%s: write block %lld complete\n", __func__, entry->block);
+        printf("%s: write block %" PRIu64 " complete\n", __func__,
+               entry->block);
     }
     assert(entry->dirty_tr);
     if (failed) {
-        pr_err("write block %lld failed, fail transaction\n", entry->block);
+        pr_err("write block %" PRIu64 " failed, fail transaction\n",
+               entry->block);
         transaction_fail(entry->dirty_tr);
     }
     entry->dirty_tr = NULL;
@@ -259,7 +262,8 @@ static void block_cache_entry_decrypt(struct block_cache_entry* entry) {
     assert(!ret);
 
     if (print_block_decrypt_encrypt) {
-        printf("%s: decrypt block %lld complete\n", __func__, entry->block);
+        printf("%s: decrypt block %" PRIu64 " complete\n", __func__,
+               entry->block);
     }
 
     entry->encrypted = false;
@@ -295,7 +299,8 @@ static void block_cache_entry_encrypt(struct block_cache_entry* entry) {
     assert(!ret);
     entry->encrypted = true;
     if (print_block_decrypt_encrypt) {
-        printf("%s: encrypt block %lld complete\n", __func__, entry->block);
+        printf("%s: encrypt block %" PRIu64 " complete\n", __func__,
+               entry->block);
     }
 
     if (!entry->dirty_mac) {
@@ -328,7 +333,7 @@ static void block_cache_entry_clean(struct block_cache_entry* entry) {
     }
 
     if (print_block_store) {
-        printf("%s: encrypt block %lld\n", __func__, entry->block);
+        printf("%s: encrypt block %" PRIu64 "\n", __func__, entry->block);
     }
 
     assert(entry->block_size <= sizeof(entry->data));
@@ -392,7 +397,8 @@ static struct block_cache_entry* block_cache_lookup(struct fs* fs,
         assert(entry->guard2 == BLOCK_CACHE_GUARD_2);
         if (entry->dev == dev && entry->block == block) {
             if (print_cache_lookup) {
-                printf("%s: block %lld, found cache entry %zd, loaded %d, dirty %d\n",
+                printf("%s: block %" PRIu64
+                       ", found cache entry %zd, loaded %d, dirty %d\n",
                        __func__, block, entry - block_cache_entries,
                        entry->loaded, entry->dirty);
             }
@@ -408,13 +414,16 @@ static struct block_cache_entry* block_cache_lookup(struct fs* fs,
                 unused_entry_score = score;
             }
             if (print_cache_lookup_verbose) {
-                printf("%s: block %lld, cache entry %zd available last used for %lld\n",
+                printf("%s: block %" PRIu64
+                       ", cache entry %zd available last used for %" PRIu64
+                       "\n",
                        __func__, block, entry - block_cache_entries,
                        entry->block);
             }
         } else {
             if (print_cache_lookup_verbose) {
-                printf("%s: block %lld, cache entry %zd in use for %lld\n",
+                printf("%s: block %" PRIu64
+                       ", cache entry %zd in use for %" PRIu64 "\n",
                        __func__, block, entry - block_cache_entries,
                        entry->block);
             }
@@ -425,7 +434,8 @@ static struct block_cache_entry* block_cache_lookup(struct fs* fs,
 
     if (!entry || !allocate) {
         if (print_cache_lookup) {
-            printf("%s: block %lld, no available entries, %u in use, allocate %d\n",
+            printf("%s: block %" PRIu64
+                   ", no available entries, %u in use, allocate %d\n",
                    __func__, block, in_use, allocate);
         }
         entry = NULL;
@@ -433,7 +443,8 @@ static struct block_cache_entry* block_cache_lookup(struct fs* fs,
     }
 
     if (print_cache_lookup) {
-        printf("%s: block %lld, use cache entry %zd, dirty %d, %u available, %u in_use\n",
+        printf("%s: block %" PRIu64
+               ", use cache entry %zd, dirty %d, %u available, %u in_use\n",
                __func__, block, entry - block_cache_entries, entry->dirty,
                available, in_use);
     }
@@ -480,19 +491,21 @@ static bool block_cache_load_entry(struct block_cache_entry* entry,
     if (!entry->loaded) {
         assert(!block_cache_entry_has_refs(entry));
         if (print_block_load) {
-            printf("%s: request load block %lld\n", __func__, entry->block);
+            printf("%s: request load block %" PRIu64 "\n", __func__,
+                   entry->block);
         }
         block_cache_queue_read(entry);
         block_cache_complete_io(entry->dev);
     }
     if (!entry->loaded) {
-        printf("%s: failed to load block %lld\n", __func__, entry->block);
+        printf("%s: failed to load block %" PRIu64 "\n", __func__,
+               entry->block);
         return false;
     }
     if (mac) {
         if (CRYPTO_memcmp(&entry->mac, mac, mac_size)) {
-            printf("%s: block %lld, mac mismatch, %p\n", __func__, entry->block,
-                   mac);
+            printf("%s: block %" PRIu64 ", mac mismatch, %p\n", __func__,
+                   entry->block, mac);
             return false;
         }
     }
@@ -532,8 +545,8 @@ static struct block_cache_entry* block_cache_get(struct fs* fs,
     assert(dev);
 
     if (block >= dev->block_count) {
-        printf("%s: bad block num %lld >= %lld\n", __func__, block,
-               dev->block_count);
+        printf("%s: bad block num %" PRIu64 " >= %" PRIu64 "\n", __func__,
+               block, dev->block_count);
         return NULL;
     }
     assert(block < dev->block_count);
@@ -551,7 +564,7 @@ static struct block_cache_entry* block_cache_get(struct fs* fs,
     assert(!entry->dirty_ref);
     obj_add_ref(&entry->obj, ref);
     if (print_block_ops) {
-        printf("%s: block %lld, cache entry %zd, loaded %d, dirty %d\n",
+        printf("%s: block %" PRIu64 ", cache entry %zd, loaded %d, dirty %d\n",
                __func__, block, entry - block_cache_entries, entry->loaded,
                entry->dirty);
     }
@@ -701,7 +714,8 @@ void block_cache_clean_transaction(struct transaction* tr) {
         assert(entry->dev == dev);
 
         if (print_clean_transaction) {
-            printf("%s: tr %p, block %lld\n", __func__, tr, entry->block);
+            printf("%s: tr %p, block %" PRIu64 "\n", __func__, tr,
+                   entry->block);
         }
 
         assert(!block_cache_entry_has_refs(entry));
@@ -750,12 +764,12 @@ void block_cache_discard_transaction(struct transaction* tr, bool discard_all) {
         assert(entry->dirty);
 
         if (print_clean_transaction) {
-            printf("%s: tr %p, block %lld, tmp %d\n", __func__, tr,
+            printf("%s: tr %p, block %" PRIu64 ", tmp %d\n", __func__, tr,
                    entry->block, entry->dirty_tmp);
         }
 
         if (block_cache_entry_has_refs(entry)) {
-            pr_warn("tr %p, block %lld has ref (dirty_ref %d)\n", tr,
+            pr_warn("tr %p, block %" PRIu64 " has ref (dirty_ref %d)\n", tr,
                     entry->block, entry->dirty_ref);
         } else {
             assert(!entry->dirty_ref);
@@ -894,7 +908,8 @@ void* block_dirty(struct transaction* tr, const void* data, bool is_tmp) {
 
     if (!entry->loaded || entry->encrypted) {
         if (print_block_ops) {
-            printf("%s: skip decrypt block %lld\n", __func__, entry->block);
+            printf("%s: skip decrypt block %" PRIu64 "\n", __func__,
+                   entry->block);
         }
         entry->loaded = true;
         entry->encrypted = false;
@@ -1002,7 +1017,7 @@ static void block_put_dirty_etc(struct transaction* tr,
         ret = generate_iv(iv);
         assert(!ret);
     } else {
-        pr_warn("block %lld, not dirty\n", entry->block);
+        pr_warn("block %" PRIu64 ", not dirty\n", entry->block);
         assert(entry->dirty_tr == NULL);
         assert(!tr);
     }
@@ -1016,8 +1031,9 @@ static void block_put_dirty_etc(struct transaction* tr,
         block_mac_set_mac(tr, block_mac, &entry->mac);
     }
     if (print_mac_update) {
-        printf("%s: block %lld, update parent mac, %p, block %lld\n", __func__,
-               entry->block, block_mac, parent ? parent->block : 0);
+        printf("%s: block %" PRIu64 ", update parent mac, %p, block %" PRIu64
+               "\n",
+               __func__, entry->block, block_mac, parent ? parent->block : 0);
     }
 }
 
@@ -1200,8 +1216,9 @@ void* block_move(struct transaction* tr,
     assert(entry->dev == tr->fs->dev);
 
     if (print_block_move) {
-        printf("%s: move cache entry %zd, from block %lld to %lld\n", __func__,
-               entry - block_cache_entries, entry->block, block);
+        printf("%s: move cache entry %zd, from block %" PRIu64 " to %" PRIu64
+               "\n",
+               __func__, entry - block_cache_entries, entry->block, block);
     }
 
     dest_entry = block_cache_lookup(NULL, tr->fs->dev, block, false);
@@ -1212,8 +1229,8 @@ void* block_move(struct transaction* tr,
         assert(!list_in_list(&dest_entry->io_op_node));
         assert(dest_entry->block == block);
         if (print_block_move) {
-            printf("%s: clear old cache entry for block %lld, %zd\n", __func__,
-                   block, dest_entry - block_cache_entries);
+            printf("%s: clear old cache entry for block %" PRIu64 ", %zd\n",
+                   __func__, block, dest_entry - block_cache_entries);
         }
         dest_entry->loaded = false;
         dest_entry->dev = NULL;
@@ -1235,7 +1252,7 @@ void block_put(const void* data, obj_ref_t* ref) {
     struct block_cache_entry* entry = data_to_block_cache_entry(data);
 
     if (print_block_ops) {
-        printf("%s: block %lld, cache entry %zd, loaded %d, dirty %d\n",
+        printf("%s: block %" PRIu64 ", cache entry %zd, loaded %d, dirty %d\n",
                __func__, entry->block, entry - block_cache_entries,
                entry->loaded, entry->dirty);
     }
@@ -1277,7 +1294,7 @@ unsigned int block_cache_debug_get_ref_block_count(void) {
         assert(entry->guard2 == BLOCK_CACHE_GUARD_2);
         if (block_cache_entry_has_refs(entry)) {
             if (print_cache_get_ref_block_count) {
-                printf("%s: cache entry %zd in use for %lld, dev %p\n",
+                printf("%s: cache entry %zd in use for %" PRIu64 ", dev %p\n",
                        __func__, entry - block_cache_entries, entry->block,
                        entry->dev);
             }

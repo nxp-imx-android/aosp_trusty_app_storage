@@ -125,8 +125,8 @@ static void block_device_tipc_rpmb_start_read(struct block_device* dev,
                     rpmb_block * BLOCK_SIZE_RPMB_BLOCKS,
                     BLOCK_SIZE_RPMB_BLOCKS);
 
-    SS_DBG_IO("%s: block %lld, base %d, rpmb_block %d, ret %d\n", __func__,
-              block, dev_rpmb->base, rpmb_block, ret);
+    SS_DBG_IO("%s: block %" PRIu64 ", base %d, rpmb_block %d, ret %d\n",
+              __func__, block, dev_rpmb->base, rpmb_block, ret);
 
     block_cache_complete_read(dev, block, tmp, BLOCK_SIZE_RPMB, !!ret);
 }
@@ -148,8 +148,8 @@ static void block_device_tipc_rpmb_start_write(struct block_device* dev,
                      rpmb_block * BLOCK_SIZE_RPMB_BLOCKS,
                      BLOCK_SIZE_RPMB_BLOCKS, true);
 
-    SS_DBG_IO("%s: block %lld, base %d, rpmb_block %d, ret %d\n", __func__,
-              block, dev_rpmb->base, rpmb_block, ret);
+    SS_DBG_IO("%s: block %" PRIu64 ", base %d, rpmb_block %d, ret %d\n",
+              __func__, block, dev_rpmb->base, rpmb_block, ret);
 
     block_cache_complete_write(dev, block, !!ret);
 }
@@ -171,7 +171,7 @@ static void block_device_tipc_ns_start_read(struct block_device* dev,
 
     ret = ns_read_pos(state->ipc_handle, state->ns_handle,
                       block * BLOCK_SIZE_MAIN, tmp, BLOCK_SIZE_MAIN);
-    SS_DBG_IO("%s: block %lld, ret %d\n", __func__, block, ret);
+    SS_DBG_IO("%s: block %" PRIu64 ", ret %d\n", __func__, block, ret);
     block_cache_complete_read(dev, block, tmp, BLOCK_SIZE_MAIN,
                               ret != BLOCK_SIZE_MAIN);
 }
@@ -187,7 +187,7 @@ static void block_device_tipc_ns_start_write(struct block_device* dev,
 
     ret = ns_write_pos(state->ipc_handle, state->ns_handle,
                        block * BLOCK_SIZE_MAIN, data, data_size);
-    SS_DBG_IO("%s: block %lld, ret %d\n", __func__, block, ret);
+    SS_DBG_IO("%s: block %" PRIu64 ", ret %d\n", __func__, block, ret);
     block_cache_complete_write(dev, block, ret != BLOCK_SIZE_MAIN);
 }
 

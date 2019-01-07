@@ -15,6 +15,7 @@
  */
 
 #include <assert.h>
+#include <inttypes.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -150,7 +151,8 @@ static void block_allocator_queue_add(struct block_allocator_queue* q,
         if (index != q->head || !q->updating) {
             return;
         }
-        pr_warn("block %lld, tmp %d, free %d, removed head during update\n",
+        pr_warn("block %" PRIu64
+                ", tmp %d, free %d, removed head during update\n",
                 block, is_tmp, is_free);
     }
 
@@ -167,8 +169,8 @@ static void block_allocator_queue_add(struct block_allocator_queue* q,
     q->entry[q->tail].free = is_free;
     q->entry[q->tail].removed = false;
     q->tail = new_tail;
-    pr_write("block %lld, tmp %d, free %d, index %d (rel %d)\n", block, is_tmp,
-             is_free, q->tail, block_allocator_queue_count(q));
+    pr_write("block %" PRIu64 ", tmp %d, free %d, index %d (rel %d)\n", block,
+             is_tmp, is_free, q->tail, block_allocator_queue_count(q));
 }
 
 /**
@@ -240,7 +242,7 @@ static data_block_t find_free_block(struct transaction* tr,
 
     assert(list_in_list(&tr->node)); /* transaction must be active */
 
-    pr_read("min_block %lld\n", min_block);
+    pr_read("min_block %" PRIu64 "\n", min_block);
 
     block = min_block;
     do {
@@ -255,7 +257,8 @@ static data_block_t find_free_block(struct transaction* tr,
                 if (min_block_in) {
                     block = find_free_block(tr, 0);
                 }
-                printf("%s: no space, min_block %lld, free block ignoring_min_block %lld\n",
+                printf("%s: no space, min_block %" PRIu64
+                       ", free block ignoring_min_block %" PRIu64 "\n",
                        __func__, min_block_in, block);
 
                 printf("%s: free\n", __func__);
@@ -276,7 +279,7 @@ static data_block_t find_free_block(struct transaction* tr,
 
         min_block = block;
 
-        pr_read("check free block %lld\n", block);
+        pr_read("check free block %" PRIu64 "\n", block);
 
         assert(!list_is_empty(&tr->fs->allocated));
         list_for_every_entry(&tr->fs->allocated, set, struct block_set, node) {
@@ -290,7 +293,7 @@ static data_block_t find_free_block(struct transaction* tr,
                                                       block);
     } while (block != min_block);
 
-    pr_read("found free block %lld\n", block);
+    pr_read("found free block %" PRIu64 "\n", block);
 
     return block;
 }
@@ -367,17 +370,17 @@ static void block_allocator_add_allocated(struct transaction* tr,
                                           data_block_t block,
                                           bool is_tmp) {
     if (is_tmp) {
-        pr_write("add %lld to tmp_allocated\n", block);
+        pr_write("add %" PRIu64 " to tmp_allocated\n", block);
 
         block_set_add_block(tr, &tr->tmp_allocated, block);
         tr->last_tmp_free_block = block + 1;
     } else {
-        pr_write("add %lld to allocated\n", block);
+        pr_write("add %" PRIu64 " to allocated\n", block);
 
         block_set_add_block(tr, &tr->allocated, block);
 
         if (block < tr->min_free_block) {
-            pr_write("remove %lld from new_free_set\n", block);
+            pr_write("remove %" PRIu64 " from new_free_set\n", block);
 
             assert(tr->new_free_set);
             block_set_remove_block(tr, tr->new_free_set, block);
@@ -424,7 +427,7 @@ static void block_allocator_add_free(struct transaction* tr,
         assert(!block_set_block_in_set(tr, &tr->allocated, block));
         assert(!block_set_block_in_set(tr, &tr->freed, block));
 
-        pr_write("remove %lld from tmp_allocated\n", block);
+        pr_write("remove %" PRIu64 " from tmp_allocated\n", block);
 
         block_set_remove_block(tr, &tr->tmp_allocated, block);
 
@@ -433,24 +436,24 @@ static void block_allocator_add_free(struct transaction* tr,
 
     assert(!block_set_block_in_set(tr, &tr->tmp_allocated, block));
     if (block_set_block_in_set(tr, &tr->allocated, block)) {
-        pr_write("remove %lld from allocated\n", block);
+        pr_write("remove %" PRIu64 " from allocated\n", block);
 
         block_set_remove_block(tr, &tr->allocated, block);
 
         if (block < tr->min_free_block) {
-            pr_write("add %lld to new_free_root\n", block);
+            pr_write("add %" PRIu64 " to new_free_root\n", block);
 
             assert(tr->new_free_set);
             block_set_add_block(tr, tr->new_free_set, block);
         }
     } else {
         if (block < tr->min_free_block) {
-            pr_write("add %lld to new_free_root\n", block);
+            pr_write("add %" PRIu64 " to new_free_root\n", block);
 
             assert(tr->new_free_set);
             block_set_add_block(tr, tr->new_free_set, block);
         } else {
-            pr_write("add %lld to freed\n", block);
+            pr_write("add %" PRIu64 " to freed\n", block);
 
             block_set_add_block(tr, &tr->freed, block);
         }
@@ -499,7 +502,7 @@ void block_allocator_process_queue(struct transaction* tr) {
     while (!block_allocator_queue_empty(&block_allocator_queue)) {
         assert(loop_limit-- > 0);
         entry = block_allocator_queue_peek_head(&block_allocator_queue);
-        pr_write("block %lld, tmp %d, free %d, removed %d\n",
+        pr_write("block %" PRIu64 ", tmp %d, free %d, removed %d\n",
                  (data_block_t)entry.block, entry.tmp, entry.free,
                  entry.removed);
         if (entry.removed) {

@@ -15,6 +15,7 @@
  */
 
 #include <assert.h>
+#include <inttypes.h>
 #include <lk/macros.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -29,7 +30,7 @@
 #include "transaction.h"
 
 #define BIT_MASK(x) \
-    (((x) >= sizeof(unsigned long long) * 8) ? (0ULL - 1) : ((1ULL << (x)) - 1))
+    (((x) >= sizeof(uint64_t) * 8) ? (0ULL - 1) : ((1ULL << (x)) - 1))
 
 #define FILE_ENTRY_MAGIC (0x0066797473757274) /* trustyf\0 */
 
@@ -106,10 +107,11 @@ void file_block_map_init(struct transaction* tr,
 
 err:
     if (tr->failed) {
-        pr_warn("can't read file entry at %lld, transaction failed\n",
+        pr_warn("can't read file entry at %" PRIu64 ", transaction failed\n",
                 block_mac_to_block(tr, file));
     } else {
-        pr_err("can't read file entry at %lld\n", block_mac_to_block(tr, file));
+        pr_err("can't read file entry at %" PRIu64 "\n",
+               block_mac_to_block(tr, file));
         transaction_fail(tr);
     }
 }
@@ -127,12 +129,13 @@ void file_print(struct transaction* tr, const struct file_handle* file) {
     file_block_map_init(tr, &block_map, &file->block_mac);
     file_entry_ro = block_get(tr, &file->block_mac, NULL, &file_entry_ro_ref);
     if (!file_entry_ro) {
-        printf("can't read file entry at %lld\n",
+        printf("can't read file entry at %" PRIu64 "\n",
                block_mac_to_block(tr, &file->block_mac));
         return;
     }
     assert(file_entry_ro);
-    printf("file at %lld, path %s, size %lld, hash 0x%llx, block map (tree)\n",
+    printf("file at %" PRIu64 ", path %s, size %" PRIu64 ", hash 0x%" PRIx64
+           ", block map (tree)\n",
            block_mac_to_block(tr, &file->block_mac), file_entry_ro->info.path,
            file_entry_ro->info.size, path_hash(tr, file_entry_ro->info.path));
     block_put(file_entry_ro, &file_entry_ro_ref);
@@ -229,7 +232,8 @@ static void file_block_map_update(struct transaction* tr,
             assert(new_block);
             block_mac_set_block(tr, &block_mac, new_block);
 
-            pr_write("copy file block %lld -> %lld\n", file_block, new_block);
+            pr_write("copy file block %" PRIu64 " -> %" PRIu64 "\n", file_block,
+                     new_block);
 
             /*
              * Use block_get_copy instead of block_move since tr->fs->files
@@ -277,7 +281,8 @@ static void file_block_map_update(struct transaction* tr,
     }
 
     if (block_map) {
-        pr_write("file at %lld: update block_map %lld -> %lld\n",
+        pr_write("file at %" PRIu64 ": update block_map %" PRIu64 " -> %" PRIu64
+                 "\n",
                  block_mac_to_block(tr, &block_mac),
                  block_mac_to_block(tr, &file_entry_rw->block_map),
                  block_mac_to_block(tr, &block_map->tree.root));
@@ -643,13 +648,14 @@ static bool file_tree_lookup(struct block_mac* block_mac_out,
         block_mac = block_tree_path_get_data_block_mac(tree_path);
         if (!block_mac_to_block(tr, &block_mac)) {
             if (LOCAL_TRACE >= TRACE_LEVEL_WARNING) {
-                pr_warn("got 0 block pointer for hash %lld while looking for %s, hash 0x%llx\n",
+                pr_warn("got 0 block pointer for hash %" PRIu64
+                        " while looking for %s, hash 0x%" PRIx64 "\n",
                         block_tree_path_get_key(tree_path), file_path, hash);
                 block_tree_print(tr, tree);
             }
             block_tree_path_next(tree_path);
             block_mac = block_tree_path_get_data_block_mac(tree_path);
-            pr_warn("next %lld, hash 0x%llx\n",
+            pr_warn("next %" PRIu64 ", hash 0x%" PRIx64 "\n",
                     block_mac_to_block(tr, &block_mac),
                     block_tree_path_get_key(tree_path));
         }
@@ -668,7 +674,7 @@ static bool file_tree_lookup(struct block_mac* block_mac_out,
         assert(file_entry->magic == FILE_ENTRY_MAGIC);
         found = !strcmp(file_path, file_entry->info.path);
 
-        pr_read("block %lld, hash 0x%llx match, found %d\n",
+        pr_read("block %" PRIu64 ", hash 0x%" PRIx64 " match, found %d\n",
                 block_mac_to_block(tr, &block_mac), hash, found);
 
         block_put(file_entry, &file_entry_ref);
@@ -686,8 +692,8 @@ static bool file_tree_lookup(struct block_mac* block_mac_out,
         block_tree_path_next(tree_path);
     }
     if (LOCAL_TRACE >= TRACE_LEVEL_READ) {
-        pr_read("%s: hash 0x%llx does not match 0x%llx\n", __func__, hash,
-                block_tree_path_get_key(tree_path));
+        pr_read("%s: hash 0x%" PRIx64 " does not match 0x%" PRIx64 "\n",
+                __func__, hash, block_tree_path_get_key(tree_path));
         block_tree_print(tr, tree);
     }
     return false;
@@ -716,8 +722,8 @@ static bool file_create(struct block_mac* block_mac_out,
 
     block = block_allocate(tr);
 
-    pr_write("create file, %s, hash 0x%llx, at block %lld\n", path, hash,
-             block);
+    pr_write("create file, %s, hash 0x%" PRIx64 ", at block %" PRIu64 "\n",
+             path, hash, block);
 
     if (tr->failed) {
         pr_warn("transaction failed, abort\n");
@@ -779,7 +785,9 @@ static bool file_check_updated(struct transaction* tr,
 
     block_tree_walk(tr, &tr->files_updated, block, false, &tree_path);
     if (block_tree_path_get_key(&tree_path) == block) {
-        pr_read("%lld, already updated in this transaction, use new copy %lld\n",
+        pr_read("%" PRIu64
+                ", already updated in this transaction, use new copy %" PRIu64
+                "\n",
                 block, block_tree_path_get_data(&tree_path));
         *block_mac_out = block_tree_path_get_data_block_mac(&tree_path);
         return true;
@@ -815,7 +823,7 @@ static bool file_lookup_not_removed(struct block_mac* block_mac_out,
                              file_path, false);
     if (!found || file_is_removed(tr, block_mac_to_block(tr, &block_mac))) {
         if (found) {
-            pr_read("file %s, %lld in removed\n", file_path,
+            pr_read("file %s, %" PRIu64 " in removed\n", file_path,
                     block_mac_to_block(tr, &block_mac));
         } else {
             pr_read("file %s not in tr->fs->files\n", file_path);
@@ -828,12 +836,14 @@ static bool file_lookup_not_removed(struct block_mac* block_mac_out,
                     false, tree_path);
     if (block_tree_path_get_key(tree_path) ==
         block_mac_to_block(tr, &block_mac)) {
-        pr_read("file %s, %lld, already updated in this transaction, use new copy %lld\n",
+        pr_read("file %s, %" PRIu64
+                ", already updated in this transaction, use new copy %" PRIu64
+                "\n",
                 file_path, block_mac_to_block(tr, &block_mac),
                 block_tree_path_get_data(tree_path));
         block_mac = block_tree_path_get_data_block_mac(tree_path);
     }
-    pr_read("file %s, %lld, found in tr->fs->files\n", file_path,
+    pr_read("file %s, %" PRIu64 ", found in tr->fs->files\n", file_path,
             block_mac_to_block(tr, &block_mac));
 
     /*
@@ -1024,7 +1034,7 @@ bool file_delete(struct transaction* tr, const char* path) {
         in_files = true;
     }
 
-    pr_write("delete file, %s, at block %lld\n", path,
+    pr_write("delete file, %s, at block %" PRIu64 "\n", path,
              block_mac_to_block(tr, &block_mac));
 
     file_entry = block_get(tr, &block_mac, NULL, &file_entry_ref);
@@ -1158,12 +1168,12 @@ static void file_restore_to_commit(struct transaction* tr,
         assert(block_mac_eq(tr, src, dest));
         return;
     }
-    pr_write(
-            "file handle %p, abort block %lld/%lld -> %lld, size %lld -> %lld\n",
-            file, block_mac_to_block(tr, &file->committed_block_mac),
-            block_mac_to_block(tr, &file->block_mac),
-            block_mac_to_block(tr, &file->to_commit_block_mac), file->size,
-            file->to_commit_size);
+    pr_write("file handle %p, abort block %" PRIu64 "/%" PRIu64 " -> %" PRIu64
+             ", size %" PRIu64 " -> %" PRIu64 "\n",
+             file, block_mac_to_block(tr, &file->committed_block_mac),
+             block_mac_to_block(tr, &file->block_mac),
+             block_mac_to_block(tr, &file->to_commit_block_mac), file->size,
+             file->to_commit_size);
     block_mac_copy(tr, dest, src);
 }
 
@@ -1188,14 +1198,15 @@ static void file_apply_to_commit(struct transaction* tr,
 
     if (block_mac_same_block(tr, src, dest)) {
         assert(block_mac_eq(tr, src, dest));
-        pr_write("file handle %p, unchanged file at %lld\n", file,
+        pr_write("file handle %p, unchanged file at %" PRIu64 "\n", file,
                  block_mac_to_block(tr, &file->committed_block_mac));
         return;
     }
 
     if (file_tr != tr) {
         if (file->used_by_tr) {
-            pr_warn("file handle %p, conflict %lld != %lld || used_by_tr %d\n",
+            pr_warn("file handle %p, conflict %" PRIu64 " != %" PRIu64
+                    " || used_by_tr %d\n",
                     file, block_mac_to_block(tr, &file->committed_block_mac),
                     block_mac_to_block(tr, &file->block_mac), file->used_by_tr);
             assert(!file_tr->failed);
@@ -1204,12 +1215,12 @@ static void file_apply_to_commit(struct transaction* tr,
         assert(block_mac_same_block(tr, dest, &file->block_mac));
     }
 
-    pr_write(
-            "file handle %p, apply block %lld/%lld -> %lld, size %lld -> %lld\n",
-            file, block_mac_to_block(tr, &file->committed_block_mac),
-            block_mac_to_block(tr, &file->block_mac),
-            block_mac_to_block(tr, &file->to_commit_block_mac), file->size,
-            file->to_commit_size);
+    pr_write("file handle %p, apply block %" PRIu64 "/%" PRIu64 " -> %" PRIu64
+             ", size %" PRIu64 " -> %" PRIu64 "\n",
+             file, block_mac_to_block(tr, &file->committed_block_mac),
+             block_mac_to_block(tr, &file->block_mac),
+             block_mac_to_block(tr, &file->to_commit_block_mac), file->size,
+             file->to_commit_size);
 
     block_mac_copy(tr, dest, src);
     if (tr == file_tr) {
@@ -1258,19 +1269,19 @@ static void file_update_block_mac_tr(struct transaction* tr,
                                             old_block_mac)
                     : !block_mac_same_block(tr, &file->block_mac,
                                             new_block_mac)) {
-            pr_write("file handle %p, unrelated %lld != %lld\n", file,
-                     block_mac_to_block(tr, &file->committed_block_mac),
+            pr_write("file handle %p, unrelated %" PRIu64 " != %" PRIu64 "\n",
+                     file, block_mac_to_block(tr, &file->committed_block_mac),
                      block_mac_to_block(tr, new_block_mac));
             continue; /*unrelated file */
         }
         assert(old_block_no_mac || !block_mac_valid(tr, old_block_mac) ||
                block_mac_eq(tr, &file->committed_block_mac, old_block_mac));
 
-        pr_write(
-                "file handle %p, stage block %lld/%lld -> %lld, size %lld -> %lld\n",
-                file, block_mac_to_block(tr, &file->committed_block_mac),
-                block_mac_to_block(tr, &file->block_mac),
-                block_mac_to_block(tr, new_block_mac), file->size, new_size);
+        pr_write("file handle %p, stage block %" PRIu64 "/%" PRIu64
+                 " -> %" PRIu64 ", size %" PRIu64 " -> %" PRIu64 "\n",
+                 file, block_mac_to_block(tr, &file->committed_block_mac),
+                 block_mac_to_block(tr, &file->block_mac),
+                 block_mac_to_block(tr, new_block_mac), file->size, new_size);
 
         block_mac_copy(tr, &file->to_commit_block_mac, new_block_mac);
         file->to_commit_size = new_size;
@@ -1342,7 +1353,7 @@ void file_transaction_complete(struct transaction* tr,
         assert(file_entry_ro);
         block_mac_set_block(tr, &old_file, block_tree_path_get_key(&tree_path));
 
-        pr_write("update file at %lld -> %lld, %s\n",
+        pr_write("update file at %" PRIu64 " -> %" PRIu64 ", %s\n",
                  block_mac_to_block(tr, &old_file),
                  block_mac_to_block(tr, &file), file_entry_ro->info.path);
 
@@ -1384,8 +1395,8 @@ void file_transaction_complete(struct transaction* tr,
         }
         assert(file_entry_ro);
 
-        pr_write("delete file at %lld, %s\n", block_mac_to_block(tr, &file),
-                 file_entry_ro->info.path);
+        pr_write("delete file at %" PRIu64 ", %s\n",
+                 block_mac_to_block(tr, &file), file_entry_ro->info.path);
 
         file_update_block_mac_all(tr, &file, false, &clear_block_mac, 0);
 
@@ -1416,13 +1427,14 @@ void file_transaction_complete(struct transaction* tr,
             return;
         }
         assert(file_entry_ro);
-        pr_write("add file at %lld, %s\n", block_mac_to_block(tr, &file),
+        pr_write("add file at %" PRIu64 ", %s\n", block_mac_to_block(tr, &file),
                  file_entry_ro->info.path);
 
         if (file_tree_lookup(&old_file, tr, &new_files, &tmp_tree_path,
                              file_entry_ro->info.path, false)) {
             block_put(file_entry_ro, &file_entry_ref);
-            pr_err("add file at %lld, %s, failed, conflicts with %lld\n",
+            pr_err("add file at %" PRIu64
+                   ", %s, failed, conflicts with %" PRIu64 "\n",
                    block_mac_to_block(tr, &file), file_entry_ro->info.path,
                    block_mac_to_block(tr, &old_file));
             transaction_fail(tr);
@@ -1517,7 +1529,7 @@ void file_transaction_failed(struct transaction* tr) {
             file->block_mac = file->committed_block_mac;
             success = file_read_size(tr, &file->block_mac, &file->size);
             if (!success) {
-                pr_warn("failed to read block %lld, clear file handle\n",
+                pr_warn("failed to read block %" PRIu64 ", clear file handle\n",
                         block_mac_to_block(tr, &file->block_mac));
                 block_mac_clear(tr, &file->block_mac);
                 block_mac_clear(tr, &file->committed_block_mac);

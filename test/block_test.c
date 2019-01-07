@@ -15,6 +15,7 @@
  */
 
 #include <assert.h>
+#include <inttypes.h>
 #include <limits.h>
 #include <lk/macros.h>
 #include <stdbool.h>
@@ -224,7 +225,7 @@ static bool check_fs_finish(struct transaction* tr) {
 
     for (block = 0; block < countof(blocks); block++) {
         if (!blocks[block].used_by_str) {
-            printf("block %lld, lost\n", block);
+            printf("block %" PRIu64 ", lost\n", block);
             valid = false;
         }
     }
@@ -587,14 +588,14 @@ static void free_test_etc(struct transaction* tr,
         if (i < blocks1_count) {
             block_free(&tr1, blocks1[i]);
             if (print_test_verbose) {
-                printf("tr1.freed after free %lld:\n", blocks1[i]);
+                printf("tr1.freed after free %" PRIu64 ":\n", blocks1[i]);
                 block_set_print(&tr1, &tr1.freed);
             }
         }
         if (i < blocks2_count) {
             block_free(&tr2, blocks1[i]);
             if (print_test_verbose) {
-                printf("tr2.freed after free %lld:\n", blocks2[i]);
+                printf("tr2.freed after free %" PRIu64 ":\n", blocks2[i]);
                 block_set_print(&tr2, &tr2.freed);
             }
         }
@@ -732,10 +733,11 @@ static void allocate_free_other_test(struct transaction* tr) {
     for (i = 0; i < countof(allocated); i++) {
         allocated[i] = block_allocate(tr);
         if (print_test_verbose) {
-            printf("tr.tmp_allocated after allocate %d, %lld:\n", i,
+            printf("tr.tmp_allocated after allocate %d, %" PRIu64 ":\n", i,
                    allocated[i]);
             block_set_print(tr, &tr->tmp_allocated);
-            printf("tr.allocated after allocate %d, %lld:\n", i, allocated[i]);
+            printf("tr.allocated after allocate %d, %" PRIu64 ":\n", i,
+                   allocated[i]);
             block_set_print(tr, &tr->allocated);
         }
         assert(!tr->failed);
@@ -853,8 +855,8 @@ static void open_test_file_etc(struct transaction* tr,
     bool found;
     found = file_open(tr, path, file, create);
     if (print_test_verbose) {
-        printf("%s: lookup file %s, create %d, got %lld:\n", __func__, path,
-               create, block_mac_to_block(tr, &file->block_mac));
+        printf("%s: lookup file %s, create %d, got %" PRIu64 ":\n", __func__,
+               path, create, block_mac_to_block(tr, &file->block_mac));
     }
 
     assert(found == !expect_failure);
@@ -991,8 +993,8 @@ static void file_test_open(struct transaction* tr,
         for (i = 0; i < allocate; i++) {
             block_data_rw = file_get_block_write(tr, file, i, true, &ref);
             if (print_test_verbose) {
-                printf("%s: allocate file block %d, %lld:\n", __func__, i,
-                       data_to_block_num(block_data_rw));
+                printf("%s: allocate file block %d, %" PRIu64 ":\n", __func__,
+                       i, data_to_block_num(block_data_rw));
             }
             assert(block_data_rw);
             /* TODO: store iv in file block map */
@@ -1023,7 +1025,7 @@ static void file_test_open(struct transaction* tr,
                 break;
             }
             if (print_test_verbose) {
-                printf("%s: found file block %d, %lld:\n", __func__, i,
+                printf("%s: found file block %d, %" PRIu64 ":\n", __func__, i,
                        data_to_block_num(block_data_ro));
             }
             block_data_ro = (void*)block_data_ro + sizeof(struct iv);
@@ -1043,8 +1045,8 @@ static void file_test_open(struct transaction* tr,
             block_data_ro = file_get_block(tr, file, i, &ref);
             if (block_data_ro) {
                 file_block_put(block_data_ro, &ref);
-                printf("%s: file block %d, %lld not deleted\n", __func__, i,
-                       data_to_block_num(block_data_ro));
+                printf("%s: file block %d, %" PRIu64 " not deleted\n", __func__,
+                       i, data_to_block_num(block_data_ro));
                 break;
             }
         }
@@ -1127,7 +1129,7 @@ static void file_test_etc(struct transaction* tr,
 
     if (delete) {
         if (print_test_verbose) {
-            printf("%s: delete file %s, at %lld:\n", __func__, path,
+            printf("%s: delete file %s, at %" PRIu64 ":\n", __func__, path,
                    block_mac_to_block(tr, &file.block_mac));
         }
         deleted = file_delete(tr, path);
@@ -1208,7 +1210,7 @@ static void file_test_split_tr(struct transaction* tr,
 
     if (delete) {
         if (print_test_verbose) {
-            printf("%s: delete file %s, at %lld:\n", __func__, path,
+            printf("%s: delete file %s, at %" PRIu64 ":\n", __func__, path,
                    block_mac_to_block(tr, &file[i].block_mac));
         }
         deleted = file_delete(tr, path);

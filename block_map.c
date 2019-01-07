@@ -15,6 +15,7 @@
  */
 
 #include <assert.h>
+#include <inttypes.h>
 
 #include "block_allocator.h"
 #include "block_map.h"
@@ -67,8 +68,8 @@ bool block_map_get(struct transaction* tr,
     block_tree_walk(tr, &block_map->tree, index, false, &path);
     if (block_tree_path_get_key(&path) != index) {
         if (print_block_map) {
-            printf("%s: %lld not found (next key %lld)\n", __func__, index,
-                   block_tree_path_get_key(&path));
+            printf("%s: %" PRIu64 " not found (next key %" PRIu64 ")\n",
+                   __func__, index, block_tree_path_get_key(&path));
         }
         return false;
     }
@@ -104,7 +105,8 @@ void block_map_set(struct transaction* tr,
     }
     if (block_tree_path_get_key(&path) == index) {
         if (print_block_map) {
-            printf("%s: block_map at %lld: remove existing entry at %lld\n",
+            printf("%s: block_map at %" PRIu64
+                   ": remove existing entry at %" PRIu64 "\n",
                    __func__, block_mac_to_block(tr, &block_map->tree.root),
                    index);
         }
@@ -117,9 +119,10 @@ void block_map_set(struct transaction* tr,
     }
     if (block_mac && block_mac_valid(tr, block_mac)) {
         if (print_block_map) {
-            printf("%s: block_map at %lld: [%lld] = %lld\n", __func__,
-                   block_mac_to_block(tr, &block_map->tree.root), index,
-                   block_mac_to_block(tr, block_mac));
+            printf("%s: block_map at %" PRIu64 ": [%" PRIu64 "] = %" PRIu64
+                   "\n",
+                   __func__, block_mac_to_block(tr, &block_map->tree.root),
+                   index, block_mac_to_block(tr, block_mac));
         }
         block_tree_insert(tr, &block_map->tree, index,
                           block_mac_to_block(tr, block_mac));
@@ -152,7 +155,7 @@ void block_map_put_dirty(struct transaction* tr,
     }
 
     if (print_block_map) {
-        printf("%s: %lld (found key %lld)\n", __func__, index,
+        printf("%s: %" PRIu64 " (found key %" PRIu64 ")\n", __func__, index,
                block_tree_path_get_key(&path));
     }
 
@@ -228,7 +231,7 @@ void block_map_free(struct transaction* tr, struct block_map* block_map) {
         return;
     }
     if (print_block_map) {
-        printf("%s: root %lld\n", __func__,
+        printf("%s: root %" PRIu64 "\n", __func__,
                block_mac_to_block(tr, &block_map->tree.root));
         block_tree_print(tr, &block_map->tree);
     }

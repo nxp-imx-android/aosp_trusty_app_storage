@@ -15,6 +15,7 @@
  */
 
 #include <assert.h>
+#include <inttypes.h>
 #include <lk/compiler.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -54,8 +55,8 @@ static void block_range_init_from_path(struct block_range* range,
  */
 static bool block_range_extend(struct block_range* range,
                                struct block_range add_range) {
-    pr_write("%lld-%lld, %lld-%lld\n", range->start, range->end - 1,
-             add_range.start, add_range.end - 1);
+    pr_write("%" PRIu64 "-%" PRIu64 ", %" PRIu64 "-%" PRIu64 "\n", range->start,
+             range->end - 1, add_range.start, add_range.end - 1);
     assert(!block_range_empty(add_range));
     assert(!block_range_overlap(*range, add_range));
     if (block_range_empty(*range)) {
@@ -71,7 +72,7 @@ static bool block_range_extend(struct block_range* range,
         return false;
     }
 
-    pr_write("now %lld-%lld\n", range->start, range->end - 1);
+    pr_write("now %" PRIu64 "-%" PRIu64 "\n", range->start, range->end - 1);
 
     return true;
 }
@@ -85,8 +86,8 @@ static bool block_range_extend(struct block_range* range,
  */
 static bool block_range_shrink(struct block_range* range,
                                struct block_range remove_range) {
-    pr_write("%lld-%lld, %lld-%lld\n", range->start, range->end - 1,
-             remove_range.start, remove_range.end - 1);
+    pr_write("%" PRIu64 "-%" PRIu64 ", %" PRIu64 "-%" PRIu64 "\n", range->start,
+             range->end - 1, remove_range.start, remove_range.end - 1);
     assert(block_range_is_sub_range(*range, remove_range));
     if (remove_range.start == range->start) {
         assert(!block_range_empty(*range));
@@ -99,7 +100,7 @@ static bool block_range_shrink(struct block_range* range,
         return false;
     }
 
-    pr_write("now %lld-%lld\n", range->start, range->end - 1);
+    pr_write("now %" PRIu64 "-%" PRIu64 "\n", range->start, range->end - 1);
 
     return true;
 }
@@ -116,9 +117,9 @@ static void block_set_print_range(struct block_range range, int* split_line) {
     }
     (*split_line)++;
     if (range.start == range.end - 1) {
-        printf("    %3lld      ", range.start);
+        printf("    %3" PRIu64 "      ", range.start);
     } else {
-        printf("    %3lld - %3lld", range.start, range.end - 1);
+        printf("    %3" PRIu64 " - %3" PRIu64 "", range.start, range.end - 1);
     }
     (*split_line)++;
 }
@@ -185,16 +186,18 @@ static bool block_set_check_ranges(struct transaction* tr,
     block_range_init_from_path(&range, &path);
     while (!block_range_empty(range)) {
         if (range.start < min) {
-            pr_err("bad range start %lld < %lld\n", range.start, min);
+            pr_err("bad range start %" PRIu64 " < %" PRIu64 "\n", range.start,
+                   min);
             return false;
         }
         if (range.end <= range.start) {
-            pr_err("bad range end %lld <= start %lld\n", range.end,
-                   range.start);
+            pr_err("bad range end %" PRIu64 " <= start %" PRIu64 "\n",
+                   range.end, range.start);
             return false;
         }
         if (range.end > max) {
-            pr_err("bad range end %lld > max %lld\n", range.end, max);
+            pr_err("bad range end %" PRIu64 " > max %" PRIu64 "\n", range.end,
+                   max);
             return false;
         }
         min = range.end + 1;
@@ -258,7 +261,8 @@ data_block_t block_set_find_next_block(struct transaction* tr,
         }
     }
 
-    pr_read("set at %lld, %lld in_set %d, [%lld-%lld]\n",
+    pr_read("set at %" PRIu64 ", %" PRIu64 " in_set %d, [%" PRIu64 "-%" PRIu64
+            "]\n",
             block_mac_to_block(tr, &set->block_tree.root), min_block, in_set,
             range.start, range.end - 1);
 
@@ -266,18 +270,18 @@ data_block_t block_set_find_next_block(struct transaction* tr,
     assert(!block_range_empty(range) || !range.start);
 
     if (block_in_range(range, min_block) == in_set) {
-        pr_read("%lld in_set %d, return min_block, %lld\n", min_block, in_set,
-                min_block);
+        pr_read("%" PRIu64 " in_set %d, return min_block, %" PRIu64 "\n",
+                min_block, in_set, min_block);
         return min_block;
     } else {
         if (!in_set) {
             assert(!block_range_empty(range));
-            pr_read("%lld in_set %d, return range.end, %lld\n", min_block,
-                    in_set, range.end);
+            pr_read("%" PRIu64 " in_set %d, return range.end, %" PRIu64 "\n",
+                    min_block, in_set, range.end);
             return range.end;
         } else {
-            pr_read("%lld in_set %d, return range.start, %lld\n", min_block,
-                    in_set, range.start);
+            pr_read("%" PRIu64 " in_set %d, return range.start, %" PRIu64 "\n",
+                    min_block, in_set, range.start);
             return range.start;
         }
     }
@@ -421,7 +425,7 @@ void block_set_add_range(struct transaction* tr,
         return;
     }
 
-    pr_write("set %lld, add %lld-%lld, updating %d\n",
+    pr_write("set %" PRIu64 ", add %" PRIu64 "-%" PRIu64 ", updating %d\n",
              block_mac_to_block(tr, &set->block_tree.root), range.start,
              range.end - 1, set->updating);
 
@@ -494,7 +498,7 @@ void block_set_add_range(struct transaction* tr,
     set->updating = false;
 
     full_assert(block_set_check(tr, set));
-    pr_write("set %lld, add %lld-%lld done\n",
+    pr_write("set %" PRIu64 ", add %" PRIu64 "-%" PRIu64 " done\n",
              block_mac_to_block(tr, &set->block_tree.root), range.start,
              range.end - 1);
 }
@@ -524,7 +528,7 @@ void block_set_remove_range(struct transaction* tr,
         return;
     }
 
-    pr_write("set %lld, remove %lld-%lld, updating %d\n",
+    pr_write("set %" PRIu64 ", remove %" PRIu64 "-%" PRIu64 ", updating %d\n",
              block_mac_to_block(tr, &set->block_tree.root), range.start,
              range.end - 1, set->updating);
 
@@ -576,7 +580,7 @@ void block_set_remove_range(struct transaction* tr,
 
     full_assert(block_set_check(tr, set));
 
-    pr_write("set %lld, remove %lld-%lld done\n",
+    pr_write("set %" PRIu64 ", remove %" PRIu64 "-%" PRIu64 " done\n",
              block_mac_to_block(tr, &set->block_tree.root), range.start,
              range.end - 1);
 }

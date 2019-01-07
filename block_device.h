@@ -19,7 +19,7 @@
 #include <lk/list.h>
 #include <stdint.h>
 
-typedef unsigned long long data_block_t;
+typedef uint64_t data_block_t;
 
 /**
  * struct block_device - Block device functions and state

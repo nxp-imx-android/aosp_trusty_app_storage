@@ -18,6 +18,7 @@
 
 #include <assert.h>
 #include <errno.h>
+#include <inttypes.h>
 #include <lk/list.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -312,7 +313,7 @@ static bool storage_file_check_name(struct transaction* tr,
 
     file_info = file_get_info(tr, &file->block_mac, &ref);
     if (!file_info) {
-        printf("can't read file entry at %lld\n",
+        printf("can't read file entry at %" PRIu64 "\n",
                block_mac_to_block(tr, &file->block_mac));
         return false;
     }
@@ -631,8 +632,8 @@ static int storage_file_read(struct storage_msg* msg,
 
     offset = req->offset;
     if (offset > file->size) {
-        SS_ERR("can't read past end of file (%lld > %lld)\n", offset,
-               file->size);
+        SS_ERR("can't read past end of file (%" PRIu64 " > %" PRIu64 ")\n",
+               offset, file->size);
         result = STORAGE_ERR_NOT_VALID;
         goto err_invalid_input;
     }
@@ -661,7 +662,7 @@ static int storage_file_read(struct storage_msg* msg,
                       : bytes_left;
         if (!block_data) {
             if (session->tr.failed) {
-                SS_ERR("error reading block %lld\n", block_num);
+                SS_ERR("error reading block %" PRIu64 "\n", block_num);
                 result = STORAGE_ERR_GENERIC;
                 goto err_get_block;
             }
@@ -708,7 +709,7 @@ static enum storage_err storage_create_gap(
         block_data = file_get_block_write(&session->tr, file, block_num, true,
                                           &block_data_ref);
         if (!block_data) {
-            SS_ERR("error getting block %lld\n", block_num);
+            SS_ERR("error getting block %" PRIu64 "\n", block_num);
             return STORAGE_ERR_GENERIC;
         }
 
@@ -716,7 +717,8 @@ static enum storage_err storage_create_gap(
         file_block_put_dirty(&session->tr, file, block_num, block_data,
                              &block_data_ref);
 
-        SS_INFO("%s: clear block at old size 0x%llx, block_offset 0x%zx\n",
+        SS_INFO("%s: clear block at old size 0x%" PRIx64
+                ", block_offset 0x%zx\n",
                 __func__, file->size, block_offset);
     }
     return STORAGE_NO_ERROR;
@@ -775,7 +777,7 @@ static enum storage_err storage_file_write(
         block_data = file_get_block_write(&session->tr, file, block_num,
                                           len != block_size, &block_data_ref);
         if (!block_data) {
-            SS_ERR("error getting block %lld\n", block_num);
+            SS_ERR("error getting block %" PRIu64 "\n", block_num);
             result = STORAGE_ERR_GENERIC;
             goto err_write;
         }
@@ -784,8 +786,8 @@ static enum storage_err storage_file_write(
         file_block_put_dirty(&session->tr, file, block_num, block_data,
                              &block_data_ref);
 
-        SS_INFO("%s: bufp %p offset 0x%llx len 0x%x\n", __func__, bufp, offset,
-                len);
+        SS_INFO("%s: bufp %p offset 0x%" PRIx64 " len 0x%x\n", __func__, bufp,
+                offset, len);
 
         bytes_left -= len;
         offset += len;
@@ -1032,8 +1034,8 @@ static enum storage_err storage_file_set_size(
         return STORAGE_ERR_NOT_VALID;
     }
 
-    SS_INFO("%s: new size 0x%llx, old size 0x%llx\n", __func__, new_size,
-            file->size);
+    SS_INFO("%s: new size 0x%" PRIx64 ", old size 0x%" PRIx64 "\n", __func__,
+            new_size, file->size);
 
     /* for now we only support shrinking the file */
     if (new_size > file->size) {

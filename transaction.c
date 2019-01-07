@@ -15,6 +15,7 @@
  */
 
 #include <assert.h>
+#include <inttypes.h>
 #include <lk/compiler.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -99,9 +100,10 @@ static void transaction_merge_free_sets(struct transaction* tr,
         delete_range = block_set_find_next_range(tr, set_d, next_block);
         add_range = block_set_find_next_range(tr, set_a, next_block);
         if (print_merge_free) {
-            printf("%s: add %lld-%lld or delete %lld-%lld\n", __func__,
-                   add_range.start, add_range.end - 1, delete_range.start,
-                   delete_range.end - 1);
+            printf("%s: add %" PRIu64 "-%" PRIu64 " or delete %" PRIu64
+                   "-%" PRIu64 "\n",
+                   __func__, add_range.start, add_range.end - 1,
+                   delete_range.start, delete_range.end - 1);
         }
         assert(!block_range_overlap(delete_range, add_range));
         if (block_range_before(delete_range, add_range)) {
@@ -231,7 +233,7 @@ void transaction_complete(struct transaction* tr) {
     assert(tr->fs);
     assert(!tr->complete);
 
-    // printf("%s: %lld\n", __func__, tr->version);
+    // printf("%s: %" PRIu64 "\n", __func__, tr->version);
 
     block_set_copy(tr, &new_free_set, &tr->fs->free);
 

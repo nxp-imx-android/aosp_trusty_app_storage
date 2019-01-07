@@ -15,6 +15,7 @@
  */
 
 #include <assert.h>
+#include <inttypes.h>
 #include <lk/compiler.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -112,8 +113,8 @@ bool update_super_block(struct transaction* tr,
     ver = (tr->fs->super_block_version + 1) & SUPER_BLOCK_FLAGS_VERSION_MASK;
     index = ver & SUPER_BLOCK_FLAGS_BLOCK_INDEX_MASK;
 
-    pr_write("write super block %lld, ver %d\n", tr->fs->super_block[index],
-             ver);
+    pr_write("write super block %" PRIu64 ", ver %d\n",
+             tr->fs->super_block[index], ver);
 
     super_rw =
             block_get_cleared_super(tr, tr->fs->super_block[index], &super_ref);
@@ -150,7 +151,7 @@ bool update_super_block(struct transaction* tr,
 static bool super_block_valid(const struct block_device* dev,
                               const struct super_block* super) {
     if (super->magic != SUPER_BLOCK_MAGIC) {
-        pr_init("bad magic, 0x%llx\n", (unsigned long long)super->magic);
+        pr_init("bad magic, 0x%" PRIx64 "\n", super->magic);
         return false;
     }
     if (super->flags != super->flags2) {
@@ -190,7 +191,7 @@ static bool super_block_valid(const struct block_device* dev,
         return false;
     }
     if (super->block_count > dev->block_count) {
-        pr_warn("bad block count 0x%llx, expected <= 0x%llx\n",
+        pr_warn("bad block count 0x%" PRIx64 ", expected <= 0x%" PRIx64 "\n",
                 super->block_count, dev->block_count);
         return false;
     }
@@ -377,7 +378,7 @@ int fs_init(struct fs* fs,
     }
 
     if (super_dev->block_count < 2) {
-        pr_err("unsupported block count for super_dev, %lld\n",
+        pr_err("unsupported block count for super_dev, %" PRIu64 "\n",
                super_dev->block_count);
         return -1;  // ERR_NOT_VALID?
     }

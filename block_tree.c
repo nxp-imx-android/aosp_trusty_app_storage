@@ -15,6 +15,7 @@
  */
 
 #include <assert.h>
+#include <inttypes.h>
 #include <lk/compiler.h>
 #include <lk/macros.h>
 #include <stdbool.h>
@@ -625,7 +626,7 @@ static void block_tree_node_print_internal(
     for (i = 0; i <= key_count + 1; i++) {
         child = block_tree_node_get_child(tr, tree, node_block, node_ro, i);
         if (child) {
-            printf(" %lld", block_mac_to_block(tr, child));
+            printf(" %" PRIu64 "", block_mac_to_block(tr, child));
         } else if (i < key_count + 1) {
             printf(" .");
         }
@@ -633,7 +634,7 @@ static void block_tree_node_print_internal(
             if (i == key_count) {
                 printf(" inserting");
             }
-            printf(" [%lld-]",
+            printf(" [%" PRIu64 "-]",
                    block_tree_node_get_key(tree, node_block, node_ro, i));
         }
     }
@@ -666,7 +667,8 @@ static void block_tree_node_print_leaf(const struct transaction* tr,
             if (i == key_count) {
                 printf(" inserting");
             }
-            printf(" [%lld: %lld]", key, block_mac_to_block(tr, &data));
+            printf(" [%" PRIu64 ": %" PRIu64 "]", key,
+                   block_mac_to_block(tr, &data));
         } else if (i < key_count) {
             printf(" .");
         }
@@ -685,13 +687,13 @@ static void block_tree_node_print(const struct transaction* tr,
                                   const struct block_tree* tree,
                                   data_block_t node_block,
                                   const struct block_tree_node* node_ro) {
-    printf("  %3lld:", node_block);
+    printf("  %3" PRIu64 ":", node_block);
     if (node_ro->is_leaf == true) {
         block_tree_node_print_leaf(tr, tree, node_block, node_ro);
     } else if (!node_ro->is_leaf) {
         block_tree_node_print_internal(tr, tree, node_block, node_ro);
     } else {
-        printf(" bad node header %llx\n", (long long)node_ro->is_leaf);
+        printf(" bad node header %" PRIx64 "\n", node_ro->is_leaf);
     }
 }
 
@@ -716,7 +718,8 @@ static void block_tree_print_sub_tree(struct transaction* tr,
 
     node_ro = block_get(tr, block_mac, NULL, &node_ref);
     if (!node_ro) {
-        printf("  %3lld: unreadable\n", block_mac_to_block(tr, block_mac));
+        printf("  %3" PRIu64 ": unreadable\n",
+               block_mac_to_block(tr, block_mac));
         return;
     }
     block_tree_node_print(tr, tree, block_mac_to_block(tr, block_mac), node_ro);
@@ -765,8 +768,7 @@ static bool block_tree_node_check(const struct transaction* tr,
     bool is_leaf;
 
     if (node_ro->is_leaf && node_ro->is_leaf != true) {
-        printf("%s: bad node header %llx\n", __func__,
-               (long long)node_ro->is_leaf);
+        printf("%s: bad node header %" PRIx64 "\n", __func__, node_ro->is_leaf);
         goto err;
     }
     is_leaf = block_tree_node_is_leaf(node_ro);
@@ -779,21 +781,24 @@ static bool block_tree_node_check(const struct transaction* tr,
         }
         if (empty_count) {
             if (key) {
-                printf("%s: %lld: expected zero key at %d, found %lld\n",
+                printf("%s: %" PRIu64
+                       ": expected zero key at %d, found %" PRIu64 "\n",
                        __func__, node_block, i, key);
                 goto err;
             }
             child_data =
                     block_tree_node_get_child_data(tree, node_ro, i + !is_leaf);
             if (!is_zero(child_data, tree->child_data_size[is_leaf])) {
-                printf("%s: %lld: expected zero data/right child value at %d\n",
+                printf("%s: %" PRIu64
+                       ": expected zero data/right child value at %d\n",
                        __func__, node_block, i);
                 goto err;
             }
             continue;
         }
         if (key < prev_key || key < min_key || key > max_key) {
-            printf("%s: %lld: bad key at %d, %lld not in [%lld/%lld-%lld]\n",
+            printf("%s: %" PRIu64 ": bad key at %d, %" PRIu64
+                   " not in [%" PRIu64 "/%" PRIu64 "-%" PRIu64 "]\n",
                    __func__, node_block, i, key, min_key, prev_key, max_key);
             if (tr->failed && key >= prev_key) {
                 printf("%s: transaction failed, ignore\n", __func__);
@@ -856,7 +861,7 @@ static int block_tree_check_sub_tree(struct transaction* tr,
     depth = 1;
 
     if (block_mac_to_block(tr, block_mac) >= tr->fs->dev->block_count) {
-        printf("%s: %3lld: invalid\n", __func__,
+        printf("%s: %3" PRIu64 ": invalid\n", __func__,
                block_mac_to_block(tr, block_mac));
         return -1;
     }
@@ -868,11 +873,12 @@ static int block_tree_check_sub_tree(struct transaction* tr,
              * Failed transactions discards dirty cache entries so parts of the
              * tree may now be unreadable.
              */
-            pr_warn("ignore unreadable block %lld, transaction failed\n",
+            pr_warn("ignore unreadable block %" PRIu64 ", transaction failed\n",
                     block_mac_to_block(tr, block_mac));
             return -2;
         }
-        pr_warn("%3lld: unreadable\n", block_mac_to_block(tr, block_mac));
+        pr_warn("%3" PRIu64 ": unreadable\n",
+                block_mac_to_block(tr, block_mac));
         return -2;
     }
 
@@ -883,8 +889,7 @@ static int block_tree_check_sub_tree(struct transaction* tr,
     }
 
     if (node_ro->is_leaf && node_ro->is_leaf != true) {
-        printf("%s: bad node header %llx\n", __func__,
-               (long long)node_ro->is_leaf);
+        printf("%s: bad node header %" PRIx64 "\n", __func__, node_ro->is_leaf);
         goto err;
     }
     is_leaf = block_tree_node_is_leaf(node_ro);
@@ -904,21 +909,24 @@ static int block_tree_check_sub_tree(struct transaction* tr,
         }
         if (empty_count) {
             if (key) {
-                printf("%s: %lld: expected zero key at %d, found %lld\n",
+                printf("%s: %" PRIu64
+                       ": expected zero key at %d, found %" PRIu64 "\n",
                        __func__, block_mac_to_block(tr, block_mac), i, key);
                 goto err;
             }
             child_data =
                     block_tree_node_get_child_data(tree, node_ro, i + !is_leaf);
             if (!is_zero(child_data, tree->child_data_size[is_leaf])) {
-                printf("%s: %lld: expected zero data/right child value at %d\n",
+                printf("%s: %" PRIu64
+                       ": expected zero data/right child value at %d\n",
                        __func__, block_mac_to_block(tr, block_mac), i);
                 goto err;
             }
             continue;
         }
         if (i == 0 && min_key && is_leaf && key != min_key) {
-            printf("%s: %lld: bad key at %d, %lld not start of [%lld-%lld]\n",
+            printf("%s: %" PRIu64 ": bad key at %d, %" PRIu64
+                   " not start of [%" PRIu64 "-%" PRIu64 "]\n",
                    __func__, block_mac_to_block(tr, block_mac), i, key, min_key,
                    max_key);
             if (tr->failed) {
@@ -941,7 +949,7 @@ static int block_tree_check_sub_tree(struct transaction* tr,
                     child_max_key, updating);
             node_ro = block_get_no_tr_fail(tr, block_mac, NULL, &ref);
             if (!node_ro) {
-                pr_warn("%3lld: unreadable\n",
+                pr_warn("%3" PRIu64 ": unreadable\n",
                         block_mac_to_block(tr, block_mac));
                 return -2;
             }
@@ -949,7 +957,7 @@ static int block_tree_check_sub_tree(struct transaction* tr,
                 goto err;
             }
             if (sub_tree_depth == -2) {
-                pr_warn("%lld: unreadable subtree at %d\n",
+                pr_warn("%" PRIu64 ": unreadable subtree at %d\n",
                         block_mac_to_block(tr, block_mac), i);
                 if (depth == 1) {
                     depth = -2;
@@ -957,7 +965,7 @@ static int block_tree_check_sub_tree(struct transaction* tr,
             } else if (depth == 1 || depth == -2) {
                 depth = sub_tree_depth + 1;
             } else if (sub_tree_depth != depth - 1) {
-                printf("%s: %lld: bad subtree depth at %d, %d != %d\n",
+                printf("%s: %" PRIu64 ": bad subtree depth at %d, %d != %d\n",
                        __func__, block_mac_to_block(tr, block_mac), i,
                        sub_tree_depth, depth - 1);
                 goto err;
@@ -977,14 +985,15 @@ static int block_tree_check_sub_tree(struct transaction* tr,
                                                    child_max_key, updating);
         node_ro = block_get_no_tr_fail(tr, block_mac, NULL, &ref);
         if (!node_ro) {
-            pr_warn("%3lld: unreadable\n", block_mac_to_block(tr, block_mac));
+            pr_warn("%3" PRIu64 ": unreadable\n",
+                    block_mac_to_block(tr, block_mac));
             return -2;
         }
         if (sub_tree_depth == -1) {
             goto err;
         }
         if (sub_tree_depth == -2) {
-            pr_warn("%lld: unreadable subtree at %d\n",
+            pr_warn("%" PRIu64 ": unreadable subtree at %d\n",
                     block_mac_to_block(tr, block_mac), last_child);
             if (depth == 1) {
                 depth = -2;
@@ -992,14 +1001,14 @@ static int block_tree_check_sub_tree(struct transaction* tr,
         } else if (depth == 1 || depth == -2) {
             depth = sub_tree_depth + 1;
         } else if (sub_tree_depth != depth - 1) {
-            printf("%s: %lld: bad subtree depth at %d, %d != %d\n", __func__,
-                   block_mac_to_block(tr, block_mac), last_child,
+            printf("%s: %" PRIu64 ": bad subtree depth at %d, %d != %d\n",
+                   __func__, block_mac_to_block(tr, block_mac), last_child,
                    sub_tree_depth, depth - 1);
             goto err;
         }
     }
     if (empty_count > max_empty_count) {
-        printf("%s: %lld: too many empty nodes, %d > %d\n", __func__,
+        printf("%s: %" PRIu64 ": too many empty nodes, %d > %d\n", __func__,
                block_mac_to_block(tr, block_mac), empty_count, max_empty_count);
         if (tr->failed) {
             printf("%s: ignore error, transaction failed\n", __func__);
@@ -1186,7 +1195,8 @@ static int block_tree_node_find_block(const struct transaction* tr,
     if (i == keys_count && curr_key) {
         assert(tree->inserting.block == node_block);
         if (print_ops) {
-            printf("%s: using inserting block %lld, key %lld, child %lld, data %lld\n",
+            printf("%s: using inserting block %" PRIu64 ", key %" PRIu64
+                   ", child %" PRIu64 ", data %" PRIu64 "\n",
                    __func__, tree->inserting.block, tree->inserting.key,
                    block_mac_to_block(tr, &tree->inserting.child),
                    block_mac_to_block(tr, &tree->inserting.data));
@@ -1213,7 +1223,9 @@ static int block_tree_node_find_block(const struct transaction* tr,
         assert(block_mac_valid(tr, *child));
     }
     if (print_lookup) {
-        printf("%s: block %lld, key %lld return %d, child_block %lld, prev_key %lld, next_key %lld\n",
+        printf("%s: block %" PRIu64 ", key %" PRIu64
+               " return %d, child_block %" PRIu64 ", prev_key %" PRIu64
+               ", next_key %" PRIu64 "\n",
                __func__, node_block, key, i,
                *child ? block_mac_to_block(tr, *child) : 0, *prev_key,
                *next_key);
@@ -1259,8 +1271,9 @@ void block_tree_walk(struct transaction* tr,
     const struct block_mac* block_mac;
 
     if (print_lookup) {
-        printf("%s: tree root block %lld, key %lld, key_is_max %d\n", __func__,
-               block_mac_to_block(tr, &tree->root), key, key_is_max);
+        printf("%s: tree root block %" PRIu64 ", key %" PRIu64
+               ", key_is_max %d\n",
+               __func__, block_mac_to_block(tr, &tree->root), key, key_is_max);
     }
 
     assert(tr);
@@ -1321,7 +1334,8 @@ void block_tree_walk(struct transaction* tr,
         ref_index = !ref_index;
 
         if (print_lookup) {
-            printf("%s: path[%d] = %lld, index %d, prev_key %lld, next_key %lld\n",
+            printf("%s: path[%d] = %" PRIu64 ", index %d, prev_key %" PRIu64
+                   ", next_key %" PRIu64 "\n",
                    __func__, path->count,
                    block_mac_to_block(path->tr,
                                       &path->entry[path->count].block_mac),
@@ -1329,7 +1343,7 @@ void block_tree_walk(struct transaction* tr,
                    path->entry[path->count].prev_key,
                    path->entry[path->count].next_key);
             if (!block_mac) {
-                printf("%s: path.data.block = %lld\n", __func__,
+                printf("%s: path.data.block = %" PRIu64 "\n", __func__,
                        block_mac_to_block(path->tr, &path->data));
             }
         }
@@ -1369,7 +1383,7 @@ void block_tree_path_next(struct block_tree_path* path) {
     assert(path->entry[depth].next_key);
 
     if (print_lookup) {
-        printf("%s: tree root block %lld\n", __func__,
+        printf("%s: tree root block %" PRIu64 "\n", __func__,
                block_mac_to_block(path->tr, &path->tree->root));
     }
 
@@ -1406,12 +1420,13 @@ void block_tree_path_next(struct block_tree_path* path) {
         path->entry[depth].next_key = next_key;
         path->data = next_data;
         if (print_lookup) {
-            printf("%s: path[%d] = %lld, index %d, prev_key %lld, next_key %lld\n",
+            printf("%s: path[%d] = %" PRIu64 ", index %d, prev_key %" PRIu64
+                   ", next_key %" PRIu64 "\n",
                    __func__, depth,
                    block_mac_to_block(path->tr, &path->entry[depth].block_mac),
                    path->entry[depth].index, path->entry[depth].prev_key,
                    path->entry[depth].next_key);
-            printf("%s: path.data.block = %lld\n", __func__,
+            printf("%s: path.data.block = %" PRIu64 "\n", __func__,
                    block_mac_to_block(path->tr, &path->data));
         }
         return;
@@ -1456,7 +1471,8 @@ void block_tree_path_next(struct block_tree_path* path) {
             path->entry[depth].prev_key = prev_key;
             path->entry[depth].next_key = next_key ?: parent_next_key;
             if (print_lookup) {
-                printf("%s: path[%d] = %lld, index %d, prev_key %lld, next_key %lld\n",
+                printf("%s: path[%d] = %" PRIu64 ", index %d, prev_key %" PRIu64
+                       ", next_key %" PRIu64 "\n",
                        __func__, depth,
                        block_mac_to_block(path->tr,
                                           &path->entry[depth].block_mac),
@@ -1484,7 +1500,8 @@ void block_tree_path_next(struct block_tree_path* path) {
         path->entry[depth].next_key =
                 block_tree_node_get_key(path->tree, ~0, node_ro, 0);
         if (print_lookup) {
-            printf("%s: path[%d] = %lld, index %d, prev_key %lld, next_key %lld\n",
+            printf("%s: path[%d] = %" PRIu64 ", index %d, prev_key %" PRIu64
+                   ", next_key %" PRIu64 "\n",
                    __func__, depth,
                    block_mac_to_block(path->tr, &path->entry[depth].block_mac),
                    path->entry[depth].index, path->entry[depth].prev_key,
@@ -1517,12 +1534,13 @@ void block_tree_path_next(struct block_tree_path* path) {
     block_put(node_ro, &ref[ref_index]);
     assert(path->entry[depth].next_key);
     if (print_lookup) {
-        printf("%s: path[%d] = %lld, index %d, prev_key %lld, next_key %lld\n",
+        printf("%s: path[%d] = %" PRIu64 ", index %d, prev_key %" PRIu64
+               ", next_key %" PRIu64 "\n",
                __func__, depth,
                block_mac_to_block(path->tr, &path->entry[depth].block_mac),
                path->entry[depth].index, path->entry[depth].prev_key,
                path->entry[depth].next_key);
-        printf("%s: path.data.block = %lld\n", __func__,
+        printf("%s: path.data.block = %" PRIu64 "\n", __func__,
                block_mac_to_block(path->tr, &path->data));
     }
     return;
@@ -1567,7 +1585,7 @@ static struct block_tree_node* block_tree_block_dirty(
     assert(path->tree->allow_copy_on_write);
     new_block = block_allocate_etc(tr, !path->tree->allow_copy_on_write);
     if (print_internal_changes) {
-        printf("%s: copy block %lld to %lld\n", __func__,
+        printf("%s: copy block %" PRIu64 " to %" PRIu64 "\n", __func__,
                block_mac_to_block(tr, block_mac), new_block);
     }
     if (!new_block) {
@@ -1683,8 +1701,8 @@ void block_tree_path_put_dirty(struct transaction* tr,
         if (!block_mac_same_block(tr, block_mac,
                                   &path->entry[path_index + 1].block_mac)) {
             if (print_internal_changes) {
-                printf("%s: update copied block %lld to %lld\n", __func__,
-                       block_mac_to_block(tr, block_mac),
+                printf("%s: update copied block %" PRIu64 " to %" PRIu64 "\n",
+                       __func__, block_mac_to_block(tr, block_mac),
                        block_mac_to_block(
                                tr, &path->entry[path_index + 1].block_mac));
             }
@@ -1763,8 +1781,9 @@ void block_tree_update_key(struct transaction* tr,
         }
         assert(node_rw);
         if (print_internal_changes) {
-            printf("%s: block %lld, index %d, [%lld-] -> [%lld-]\n", __func__,
-                   block_mac_to_block(tr, block_mac), index,
+            printf("%s: block %" PRIu64 ", index %d, [%" PRIu64
+                   "-] -> [%" PRIu64 "-]\n",
+                   __func__, block_mac_to_block(tr, block_mac), index,
                    block_tree_node_get_key(path->tree, ~0, node_rw, index - 1),
                    new_key);
             block_tree_node_print(tr, path->tree,
@@ -1792,8 +1811,8 @@ void block_tree_update_key(struct transaction* tr,
         return;
     }
     if (print_internal_changes) {
-        printf("%s: root reached, no update needed (new key %lld)\n", __func__,
-               new_key);
+        printf("%s: root reached, no update needed (new key %" PRIu64 ")\n",
+               __func__, new_key);
     }
 }
 
@@ -1892,7 +1911,7 @@ static void block_tree_node_split(struct transaction* tr,
     path->count--;
 
     if (print_internal_changes) {
-        printf("%s: tree root %lld, block %lld\n", __func__,
+        printf("%s: tree root %" PRIu64 ", block %" PRIu64 "\n", __func__,
                block_mac_to_block(tr, &path->tree->root),
                block_mac_to_block(tr, block_mac));
     }
@@ -1938,7 +1957,7 @@ static void block_tree_node_split(struct transaction* tr,
     memset(&path->tree->inserting, 0, sizeof(path->tree->inserting));
 
     if (print_internal_changes) {
-        printf("%s: %lld -> %lld %lld\n", __func__,
+        printf("%s: %" PRIu64 " -> %" PRIu64 " %" PRIu64 "\n", __func__,
                block_mac_to_block(tr, block_mac), left_block_num,
                block_mac_to_block(tr, &right));
     }
@@ -2012,18 +2031,18 @@ static void block_tree_node_split(struct transaction* tr,
         printf("%s: insert split_index %d", __func__, split_index);
         block_tree_node_print(tr, path->tree, left_block_num, node_left_rw);
         if (is_leaf) {
-            printf("%s: append key, data: [%lld: %lld]\n", __func__, append_key,
-                   block_mac_to_block(tr, append_data));
+            printf("%s: append key, data: [%" PRIu64 ": %" PRIu64 "]\n",
+                   __func__, append_key, block_mac_to_block(tr, append_data));
         } else {
-            printf("%s: append key, child: [%lld-] %lld\n", __func__,
-                   append_key, block_mac_to_block(tr, append_child));
+            printf("%s: append key, child: [%" PRIu64 "-] %" PRIu64 "\n",
+                   __func__, append_key, block_mac_to_block(tr, append_child));
         }
     }
 
     /* Update left node */
     block_tree_node_clear_end(path->tree, node_left_rw, split_index);
     if (print_internal_changes) {
-        printf("%s: left  %3lld", __func__, left_block_num);
+        printf("%s: left  %3" PRIu64 "", __func__, left_block_num);
         block_tree_node_print(tr, path->tree, left_block_num, node_left_rw);
     }
 
@@ -2043,7 +2062,8 @@ static void block_tree_node_split(struct transaction* tr,
             is_leaf ? SHIFT_LEAF_OR_LEFT_CHILD : SHIFT_RIGHT_CHILD, &append_key,
             is_leaf ? append_data : append_child, NULL, NULL);
     if (print_internal_changes) {
-        printf("%s: right %3lld", __func__, block_mac_to_block(tr, &right));
+        printf("%s: right %3" PRIu64 "", __func__,
+               block_mac_to_block(tr, &right));
         block_tree_node_print(tr, path->tree, block_mac_to_block(tr, &right),
                               node_right_rw);
     }
@@ -2052,8 +2072,8 @@ static void block_tree_node_split(struct transaction* tr,
     assert(!block_tree_node_is_leaf(parent_node_rw));
 
     if (print_internal_changes) {
-        printf("%s: insert [%lld-] %lld @%d:", __func__, parent_key,
-               block_mac_to_block(tr, &right), parent_index);
+        printf("%s: insert [%" PRIu64 "-] %" PRIu64 " @%d:", __func__,
+               parent_key, block_mac_to_block(tr, &right), parent_index);
         block_tree_node_print(tr, path->tree,
                               block_mac_to_block(tr, parent_block_mac),
                               parent_node_rw);
@@ -2088,8 +2108,8 @@ static void block_tree_node_split(struct transaction* tr,
     }
 
     if (print_internal_changes) {
-        printf("%s: insert [%lld-] %lld @%d done:", __func__, parent_key,
-               block_mac_to_block(tr, &right), parent_index);
+        printf("%s: insert [%" PRIu64 "-] %" PRIu64 " @%d done:", __func__,
+               parent_key, block_mac_to_block(tr, &right), parent_index);
         block_tree_node_print(tr, path->tree,
                               block_mac_to_block(tr, parent_block_mac),
                               parent_node_rw);
@@ -2111,8 +2131,8 @@ static void block_tree_node_split(struct transaction* tr,
     if (overflow_key) {
         assert(path->count); /* new root node should not overflow */
         if (print_internal_changes) {
-            printf("%s: overflow [%lld-] %lld\n", __func__, overflow_key,
-                   block_mac_to_block(tr, &overflow_child));
+            printf("%s: overflow [%" PRIu64 "-] %" PRIu64 "\n", __func__,
+                   overflow_key, block_mac_to_block(tr, &overflow_child));
         }
         /* TODO: use a loop instead */
         block_tree_node_split(tr, path, overflow_key, &overflow_child, 0);
@@ -2213,8 +2233,8 @@ static void block_tree_path_set_sibling_block(struct block_tree_path* path,
     if (print_internal_changes) {
         printf("%s: path[%d].index: %d -> %d\n", __func__, path->count - 2,
                path->entry[path->count - 2].index, parent_index);
-        printf("%s: path[%d].block_mac.block: %lld -> %lld\n", __func__,
-               path->count - 1,
+        printf("%s: path[%d].block_mac.block: %" PRIu64 " -> %" PRIu64 "\n",
+               __func__, path->count - 1,
                block_mac_to_block(path->tr,
                                   &path->entry[path->count - 1].block_mac),
                block_mac_to_block(path->tr, block_mac));
@@ -2286,7 +2306,7 @@ static void block_tree_remove_internal(struct transaction* tr,
         const struct block_mac* new_root =
                 block_tree_node_get_child_data(path->tree, node_ro, 0);
         if (print_internal_changes) {
-            printf("%s: root emptied, new root %lld\n", __func__,
+            printf("%s: root emptied, new root %" PRIu64 "\n", __func__,
                    block_mac_to_block(tr, new_root));
         }
         assert(block_mac_valid(tr, new_root));
@@ -2467,7 +2487,7 @@ static void block_tree_node_merge(struct transaction* tr,
             block_tree_path_set_sibling_block(path, &merge_block, node_is_left);
         }
         if (print_internal_changes) {
-            printf("%s: %lld %lld done\n", __func__,
+            printf("%s: %" PRIu64 " %" PRIu64 " done\n", __func__,
                    block_mac_to_block(tr, block_mac),
                    block_mac_to_block(tr, &merge_block));
             block_tree_node_print(tr, path->tree,
@@ -2534,7 +2554,7 @@ static void block_tree_node_merge(struct transaction* tr,
         }
 
         if (print_internal_changes) {
-            printf("%s: merge done, free %lld\n", __func__,
+            printf("%s: merge done, free %" PRIu64 "\n", __func__,
                    block_mac_to_block(tr, right));
             block_tree_node_print(tr, path->tree, block_mac_to_block(tr, left),
                                   node_rw);
@@ -2593,7 +2613,7 @@ void block_tree_insert_block_mac(struct transaction* tr,
             goto err;
         }
         if (print_internal_changes) {
-            printf("%s: new root block %lld\n", __func__,
+            printf("%s: new root block %" PRIu64 "\n", __func__,
                    block_mac_to_block(tr, &tree->root));
         }
         assert(block_mac_valid(tr, &tree->root));
@@ -2623,8 +2643,8 @@ void block_tree_insert_block_mac(struct transaction* tr,
     }
 
     if (print_changes) {
-        printf("%s: key %lld, data.block %lld, index %d\n", __func__, key,
-               block_mac_to_block(tr, &data), index);
+        printf("%s: key %" PRIu64 ", data.block %" PRIu64 ", index %d\n",
+               __func__, key, block_mac_to_block(tr, &data), index);
         assert(node_ro);
         block_tree_node_print(tr, tree, block_mac_to_block(tr, block_mac),
                               node_ro);
@@ -2654,8 +2674,8 @@ void block_tree_insert_block_mac(struct transaction* tr,
     }
 
     if (print_changes_full_tree) {
-        printf("%s: key %lld, data.block %lld, done:\n", __func__, key,
-               block_mac_to_block(tr, &data));
+        printf("%s: key %" PRIu64 ", data.block %" PRIu64 ", done:\n", __func__,
+               key, block_mac_to_block(tr, &data));
         block_tree_print(tr, tree);
     }
 
@@ -2750,8 +2770,8 @@ void block_tree_remove(struct transaction* tr,
                    MIN(sizeof(data), tr->fs->block_num_size)));
 
     if (print_changes) {
-        printf("%s: key %lld, data %lld, index %d\n", __func__, key, data,
-               index);
+        printf("%s: key %" PRIu64 ", data %" PRIu64 ", index %d\n", __func__,
+               key, data, index);
         block_tree_node_print(tr, tree, block_mac_to_block(tr, block_mac),
                               node_ro);
     }
@@ -2782,7 +2802,8 @@ void block_tree_remove(struct transaction* tr,
     }
 
     if (print_changes_full_tree) {
-        printf("%s: key %lld, data %lld, done:\n", __func__, key, data);
+        printf("%s: key %" PRIu64 ", data %" PRIu64 ", done:\n", __func__, key,
+               data);
         block_tree_print(tr, tree);
     }
 
@@ -2880,8 +2901,9 @@ void block_tree_update_block_mac(struct transaction* tr,
             &old_data));
 
     if (print_changes) {
-        printf("%s: key %lld->%lld, data %lld->%lld, index %d\n", __func__,
-               old_key, new_key, block_mac_to_block(tr, &old_data),
+        printf("%s: key %" PRIu64 "->%" PRIu64 ", data %" PRIu64 "->%" PRIu64
+               ", index %d\n",
+               __func__, old_key, new_key, block_mac_to_block(tr, &old_data),
                block_mac_to_block(tr, &new_data), index);
         block_tree_node_print(tr, tree, block_mac_to_block(tr, block_mac),
                               node_ro);
@@ -2922,8 +2944,9 @@ void block_tree_update_block_mac(struct transaction* tr,
     block_tree_path_put_dirty(tr, &path, path.count - 1, node_rw, &node_ref);
 
     if (print_changes_full_tree) {
-        printf("%s: key %lld->%lld, data %lld->%lld, done:\n", __func__,
-               old_key, new_key, block_mac_to_block(tr, &old_data),
+        printf("%s: key %" PRIu64 "->%" PRIu64 ", data %" PRIu64 "->%" PRIu64
+               ", done:\n",
+               __func__, old_key, new_key, block_mac_to_block(tr, &old_data),
                block_mac_to_block(tr, &new_data));
         block_tree_print(tr, tree);
     }
@@ -3035,7 +3058,7 @@ void block_tree_check_config(struct block_device* dev) {
     printf("leaf min key count:     %6d\n", node_leaf_min_key_count);
     printf("leaf max key count:     %6d\n", node_leaf_max_key_count);
     printf("block size:             %6zd\n", dev->block_size);
-    printf("block count:            %6lld\n", dev->block_count);
+    printf("block count:            %6" PRIu64 "\n", dev->block_count);
     printf("max entries needed:     %6d\n", max_entries_needed);
     printf("max depth:              %6d\n", BLOCK_TREE_MAX_DEPTH);
     for (depth = 1; depth <= BLOCK_TREE_MAX_DEPTH; depth++) {
@@ -3059,12 +3082,13 @@ void block_tree_check_config(struct block_device* dev) {
                    1;
     printf("est. tree depth needed for %u entries: %d\n", max_entries_needed,
            depth_needed);
-    printf("est. tree depth needed for %llu entries: %g\n",
+    printf("est. tree depth needed for %" PRIu64 " entries: %g\n",
            ((data_block_t)~0 / dev->block_size),
            ceil(log_n(ceil(node_max_child_count / 2.0),
                       ceil(((data_block_t)~0 / dev->block_size) / 2.0)) +
                 1.0));
-    printf("est. tree depth needed for %llu entries: %g\n", ((data_block_t)~0),
+    printf("est. tree depth needed for %" PRIu64 " entries: %g\n",
+           ((data_block_t)~0),
            ceil(log_n(ceil(node_max_child_count / 2.0),
                       ceil(((data_block_t)~0) / 2.0)) +
                 1.0));
