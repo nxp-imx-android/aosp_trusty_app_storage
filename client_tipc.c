@@ -1142,19 +1142,19 @@ static int send_response(struct storage_client_session* session,
         ++resp_buf_count;
     }
 
-    iovec_t resp_bufs[2];
+    struct iovec resp_bufs[2];
 
     msg->cmd |= STORAGE_RESP_BIT;
     msg->flags = 0;
     msg->size = sizeof(struct storage_msg) + out_size;
     msg->result = result;
 
-    resp_bufs[0].base = msg;
-    resp_bufs[0].len = sizeof(struct storage_msg);
+    resp_bufs[0].iov_base = msg;
+    resp_bufs[0].iov_len = sizeof(struct storage_msg);
 
     if (resp_buf_count == 2) {
-        resp_bufs[1].base = out;
-        resp_bufs[1].len = out_size;
+        resp_bufs[1].iov_base = out;
+        resp_bufs[1].iov_len = out_size;
     }
 
     struct ipc_msg resp_ipc_msg = {

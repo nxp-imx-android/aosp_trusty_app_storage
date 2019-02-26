@@ -105,9 +105,9 @@ struct ipc_port_context {
  * @rx_iovec_count: the count of buffers to receive
  */
 int sync_ipc_send_msg(handle_t session,
-                      iovec_t* tx_iovecs,
+                      struct iovec* tx_iovecs,
                       unsigned int tx_iovec_count,
-                      iovec_t* rx_iovecs,
+                      struct iovec* rx_iovecs,
                       unsigned int rx_iovec_count);
 
 int ipc_port_create(struct ipc_port_context* contextp,

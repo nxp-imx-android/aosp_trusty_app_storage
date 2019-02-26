@@ -150,9 +150,9 @@ static int do_handle_msg(struct ipc_channel_context* ctx, const uevent_t* ev) {
     }
 
     /* read msg content */
-    iovec_t iov = {
-            .base = msg_buf,
-            .len = msg_inf.len,
+    struct iovec iov = {
+            .iov_base = msg_buf,
+            .iov_len = msg_inf.len,
     };
     ipc_msg_t msg = {
             .iov = &iov,
@@ -224,7 +224,7 @@ static void handle_channel(struct ipc_context* ctx, const struct uevent* ev) {
 
 static int read_response(handle_t session,
                          uint32_t msg_id,
-                         iovec_t* iovecs,
+                         struct iovec* iovecs,
                          size_t iovec_count) {
     struct ipc_msg rx_msg = {
             .iov = iovecs,
@@ -284,9 +284,9 @@ static int wait_to_send(handle_t session, struct ipc_msg* msg) {
 }
 
 int sync_ipc_send_msg(handle_t session,
-                      iovec_t* tx_iovecs,
+                      struct iovec* tx_iovecs,
                       unsigned int tx_iovec_count,
-                      iovec_t* rx_iovecs,
+                      struct iovec* rx_iovecs,
                       unsigned int rx_iovec_count) {
     struct ipc_msg tx_msg = {
             .iov = tx_iovecs,
@@ -316,7 +316,7 @@ int sync_ipc_send_msg(handle_t session,
         return rc;
     }
 
-    size_t min_len = rx_iovecs[0].len;
+    size_t min_len = rx_iovecs[0].iov_len;
     if (inf.len < min_len) {
         TLOGE("%s: invalid response length (%zu)\n", __func__, inf.len);
         put_msg(session, inf.id);
@@ -326,7 +326,7 @@ int sync_ipc_send_msg(handle_t session,
     /* calculate total message size */
     size_t resp_size = 0;
     for (size_t i = 0; i < rx_iovec_count; ++i) {
-        resp_size += rx_iovecs[i].len;
+        resp_size += rx_iovecs[i].iov_len;
     }
 
     if (resp_size < inf.len) {

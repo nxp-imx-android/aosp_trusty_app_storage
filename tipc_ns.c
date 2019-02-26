@@ -90,16 +90,16 @@ int rpmb_send(void* handle_,
                     write_size,
     };
 
-    iovec_t rx_iov[] = {
-            {.base = &msg, .len = sizeof(msg)},
-            {.base = read_buf, .len = read_size},
+    struct iovec rx_iov[] = {
+            {.iov_base = &msg, .iov_len = sizeof(msg)},
+            {.iov_base = read_buf, .iov_len = read_size},
     };
 
-    iovec_t tx_iov[] = {
-            {.base = &msg, .len = sizeof(msg)},
-            {.base = &req, .len = sizeof(req)},
-            {.base = reliable_write_buf, .len = reliable_write_size},
-            {.base = write_buf, .len = write_size},
+    struct iovec tx_iov[] = {
+            {.iov_base = &msg, .iov_len = sizeof(msg)},
+            {.iov_base = &req, .iov_len = sizeof(req)},
+            {.iov_base = reliable_write_buf, .iov_len = reliable_write_size},
+            {.iov_base = write_buf, .iov_len = write_size},
     };
 
     rc = sync_ipc_send_msg(handle, tx_iov, countof(tx_iov), rx_iov,
@@ -130,14 +130,12 @@ int ns_open_file(handle_t ipc_handle,
             .size = sizeof(msg) + sizeof(req) + fname_size,
     };
 
-    iovec_t tx_iov[] = {{.base = &msg, .len = sizeof(msg)},
-                        {.base = &req, .len = sizeof(req)},
-                        {// TODO: change to const API when available
-                         .base = (char*)fname,
-                         .len = fname_size}};
+    struct iovec tx_iov[] = {{.iov_base = &msg, .iov_len = sizeof(msg)},
+                             {.iov_base = &req, .iov_len = sizeof(req)},
+                             {.iov_base = (char*)fname, .iov_len = fname_size}};
 
-    iovec_t rx_iov[] = {{.base = &msg, .len = sizeof(msg)},
-                        {.base = &resp, .len = sizeof(resp)}};
+    struct iovec rx_iov[] = {{.iov_base = &msg, .iov_len = sizeof(msg)},
+                             {.iov_base = &resp, .iov_len = sizeof(resp)}};
 
     int rc = sync_ipc_send_msg(ipc_handle, tx_iov, countof(tx_iov), rx_iov,
                                countof(rx_iov));
@@ -175,9 +173,9 @@ void ns_close_file(handle_t ipc_handle, ns_handle_t handle) {
             .size = sizeof(msg) + sizeof(req),
     };
 
-    iovec_t iov[] = {
-            {.base = &msg, .len = sizeof(msg)},
-            {.base = &req, .len = sizeof(req)},
+    struct iovec iov[] = {
+            {.iov_base = &msg, .iov_len = sizeof(msg)},
+            {.iov_base = &req, .iov_len = sizeof(req)},
     };
 
     int rc = sync_ipc_send_msg(ipc_handle, iov, countof(iov), iov, 1);
@@ -211,13 +209,13 @@ int ns_read_pos(handle_t ipc_handle,
             .size = sizeof(msg) + sizeof(req),
     };
 
-    iovec_t tx_iov[] = {
-            {.base = &msg, .len = sizeof(msg)},
-            {.base = &req, .len = sizeof(req)},
+    struct iovec tx_iov[] = {
+            {.iov_base = &msg, .iov_len = sizeof(msg)},
+            {.iov_base = &req, .iov_len = sizeof(req)},
     };
 
-    iovec_t rx_iov[] = {{.base = &msg, .len = sizeof(msg)},
-                        {.base = data, .len = data_size}};
+    struct iovec rx_iov[] = {{.iov_base = &msg, .iov_len = sizeof(msg)},
+                             {.iov_base = data, .iov_len = data_size}};
 
     int rc = sync_ipc_send_msg(ipc_handle, tx_iov, countof(tx_iov), rx_iov,
                                countof(rx_iov));
@@ -258,11 +256,9 @@ int ns_write_pos(handle_t ipc_handle,
             .size = sizeof(msg) + sizeof(req) + data_size,
     };
 
-    iovec_t iov[] = {{.base = &msg, .len = sizeof(msg)},
-                     {.base = &req, .len = sizeof(req)},
-                     {// TODO: use const API
-                      .base = (void*)data,
-                      .len = data_size}};
+    struct iovec iov[] = {{.iov_base = &msg, .iov_len = sizeof(msg)},
+                          {.iov_base = &req, .iov_len = sizeof(req)},
+                          {.iov_base = (void*)data, .iov_len = data_size}};
 
     int rc = sync_ipc_send_msg(ipc_handle, iov, countof(iov), iov, 1);
     if (rc < 0) {
