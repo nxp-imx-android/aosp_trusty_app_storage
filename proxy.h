@@ -15,7 +15,7 @@
  */
 
 #include <trusty_ipc.h>
-#include <trusty_uuid.h>
+#include <uapi/trusty_uuid.h>
 
 #include "ipc.h"
 

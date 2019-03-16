@@ -19,7 +19,7 @@
 #include <stdio.h>
 
 #include <trusty_ipc.h>
-#include <trusty_uuid.h>
+#include <uapi/trusty_uuid.h>
 
 struct ipc_context;
 struct ipc_port_context;
