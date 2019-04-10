@@ -81,6 +81,7 @@ static uint32_t rpmb_search_size(struct block_device_tipc* state,
     int ret;
     uint32_t low = 0;
     uint16_t high = ~0;
+    hint = hint ? hint : high / 2;
     uint16_t curr = hint - 1;
 
     while (low <= high) {

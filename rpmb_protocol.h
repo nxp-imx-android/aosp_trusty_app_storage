@@ -88,18 +88,18 @@ enum rpmb_result {
 
 static inline struct rpmb_u16 rpmb_u16(uint16_t val) {
     struct rpmb_u16 ret = {{
-            val >> 8,
-            val >> 0,
+            (uint8_t)(val >> 8),
+            (uint8_t)(val >> 0),
     }};
     return ret;
 }
 
 static inline struct rpmb_u32 rpmb_u32(uint32_t val) {
     struct rpmb_u32 ret = {{
-            val >> 24,
-            val >> 16,
-            val >> 8,
-            val >> 0,
+            (uint8_t)(val >> 24),
+            (uint8_t)(val >> 16),
+            (uint8_t)(val >> 8),
+            (uint8_t)(val >> 0),
     }};
     return ret;
 }

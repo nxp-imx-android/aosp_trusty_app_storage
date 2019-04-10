@@ -1185,7 +1185,7 @@ static int block_tree_node_find_block(const struct transaction* tr,
     /* TODO: better search? */
     for (i = 0; i < keys_count + 1; i++) {
         curr_key = block_tree_node_get_key(tree, node_block, node_ro, i);
-        if (key <= (curr_key - !is_leaf) || !curr_key) {
+        if (!curr_key || (key <= (curr_key - !is_leaf))) {
             break;
         }
         curr_key = 0;
@@ -2123,7 +2123,8 @@ static void block_tree_node_split(struct transaction* tr,
                     parent_node_rw);
     block_put_dirty(tr, node_right_rw, &node_right_ref, right_block_mac,
                     parent_node_rw);
-    block_tree_path_put_dirty(tr, path, path->count - 1, parent_node_rw,
+    /* block_tree_path_put_dirty will handle negative depths */
+    block_tree_path_put_dirty(tr, path, (int)path->count - 1, parent_node_rw,
                               &parent_node_ref);
 
     if (overflow_key) {
@@ -2933,7 +2934,8 @@ void block_tree_update_block_mac(struct transaction* tr,
             assert(new_key);
             assert(new_key ==
                    block_tree_node_get_key(tree, ~0, node_rw, index));
-            block_tree_update_key(tr, &path, path.count - 1, new_key);
+            /* A negative depth to block_tree_update_key indicates a no-op */
+            block_tree_update_key(tr, &path, (int)path.count - 1, new_key);
             path.count++;
         }
     } else {
