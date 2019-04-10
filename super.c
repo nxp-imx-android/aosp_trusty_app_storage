@@ -36,10 +36,10 @@
 #include "file.h"
 #include "transaction.h"
 
-#define SUPER_BLOCK_MAGIC (0x0073797473757274) /* trustys */
-#define SUPER_BLOCK_FLAGS_VERSION_MASK (0x3)
-#define SUPER_BLOCK_FLAGS_BLOCK_INDEX_MASK (0x1)
-#define SUPER_BLOCK_FS_VERSION (0)
+#define SUPER_BLOCK_MAGIC (0x0073797473757274ULL) /* trustys */
+#define SUPER_BLOCK_FLAGS_VERSION_MASK (0x3U)
+#define SUPER_BLOCK_FLAGS_BLOCK_INDEX_MASK (0x1U)
+#define SUPER_BLOCK_FS_VERSION (0U)
 
 /**
  * struct super_block - On-disk root block for file system state

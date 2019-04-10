@@ -175,7 +175,7 @@ static unsigned int block_tree_node_max_key_count(
 }
 
 /**
- * enum block_tree_shift_mode - Child selection for block_tree_node_shift
+ * Child selection for block_tree_node_shift
  * @SHIFT_LEAF_OR_LEFT_CHILD:   Required value for leaf nodes, selects left
  *                              child for internal nodes.
  * @SHIFT_RIGHT_CHILD:          Select right child.
@@ -184,12 +184,10 @@ static unsigned int block_tree_node_max_key_count(
  *                              end. Only valid when inserting data at the end
  *                              of a node.
  */
-enum block_tree_shift_mode {
-    SHIFT_LEAF_OR_LEFT_CHILD,
-    SHIFT_RIGHT_CHILD = 1,
-    SHIFT_LEFT_CHILD = 2,
-    SHIFT_BOTH = SHIFT_RIGHT_CHILD | SHIFT_LEFT_CHILD,
-};
+#define SHIFT_LEAF_OR_LEFT_CHILD 0U
+#define SHIFT_RIGHT_CHILD (1U << 0)
+#define SHIFT_LEFT_CHILD (1U << 1)
+#define SHIFT_BOTH (SHIFT_RIGHT_CHILD | SHIFT_LEFT_CHILD)
 
 /**
  * block_tree_node_shift - Helper function to insert or remove entries in a node
@@ -211,7 +209,7 @@ static void block_tree_node_shift(const struct block_tree* tree,
                                   struct block_tree_node* node_rw,
                                   unsigned int dest_index,
                                   unsigned int src_index,
-                                  enum block_tree_shift_mode shift_mode,
+                                  uint32_t shift_mode,
                                   const void* new_key,
                                   const void* new_data,
                                   void* overflow_key,
@@ -343,7 +341,7 @@ static void block_tree_node_merge_entries(
     bool is_leaf = block_tree_node_is_leaf(node_rw);
     unsigned int max_count = tree->key_count[is_leaf];
     void* dest_key;
-    enum block_tree_shift_mode shift_mode = SHIFT_LEAF_OR_LEFT_CHILD;
+    uint32_t shift_mode = SHIFT_LEAF_OR_LEFT_CHILD;
     if (!is_leaf) {
         dest_key = node_rw->data + tree->key_size * dest_index;
         assert(is_zero(dest_key, tree->key_size));
@@ -371,7 +369,7 @@ static void block_tree_node_shift_down(const struct block_tree* tree,
                                        struct block_tree_node* node_rw,
                                        unsigned int dest_index,
                                        unsigned int src_index,
-                                       enum block_tree_shift_mode shift_mode) {
+                                       uint32_t shift_mode) {
     assert(dest_index < src_index);
     block_tree_node_shift(tree, node_rw, dest_index, src_index, shift_mode,
                           NULL, NULL, NULL, NULL);
@@ -411,7 +409,7 @@ static void block_tree_node_clear_end(const struct block_tree* tree,
 static void block_tree_node_insert(const struct block_tree* tree,
                                    struct block_tree_node* node_rw,
                                    unsigned int index,
-                                   enum block_tree_shift_mode shift_mode,
+                                   uint32_t shift_mode,
                                    const void* new_key,
                                    const void* new_data,
                                    void* overflow_key,
