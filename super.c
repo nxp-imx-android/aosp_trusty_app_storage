@@ -199,6 +199,25 @@ static bool super_block_valid(const struct block_device* dev,
 }
 
 /**
+ * super_version_delta - Find the version delta between two superblocks
+ * @new_super: Candidate new superblock
+ * @old_super: Old superblock
+ *
+ * The overflow in this function is intentional as a way to use a wrapping
+ * two-bit counter.
+ *
+ * Return: Wrapped difference between the two bit version numbers in the two
+ * superblocks. This will be 1 when new is newer than old, 3 when old is
+ * newer than new, and any other number indicates an invalid/corrupt version.
+ */
+__attribute__((no_sanitize("unsigned-integer-overflow"))) static inline uint8_t
+super_version_delta(const struct super_block* new_super,
+                    const struct super_block* old_super) {
+    return (new_super->flags - old_super->flags) &
+           SUPER_BLOCK_FLAGS_VERSION_MASK;
+}
+
+/**
  * use_new_super - Check if new superblock is valid and more recent than old
  * @dev:                Block device that super block was read from.
  * @new_super:          New super block data.
@@ -212,7 +231,7 @@ static bool use_new_super(const struct block_device* dev,
                           const struct super_block* new_super,
                           unsigned int new_super_index,
                           const struct super_block* old_super) {
-    unsigned int dv;
+    uint8_t dv;
     if (!super_block_valid(dev, new_super)) {
         return false;
     }
@@ -225,7 +244,7 @@ static bool use_new_super(const struct block_device* dev,
     if (!old_super) {
         return true;
     }
-    dv = (new_super->flags - old_super->flags) & SUPER_BLOCK_FLAGS_VERSION_MASK;
+    dv = super_version_delta(new_super, old_super);
     pr_read("version delta, %d (new flags 0x%x, old flags 0x%x)\n", dv,
             new_super->flags, old_super->flags);
     if (dv == 1) {
