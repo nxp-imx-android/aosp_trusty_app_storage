@@ -30,7 +30,7 @@
 #include "transaction.h"
 
 #define BIT_MASK(x) \
-    (((x) >= sizeof(uint64_t) * 8) ? (0ULL - 1) : ((1ULL << (x)) - 1))
+    (((x) >= sizeof(uint64_t) * 8) ? (~0ULL) : ((1ULL << (x)) - 1))
 
 #define FILE_ENTRY_MAGIC (0x0066797473757274) /* trustyf\0 */
 

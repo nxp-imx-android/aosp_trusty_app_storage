@@ -16,6 +16,7 @@
 
 #include <assert.h>
 #include <inttypes.h>
+#include <limits.h>
 #include <lk/reflist.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -358,7 +359,7 @@ static void block_cache_entry_clean(struct block_cache_entry* entry) {
 static unsigned int block_cache_entry_score(struct block_cache_entry* entry,
                                             unsigned int index) {
     if (!entry->dev) {
-        return ~0;
+        return UINT_MAX;
     }
     return (entry->dirty ? (entry->dirty_tmp ? 1 : 2) : 4) * index;
 }
@@ -667,7 +668,7 @@ void block_cache_init(void) {
         entry->guard1 = BLOCK_CACHE_GUARD_1;
         entry->guard2 = BLOCK_CACHE_GUARD_2;
         entry->dev = NULL;
-        entry->block = ~0;
+        entry->block = DATA_BLOCK_INVALID;
         entry->dirty = false;
         entry->dirty_ref = false;
         entry->dirty_mac = false;
@@ -949,7 +950,7 @@ void block_discard_dirty(const void* data) {
         assert(entry->dev);
         entry->loaded = false;
         entry->dev = NULL;
-        entry->block = ~0;
+        entry->block = DATA_BLOCK_INVALID;
         entry->dirty = false;
         entry->dirty_tr = NULL;
     }
@@ -1234,7 +1235,7 @@ void* block_move(struct transaction* tr,
         }
         dest_entry->loaded = false;
         dest_entry->dev = NULL;
-        dest_entry->block = ~0;
+        dest_entry->block = DATA_BLOCK_INVALID;
         dest_entry->dirty = false;
         dest_entry->dirty_tr = NULL;
     }

@@ -473,7 +473,7 @@ static void block_tree_allocate_all_test(struct transaction* tr) {
 
     for (i = 0; i < countof(keyfuncs); i++) {
         assert(!tr->failed);
-        block_tree_test_etc(tr, 3, ~0, 0, keyfuncs[i]);
+        block_tree_test_etc(tr, 3, UINT_MAX, 0, keyfuncs[i]);
         assert(tr->failed);
         transaction_complete(tr);
         transaction_activate(tr);

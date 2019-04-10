@@ -440,7 +440,6 @@ int handle_conn(struct rpmb_dev_state* s, int conn_sock) {
     int ret;
 
     while (true) {
-        s->res_count = ~0;
         memset(s->res, 0, sizeof(s->res));
         ret = recv_until(conn_sock, &s->res_count, sizeof(s->res_count));
 

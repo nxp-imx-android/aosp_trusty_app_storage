@@ -20,6 +20,8 @@
 #include <stdint.h>
 
 typedef uint64_t data_block_t;
+#define DATA_BLOCK_MAX (UINT64_MAX - 1)
+#define DATA_BLOCK_INVALID (UINT64_MAX)
 
 /**
  * struct block_device - Block device functions and state
