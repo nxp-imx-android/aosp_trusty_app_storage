@@ -244,7 +244,7 @@ static int read_response(handle_t session,
 
 static int await_response(handle_t session, struct ipc_msg_info* inf) {
     uevent_t uevt;
-    long rc = wait(session, &uevt, -1);
+    long rc = wait(session, &uevt, INFINITE_TIME);
     if (rc != NO_ERROR) {
         TLOGE("%s: interrupted waiting for response (%ld)", __func__, rc);
         return rc;
@@ -262,7 +262,7 @@ static int wait_to_send(handle_t session, struct ipc_msg* msg) {
     int rc;
     struct uevent ev = UEVENT_INITIAL_VALUE(ev);
 
-    rc = wait(session, &ev, -1);
+    rc = wait(session, &ev, INFINITE_TIME);
     if (rc < 0) {
         TLOGE("failed to wait for outgoing queue to free up\n");
         return rc;
@@ -420,7 +420,7 @@ void ipc_loop(void) {
         event.handle = INVALID_IPC_HANDLE;
         event.event = 0;
         event.cookie = NULL;
-        rc = wait_any(&event, -1);
+        rc = wait_any(&event, INFINITE_TIME);
         if (rc < 0) {
             TLOGE("wait_any failed (%d)\n", rc);
             break;
