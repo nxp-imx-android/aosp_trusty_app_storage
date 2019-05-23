@@ -39,6 +39,9 @@
 #include <sys/un.h>
 #include <unistd.h>
 
+/* verbose is an int for getopt */
+static int verbose = false;
+
 #if OPENSSL_VERSION_NUMBER < 0x10100000L
 
 HMAC_CTX* HMAC_CTX_new(void) {
@@ -169,14 +172,19 @@ static uint16_t rpmb_dev_data_write(struct rpmb_dev_state* s) {
     int ret;
 
     if (s->header.write_counter == MAX_WRITE_COUNTER) {
-        fprintf(stderr, "rpmb_dev: Write counter expired\n");
+        if (verbose) {
+            fprintf(stderr, "rpmb_dev: Write counter expired\n");
+        }
         return RPMB_RES_WRITE_FAILURE;
     }
 
     write_counter = rpmb_get_u32(s->cmd[0].write_counter);
     if (s->header.write_counter != write_counter) {
-        fprintf(stderr, "rpmb_dev: Invalid write counter %u. Expected: %u\n",
-                write_counter, s->header.write_counter);
+        if (verbose) {
+            fprintf(stderr,
+                    "rpmb_dev: Invalid write counter %u. Expected: %u\n",
+                    write_counter, s->header.write_counter);
+        }
         return RPMB_RES_COUNT_FAILURE;
     }
 
@@ -304,9 +312,11 @@ static void rpmb_dev_process_cmd(struct rpmb_dev_state* s) {
     if (cmd->check_result_read) {
         sub_req = rpmb_get_u16(s->cmd[s->cmd_count - 1].req_resp);
         if (sub_req != RPMB_REQ_RESULT_READ) {
-            fprintf(stderr,
-                    "rpmb_dev: Request %d, missing result read request, got %d, cmd_count %d\n",
-                    req_resp, sub_req, s->cmd_count);
+            if (verbose) {
+                fprintf(stderr,
+                        "rpmb_dev: Request %d, missing result read request, got %d, cmd_count %d\n",
+                        req_resp, sub_req, s->cmd_count);
+            }
             goto err;
         }
         assert(s->cmd_count > 1);
@@ -325,8 +335,10 @@ static void rpmb_dev_process_cmd(struct rpmb_dev_state* s) {
     }
 
     if (memcmp(&mac, s->cmd[s->cmd_count - 1].key_mac.byte, sizeof(mac))) {
-        fprintf(stderr, "rpmb_dev: Request %d, invalid MAC, cmd_count %d\n",
-                req_resp, s->cmd_count);
+        if (verbose) {
+            fprintf(stderr, "rpmb_dev: Request %d, invalid MAC, cmd_count %d\n",
+                    req_resp, s->cmd_count);
+        }
         if (cmd->check_mac) {
             result = RPMB_RES_AUTH_FAILURE;
         }
@@ -341,47 +353,63 @@ static void rpmb_dev_process_cmd(struct rpmb_dev_state* s) {
     }
 
     if (cmd->check_addr && (addr + block_count > s->header.max_block + 1)) {
-        fprintf(stderr,
-                "rpmb_dev: Request %d, invalid addr: 0x%x count 0x%x, Out of bounds. Max addr 0x%x\n",
-                req_resp, addr, block_count, s->header.max_block + 1);
+        if (verbose) {
+            fprintf(stderr,
+                    "rpmb_dev: Request %d, invalid addr: 0x%x count 0x%x, Out of bounds. Max addr 0x%x\n",
+                    req_resp, addr, block_count, s->header.max_block + 1);
+        }
         result = RPMB_RES_ADDR_FAILURE;
         goto err;
     }
     if (!cmd->check_addr && addr) {
-        fprintf(stderr, "rpmb_dev: Request %d, invalid addr: 0x%x != 0\n",
-                req_resp, addr);
+        if (verbose) {
+            fprintf(stderr, "rpmb_dev: Request %d, invalid addr: 0x%x != 0\n",
+                    req_resp, addr);
+        }
         goto err;
     }
 
     for (int i = 1; i < s->cmd_count; i++) {
         sub_req = rpmb_get_u16(s->cmd[i].req_resp);
         if (sub_req != req_resp) {
-            fprintf(stderr,
-                    "rpmb_dev: Request %d, sub-request mismatch, %d, at %d\n",
-                    req_resp, i, sub_req);
+            if (verbose) {
+                fprintf(stderr,
+                        "rpmb_dev: Request %d, sub-request mismatch, %d, at %d\n",
+                        req_resp, i, sub_req);
+            }
             goto err;
         }
     }
     if (!cmd->multi_packet_cmd && s->cmd_count != 1) {
-        fprintf(stderr, "rpmb_dev: Request %d, bad cmd count %d, expected 1\n",
-                req_resp, s->cmd_count);
+        if (verbose) {
+            fprintf(stderr,
+                    "rpmb_dev: Request %d, bad cmd count %d, expected 1\n",
+                    req_resp, s->cmd_count);
+        }
         goto err;
     }
     if (!cmd->multi_packet_res && s->res_count != 1) {
-        fprintf(stderr, "rpmb_dev: Request %d, bad res count %d, expected 1\n",
-                req_resp, s->res_count);
+        if (verbose) {
+            fprintf(stderr,
+                    "rpmb_dev: Request %d, bad res count %d, expected 1\n",
+                    req_resp, s->res_count);
+        }
         goto err;
     }
 
     if (cmd->check_key_programmed && !s->header.key_programmed) {
-        fprintf(stderr, "rpmb_dev: Request %d, key is not programmed\n",
-                req_resp);
+        if (verbose) {
+            fprintf(stderr, "rpmb_dev: Request %d, key is not programmed\n",
+                    req_resp);
+        }
         s->res[0].result = rpmb_u16(RPMB_RES_NO_AUTH_KEY);
         return;
     }
 
     if (!cmd->func) {
-        fprintf(stderr, "rpmb_dev: Unsupported request: %d\n", req_resp);
+        if (verbose) {
+            fprintf(stderr, "rpmb_dev: Unsupported request: %d\n", req_resp);
+        }
         goto err;
     }
 
@@ -522,6 +550,7 @@ int main(int argc, char** argv) {
                                     {"sock", required_argument, 0, 0},
                                     {"dev", required_argument, 0, 'd'},
                                     {"init", no_argument, &init, true},
+                                    {"verbose", no_argument, &verbose, true},
                                     {0, 0, 0, 0}};
 
     memset(&s.header, 0, sizeof(s.header));
