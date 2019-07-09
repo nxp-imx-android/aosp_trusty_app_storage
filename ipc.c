@@ -117,6 +117,7 @@ static int do_connect(struct ipc_port_context* ctx, const uevent_t* ev) {
             TLOGE("failed (%d) to set_cookie on chan %d\n", rc, chan_handle);
             goto err_set_cookie;
         }
+        list_add_tail(&ctx->channels, &chan_ctx->node);
     }
 
     return NO_ERROR;
@@ -180,6 +181,7 @@ err_read_msg:
 
 static void do_disconnect(struct ipc_channel_context* context,
                           const uevent_t* ev) {
+    list_delete(&context->node);
     context->ops.on_disconnect(context);
     close(ev->handle);
 }
@@ -363,6 +365,7 @@ static void dispatch_event(const uevent_t* ev) {
     struct ipc_context* context = ev->cookie;
     assert(context);
     assert(context->evt_handler);
+    assert(context->handle == ev->handle);
 
     context->evt_handler(context, ev);
 }
@@ -399,6 +402,7 @@ int ipc_port_create(struct ipc_port_context* ctxp,
 
     ctxp->common.handle = port_handle;
     ctxp->common.evt_handler = handle_port;
+    list_initialize(&ctxp->channels);
     return NO_ERROR;
 
 err_set_cookie:
@@ -409,6 +413,15 @@ err_grow_msg:
 
 int ipc_port_destroy(struct ipc_port_context* ctx) {
     close(ctx->common.handle);
+    while (!list_is_empty(&ctx->channels)) {
+        struct ipc_channel_context* chan_ctx = list_remove_head_type(
+                &ctx->channels, struct ipc_channel_context, node);
+        assert(chan_ctx);
+        handle_t chan_handle = chan_ctx->common.handle;
+        TLOGE("client still connected, handle %d\n", chan_handle);
+        chan_ctx->ops.on_disconnect(chan_ctx);
+        close(chan_handle);
+    }
     return NO_ERROR;
 }
 

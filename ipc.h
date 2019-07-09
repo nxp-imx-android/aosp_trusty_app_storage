@@ -18,6 +18,7 @@
 
 #include <stdio.h>
 
+#include <lk/list.h>
 #include <trusty_ipc.h>
 #include <uapi/trusty_uuid.h>
 
@@ -89,11 +90,13 @@ struct ipc_context {
 struct ipc_channel_context {
     struct ipc_context common;
     struct ipc_channel_ops ops;
+    struct list_node node;
 };
 
 struct ipc_port_context {
     struct ipc_context common;
     struct ipc_port_ops ops;
+    struct list_node channels;
 };
 
 /**
