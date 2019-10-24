@@ -23,10 +23,10 @@
 #include <string.h>
 
 #ifndef LOCAL_TRACE
-#define LOCAL_TRACE TRACE_LEVEL_INIT
+#define LOCAL_TRACE TRACE_LEVEL_WARNING
 #endif
 #ifndef LOCAL_TRACE_ERR
-#define LOCAL_TRACE_ERR TRACE_LEVEL_INIT
+#define LOCAL_TRACE_ERR TRACE_LEVEL_ERROR
 #endif
 
 #include "array.h"
