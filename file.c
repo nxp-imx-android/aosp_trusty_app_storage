@@ -89,7 +89,7 @@ void file_block_map_init(struct transaction* tr,
                          struct block_map* block_map,
                          const struct block_mac* file) {
     const struct file_entry* file_entry_ro;
-    obj_ref_t file_entry_ro_ref = OBJ_REF_INITIAL_VALUE(file_entry_ro_ref);
+    struct obj_ref file_entry_ro_ref = OBJ_REF_INITIAL_VALUE(file_entry_ro_ref);
 
     if (!block_mac_valid(tr, file)) {
         goto err;
@@ -123,7 +123,7 @@ err:
  */
 void file_print(struct transaction* tr, const struct file_handle* file) {
     const struct file_entry* file_entry_ro;
-    obj_ref_t file_entry_ro_ref = OBJ_REF_INITIAL_VALUE(file_entry_ro_ref);
+    struct obj_ref file_entry_ro_ref = OBJ_REF_INITIAL_VALUE(file_entry_ro_ref);
     struct block_map block_map;
 
     file_block_map_init(tr, &block_map, &file->block_mac);
@@ -179,8 +179,8 @@ static void file_block_map_update(struct transaction* tr,
     struct block_mac block_mac;
     const struct file_entry* file_entry_ro;
     struct file_entry* file_entry_rw = NULL;
-    obj_ref_t file_entry_ref = OBJ_REF_INITIAL_VALUE(file_entry_ref);
-    obj_ref_t file_entry_copy_ref = OBJ_REF_INITIAL_VALUE(file_entry_ref);
+    struct obj_ref file_entry_ref = OBJ_REF_INITIAL_VALUE(file_entry_ref);
+    struct obj_ref file_entry_copy_ref = OBJ_REF_INITIAL_VALUE(file_entry_ref);
     struct block_tree_path tree_path;
 
     if (tr->failed) {
@@ -354,7 +354,7 @@ static const void* file_get_block_etc(struct transaction* tr,
                                       data_block_t file_block,
                                       bool read,
                                       bool write,
-                                      obj_ref_t* ref) {
+                                      struct obj_ref* ref) {
     bool found = false;
     const void* data = NULL;
     struct block_map block_map;
@@ -454,7 +454,7 @@ err:
 const void* file_get_block(struct transaction* tr,
                            struct file_handle* file,
                            data_block_t file_block,
-                           obj_ref_t* ref) {
+                           struct obj_ref* ref) {
     return file_get_block_etc(tr, file, file_block, true, false, ref);
 }
 
@@ -472,7 +472,7 @@ void* file_get_block_write(struct transaction* tr,
                            struct file_handle* file,
                            data_block_t file_block,
                            bool read,
-                           obj_ref_t* ref) {
+                           struct obj_ref* ref) {
     return (void*)file_get_block_etc(tr, file, file_block, read, true, ref);
 }
 
@@ -481,7 +481,7 @@ void* file_get_block_write(struct transaction* tr,
  * @data:       File block data pointer
  * @data_ref:   Reference pointer to release
  */
-void file_block_put(const void* data, obj_ref_t* data_ref) {
+void file_block_put(const void* data, struct obj_ref* data_ref) {
     block_put(data - sizeof(struct iv), data_ref);
 }
 
@@ -500,7 +500,7 @@ void file_block_put_dirty(struct transaction* tr,
                           struct file_handle* file,
                           data_block_t file_block,
                           void* data,
-                          obj_ref_t* data_ref) {
+                          struct obj_ref* data_ref) {
     struct block_map block_map;
 
     file_block_map_init(tr, &block_map, &file->block_mac);
@@ -522,7 +522,7 @@ void file_block_put_dirty(struct transaction* tr,
  */
 const struct file_info* file_get_info(struct transaction* tr,
                                       const struct block_mac* block_mac,
-                                      obj_ref_t* ref) {
+                                      struct obj_ref* ref) {
     const struct file_entry* file_entry;
 
     file_entry = block_get(tr, block_mac, NULL, ref);
@@ -542,7 +542,7 @@ const struct file_info* file_get_info(struct transaction* tr,
  * @data:       File info data pointer
  * @data_ref:   Reference pointer to release
  */
-void file_info_put(const struct file_info* data, obj_ref_t* data_ref) {
+void file_info_put(const struct file_info* data, struct obj_ref* data_ref) {
     const struct file_entry* entry = containerof(data, struct file_entry, info);
     assert(entry->magic == FILE_ENTRY_MAGIC);
     block_put(entry, data_ref);
@@ -633,7 +633,7 @@ static bool file_tree_lookup(struct block_mac* block_mac_out,
     struct block_mac block_mac;
     data_block_t hash = path_hash(tr, file_path);
     const struct file_entry* file_entry;
-    obj_ref_t file_entry_ref = OBJ_REF_INITIAL_VALUE(file_entry_ref);
+    struct obj_ref file_entry_ref = OBJ_REF_INITIAL_VALUE(file_entry_ref);
     bool found = false;
 
     assert(strlen(file_path) < sizeof(file_entry->info.path));
@@ -715,7 +715,7 @@ static bool file_create(struct block_mac* block_mac_out,
                         const char* path) {
     data_block_t block;
     struct file_entry* file_entry;
-    obj_ref_t file_entry_ref = OBJ_REF_INITIAL_VALUE(file_entry_ref);
+    struct obj_ref file_entry_ref = OBJ_REF_INITIAL_VALUE(file_entry_ref);
     data_block_t hash;
 
     hash = path_hash(tr, path);
@@ -942,7 +942,7 @@ bool file_open(struct transaction* tr,
             BLOCK_MAC_INITIAL_VALUE(committed_block_mac);
     struct block_tree_path tree_path;
     const struct file_entry* file_entry_ro;
-    obj_ref_t file_entry_ref = OBJ_REF_INITIAL_VALUE(file_entry_ref);
+    struct obj_ref file_entry_ref = OBJ_REF_INITIAL_VALUE(file_entry_ref);
 
     assert(tr->fs);
 
@@ -1016,7 +1016,7 @@ bool file_delete(struct transaction* tr, const char* path) {
     struct block_mac old_block_mac;
     bool in_files = false;
     const struct file_entry* file_entry;
-    obj_ref_t file_entry_ref = OBJ_REF_INITIAL_VALUE(file_entry_ref);
+    struct obj_ref file_entry_ref = OBJ_REF_INITIAL_VALUE(file_entry_ref);
     struct block_map block_map = BLOCK_MAP_INITIAL_VALUE(block_map);
     struct block_tree_path tree_path;
     struct file_handle* open_file;
@@ -1327,7 +1327,7 @@ void file_transaction_complete(struct transaction* tr,
                                struct block_mac* new_files_block_mac) {
     bool found;
     const struct file_entry* file_entry_ro;
-    obj_ref_t file_entry_ref = OBJ_REF_INITIAL_VALUE(file_entry_ref);
+    struct obj_ref file_entry_ref = OBJ_REF_INITIAL_VALUE(file_entry_ref);
     struct block_tree_path tree_path;
     struct block_tree_path tmp_tree_path;
     struct block_mac old_file;
@@ -1496,7 +1496,7 @@ static bool file_read_size(struct transaction* tr,
                            const struct block_mac* block_mac,
                            data_block_t* sz) {
     const struct file_entry* file_entry_ro;
-    obj_ref_t ref = OBJ_REF_INITIAL_VALUE(ref);
+    struct obj_ref ref = OBJ_REF_INITIAL_VALUE(ref);
 
     if (!block_mac_valid(tr, block_mac)) {
         *sz = 0;

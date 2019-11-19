@@ -708,7 +708,7 @@ static void block_tree_print_sub_tree(struct transaction* tr,
                                       const struct block_mac* block_mac) {
     int i;
     const struct block_tree_node* node_ro;
-    obj_ref_t node_ref = OBJ_REF_INITIAL_VALUE(node_ref);
+    struct obj_ref node_ref = OBJ_REF_INITIAL_VALUE(node_ref);
     const struct block_mac* child;
 
     if (!block_mac || !block_mac_valid(tr, block_mac)) {
@@ -852,7 +852,7 @@ static int block_tree_check_sub_tree(struct transaction* tr,
     size_t key_count;
     const void* child_data;
     struct block_mac child_block_mac;
-    obj_ref_t ref = OBJ_REF_INITIAL_VALUE(ref);
+    struct obj_ref ref = OBJ_REF_INITIAL_VALUE(ref);
     bool is_leaf;
 
     if (!block_mac || !block_mac_to_block(tr, block_mac))
@@ -1262,7 +1262,7 @@ void block_tree_walk(struct transaction* tr,
                      struct block_tree_path* path) {
     const struct block_tree_node* node_ro;
     const struct block_tree_node* parent_node_ro;
-    obj_ref_t ref[2] = {
+    struct obj_ref ref[2] = {
             OBJ_REF_INITIAL_VALUE(ref[0]),
             OBJ_REF_INITIAL_VALUE(ref[1]),
     };
@@ -1365,7 +1365,7 @@ err:
 void block_tree_path_next(struct block_tree_path* path) {
     const struct block_tree_node* node_ro;
     const struct block_tree_node* parent_node_ro;
-    obj_ref_t ref[2] = {
+    struct obj_ref ref[2] = {
             OBJ_REF_INITIAL_VALUE(ref[0]),
             OBJ_REF_INITIAL_VALUE(ref[1]),
     };
@@ -1626,7 +1626,7 @@ static struct block_tree_node* block_tree_block_get_write(
         struct transaction* tr,
         struct block_tree_path* path,
         int path_index,
-        obj_ref_t* ref) {
+        struct obj_ref* ref) {
     const struct block_tree_node* node_ro;
     struct block_tree_node* node_rw;
 
@@ -1658,13 +1658,13 @@ void block_tree_path_put_dirty(struct transaction* tr,
                                struct block_tree_path* path,
                                int path_index,
                                void* data,
-                               obj_ref_t* data_ref) {
+                               struct obj_ref* data_ref) {
     unsigned int index;
     struct block_mac* block_mac;
     struct block_tree_node* parent_node_rw;
     bool parent_is_leaf;
-    obj_ref_t parent_node_ref = OBJ_REF_INITIAL_VALUE(parent_node_ref);
-    obj_ref_t tmp_ref = OBJ_REF_INITIAL_VALUE(tmp_ref);
+    struct obj_ref parent_node_ref = OBJ_REF_INITIAL_VALUE(parent_node_ref);
+    struct obj_ref tmp_ref = OBJ_REF_INITIAL_VALUE(tmp_ref);
 
     if (path_index == (int)path->count) {
         assert(path_index < (int)countof(path->entry));
@@ -1766,7 +1766,7 @@ void block_tree_update_key(struct transaction* tr,
     const struct block_mac* block_mac;
     unsigned int index;
     struct block_tree_node* node_rw;
-    obj_ref_t node_ref = OBJ_REF_INITIAL_VALUE(node_ref);
+    struct obj_ref node_ref = OBJ_REF_INITIAL_VALUE(node_ref);
 
     assert(new_key);
 
@@ -1894,11 +1894,11 @@ static void block_tree_node_split(struct transaction* tr,
                                   const struct block_mac* append_child,
                                   const struct block_mac* append_data) {
     struct block_tree_node* parent_node_rw;
-    obj_ref_t parent_node_ref = OBJ_REF_INITIAL_VALUE(parent_node_ref);
+    struct obj_ref parent_node_ref = OBJ_REF_INITIAL_VALUE(parent_node_ref);
     struct block_tree_node* node_left_rw;
-    obj_ref_t node_left_ref = OBJ_REF_INITIAL_VALUE(node_left_ref);
+    struct obj_ref node_left_ref = OBJ_REF_INITIAL_VALUE(node_left_ref);
     struct block_tree_node* node_right_rw;
-    obj_ref_t node_right_ref = OBJ_REF_INITIAL_VALUE(node_right_ref);
+    struct obj_ref node_right_ref = OBJ_REF_INITIAL_VALUE(node_right_ref);
     bool is_leaf;
     struct block_mac* left_block_mac;
     struct block_mac* right_block_mac;
@@ -2185,7 +2185,7 @@ static struct block_mac block_tree_get_sibling_block(
     const struct block_mac* block_mac_ptr;
     int parent_index;
     const struct block_tree_node* node_ro;
-    obj_ref_t node_ref = OBJ_REF_INITIAL_VALUE(node_ref);
+    struct obj_ref node_ref = OBJ_REF_INITIAL_VALUE(node_ref);
 
     assert(path->tree);
     assert(path->count > 1);
@@ -2286,7 +2286,7 @@ static void block_tree_remove_internal(struct transaction* tr,
                                        struct block_tree_path* path) {
     const struct block_tree_node* node_ro;
     struct block_tree_node* node_rw;
-    obj_ref_t node_ref = OBJ_REF_INITIAL_VALUE(node_ref);
+    struct obj_ref node_ref = OBJ_REF_INITIAL_VALUE(node_ref);
     int index;
     bool need_merge;
     const struct block_mac* block_mac;
@@ -2368,10 +2368,10 @@ static void block_tree_node_merge(struct transaction* tr,
     const struct block_tree_node* merge_node_ro;
     struct block_tree_node* node_rw;
     struct block_tree_node* merge_node_rw;
-    obj_ref_t node_ref1 = OBJ_REF_INITIAL_VALUE(node_ref1);
-    obj_ref_t node_ref2 = OBJ_REF_INITIAL_VALUE(node_ref2);
-    obj_ref_t* node_ref = &node_ref1;
-    obj_ref_t* merge_node_ref = &node_ref2;
+    struct obj_ref node_ref1 = OBJ_REF_INITIAL_VALUE(node_ref1);
+    struct obj_ref node_ref2 = OBJ_REF_INITIAL_VALUE(node_ref2);
+    struct obj_ref* node_ref = &node_ref1;
+    struct obj_ref* merge_node_ref = &node_ref2;
     const struct block_mac* block_mac;
     struct block_mac merge_block;
     unsigned int src_index;
@@ -2520,7 +2520,7 @@ static void block_tree_node_merge(struct transaction* tr,
         data_block_t* merge_key;
         if (!node_is_left) {
             const struct block_tree_node* tmp_node;
-            obj_ref_t* tmp_ref;
+            struct obj_ref* tmp_ref;
             tmp_node = node_ro;
             node_ro = merge_node_ro;
             merge_node_ro = tmp_node;
@@ -2605,7 +2605,7 @@ void block_tree_insert_block_mac(struct transaction* tr,
                                  struct block_mac data) {
     const struct block_tree_node* node_ro;
     struct block_tree_node* node_rw;
-    obj_ref_t node_ref = OBJ_REF_INITIAL_VALUE(node_ref);
+    struct obj_ref node_ref = OBJ_REF_INITIAL_VALUE(node_ref);
     const struct block_mac* block_mac;
     data_block_t overflow_key = 0;
     struct block_mac overflow_data;
@@ -2739,7 +2739,7 @@ void block_tree_remove(struct transaction* tr,
     struct block_tree_path path;
     const struct block_tree_node* node_ro;
     struct block_tree_node* node_rw;
-    obj_ref_t node_ref = OBJ_REF_INITIAL_VALUE(node_ref);
+    struct obj_ref node_ref = OBJ_REF_INITIAL_VALUE(node_ref);
     const struct block_mac* block_mac;
     int index;
     bool need_merge = false;
@@ -2855,7 +2855,7 @@ void block_tree_update_block_mac(struct transaction* tr,
     struct block_tree_path path;
     const struct block_tree_node* node_ro;
     struct block_tree_node* node_rw;
-    obj_ref_t node_ref = OBJ_REF_INITIAL_VALUE(node_ref);
+    struct obj_ref node_ref = OBJ_REF_INITIAL_VALUE(node_ref);
     const struct block_mac* block_mac;
     data_block_t prev_key;
     data_block_t next_key;

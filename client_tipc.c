@@ -309,7 +309,7 @@ static bool storage_file_check_name(struct transaction* tr,
                                     const char* path) {
     bool ret;
     const struct file_info* file_info;
-    obj_ref_t ref = OBJ_REF_INITIAL_VALUE(ref);
+    struct obj_ref ref = OBJ_REF_INITIAL_VALUE(ref);
 
     file_info = file_get_info(tr, &file->block_mac, &ref);
     if (!file_info) {
@@ -606,7 +606,7 @@ static int storage_file_read(struct storage_msg* msg,
     size_t block_size = get_file_block_size(session->tr.fs);
     data_block_t block_num;
     const uint8_t* block_data;
-    obj_ref_t block_data_ref = OBJ_REF_INITIAL_VALUE(block_data_ref);
+    struct obj_ref block_data_ref = OBJ_REF_INITIAL_VALUE(block_data_ref);
     size_t block_offset;
 
     if (req_size < sizeof(*req)) {
@@ -692,7 +692,7 @@ static enum storage_err storage_create_gap(
     data_block_t block_num;
     size_t block_offset;
     uint8_t* block_data;
-    obj_ref_t block_data_ref = OBJ_REF_INITIAL_VALUE(block_data_ref);
+    struct obj_ref block_data_ref = OBJ_REF_INITIAL_VALUE(block_data_ref);
 
     block_num = file->size / block_size;
     block_offset = file->size % block_size;
@@ -738,7 +738,7 @@ static enum storage_err storage_file_write(
     size_t block_size = get_file_block_size(session->tr.fs);
     data_block_t block_num;
     uint8_t* block_data;
-    obj_ref_t block_data_ref = OBJ_REF_INITIAL_VALUE(block_data_ref);
+    struct obj_ref block_data_ref = OBJ_REF_INITIAL_VALUE(block_data_ref);
     size_t block_offset;
 
     if (req_size <= sizeof(*req)) {
@@ -866,7 +866,7 @@ static bool storage_file_list_iter(struct file_iterate_state* iter,
     struct storage_file_list_state* miter =
             containerof(iter, struct storage_file_list_state, iter);
     const struct file_info* file_info;
-    obj_ref_t ref = OBJ_REF_INITIAL_VALUE(ref);
+    struct obj_ref ref = OBJ_REF_INITIAL_VALUE(ref);
 
     file_info = file_get_info(tr, block_mac, &ref);
 

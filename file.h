@@ -70,23 +70,23 @@ size_t get_file_block_size(struct fs* fs);
 const void* file_get_block(struct transaction* tr,
                            struct file_handle* file,
                            data_block_t file_block,
-                           obj_ref_t* ref);
+                           struct obj_ref* ref);
 void* file_get_block_write(struct transaction* tr,
                            struct file_handle* file,
                            data_block_t file_block,
                            bool read,
-                           obj_ref_t* ref);
-void file_block_put(const void* data, obj_ref_t* data_ref);
+                           struct obj_ref* ref);
+void file_block_put(const void* data, struct obj_ref* data_ref);
 void file_block_put_dirty(struct transaction* tr,
                           struct file_handle* file,
                           data_block_t file_block,
                           void* data,
-                          obj_ref_t* data_ref);
+                          struct obj_ref* data_ref);
 
 const struct file_info* file_get_info(struct transaction* tr,
                                       const struct block_mac* block_mac,
-                                      obj_ref_t* ref);
-void file_info_put(const struct file_info* data, obj_ref_t* data_ref);
+                                      struct obj_ref* ref);
+void file_info_put(const struct file_info* data, struct obj_ref* data_ref);
 
 bool file_get_size(struct transaction* tr,
                    struct file_handle* file,

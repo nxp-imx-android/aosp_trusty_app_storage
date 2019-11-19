@@ -44,19 +44,21 @@ void block_cache_discard_transaction(struct transaction* tr, bool discard_all);
 
 const void* block_get_no_read(struct transaction* tr,
                               data_block_t block,
-                              obj_ref_t* ref);
+                              struct obj_ref* ref);
 
-const void* block_get_super(struct fs* fs, data_block_t block, obj_ref_t* ref);
+const void* block_get_super(struct fs* fs,
+                            data_block_t block,
+                            struct obj_ref* ref);
 
 const void* block_get_no_tr_fail(struct transaction* tr,
                                  const struct block_mac* block_mac,
                                  const struct iv* iv,
-                                 obj_ref_t* ref);
+                                 struct obj_ref* ref);
 
 const void* block_get(struct transaction* tr,
                       const struct block_mac* block_mac,
                       const struct iv* iv,
-                      obj_ref_t* ref);
+                      struct obj_ref* ref);
 
 void* block_dirty(struct transaction* tr, const void* data, bool is_tmp);
 
@@ -68,33 +70,33 @@ void block_discard_dirty_by_block(struct block_device* dev, data_block_t block);
 
 void block_put_dirty(struct transaction* tr,
                      void* data,
-                     obj_ref_t* data_ref,
+                     struct obj_ref* data_ref,
                      struct block_mac* block_mac,
                      void* block_mac_ref);
 
-void block_put_dirty_no_mac(void* data, obj_ref_t* data_ref);
+void block_put_dirty_no_mac(void* data, struct obj_ref* data_ref);
 
-void block_put_dirty_discard(void* data, obj_ref_t* data_ref);
+void block_put_dirty_discard(void* data, struct obj_ref* data_ref);
 
 void* block_get_write_no_read(struct transaction* tr,
                               data_block_t block,
                               bool is_tmp,
-                              obj_ref_t* ref);
+                              struct obj_ref* ref);
 
 void* block_get_write(struct transaction* tr,
                       const struct block_mac* block_mac,
                       const struct iv* iv,
                       bool is_tmp,
-                      obj_ref_t* ref);
+                      struct obj_ref* ref);
 
 void* block_get_cleared(struct transaction* tr,
                         data_block_t block,
                         bool is_tmp,
-                        obj_ref_t* ref);
+                        struct obj_ref* ref);
 
 void* block_get_cleared_super(struct transaction* tr,
                               data_block_t block,
-                              obj_ref_t* ref);
+                              struct obj_ref* ref);
 
 void* block_move(struct transaction* tr,
                  const void* data,
@@ -105,9 +107,9 @@ void* block_get_copy(struct transaction* tr,
                      const void* data,
                      data_block_t block,
                      bool is_tmp,
-                     obj_ref_t* new_ref);
+                     struct obj_ref* new_ref);
 
-void block_put(const void* data, obj_ref_t* ref);
+void block_put(const void* data, struct obj_ref* ref);
 
 data_block_t data_to_block_num(const void* data); /* test api, remove ? */
 

@@ -155,7 +155,7 @@ void block_tree_path_put_dirty(struct transaction* tr,
                                struct block_tree_path* path,
                                int path_index,
                                void* data,
-                               obj_ref_t* data_ref);
+                               struct obj_ref* data_ref);
 
 void block_tree_insert(struct transaction* state,
                        struct block_tree* tree,

@@ -82,7 +82,7 @@ struct block_cache_entry {
     bool dirty_tmp;
     struct transaction* dirty_tr;
 
-    obj_t obj;
+    struct obj obj;
     struct list_node lru_node;
     struct list_node io_op_node;
     enum {

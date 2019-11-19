@@ -103,7 +103,7 @@ bool update_super_block(struct transaction* tr,
                         const struct block_mac* free,
                         const struct block_mac* files) {
     struct super_block* super_rw;
-    obj_ref_t super_ref = OBJ_REF_INITIAL_VALUE(super_ref);
+    struct obj_ref super_ref = OBJ_REF_INITIAL_VALUE(super_ref);
     unsigned int ver;
     unsigned int index;
     uint32_t block_size = tr->fs->super_dev->block_size;
@@ -343,9 +343,9 @@ static int load_super_block(struct fs* fs, bool clear) {
     unsigned int i;
     int ret;
     const struct super_block* new_super;
-    obj_ref_t new_super_ref = OBJ_REF_INITIAL_VALUE(new_super_ref);
+    struct obj_ref new_super_ref = OBJ_REF_INITIAL_VALUE(new_super_ref);
     const struct super_block* old_super = NULL;
-    obj_ref_t old_super_ref = OBJ_REF_INITIAL_VALUE(old_super_ref);
+    struct obj_ref old_super_ref = OBJ_REF_INITIAL_VALUE(old_super_ref);
 
     assert(fs->super_dev->block_size >= sizeof(struct super_block));
 

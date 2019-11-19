@@ -48,7 +48,7 @@ void block_map_put_dirty(struct transaction* tr,
                          struct block_map* block_map,
                          data_block_t index,
                          void* data,
-                         obj_ref_t* data_ref);
+                         struct obj_ref* data_ref);
 
 void block_map_truncate(struct transaction* tr,
                         struct block_map* block_map,

@@ -886,7 +886,7 @@ static void file_allocate_all_test(struct transaction* master_tr,
     int written_count[tr_count];
     size_t file_block_size = master_tr->fs->dev->block_size - sizeof(struct iv);
     void* block_data_rw;
-    obj_ref_t ref = OBJ_REF_INITIAL_VALUE(ref);
+    struct obj_ref ref = OBJ_REF_INITIAL_VALUE(ref);
 
     for (i = 0; i < tr_count; i++) {
         transaction_init(&tr[i], master_tr->fs, true);
@@ -985,7 +985,7 @@ static void file_test_open(struct transaction* tr,
                            int id) {
     int i;
     int* block_data_rw;
-    obj_ref_t ref = OBJ_REF_INITIAL_VALUE(ref);
+    struct obj_ref ref = OBJ_REF_INITIAL_VALUE(ref);
     const int* block_data_ro;
     size_t file_block_size = tr->fs->dev->block_size - sizeof(struct iv);
 
@@ -1226,7 +1226,7 @@ static void file_read_after_delete_test(struct transaction* tr) {
     const char* path = "test1s";
     struct file_handle file;
     struct file_handle file2;
-    obj_ref_t ref = OBJ_REF_INITIAL_VALUE(ref);
+    struct obj_ref ref = OBJ_REF_INITIAL_VALUE(ref);
     const void* block_data_ro;
     void* block_data_rw;
     struct transaction tr2;
@@ -1582,7 +1582,7 @@ static bool file_iterate_many_iter(struct file_iterate_state* iter,
     struct file_iterate_many_state* miter =
             containerof(iter, struct file_iterate_many_state, iter);
     const struct file_info* file_info;
-    obj_ref_t ref = OBJ_REF_INITIAL_VALUE(ref);
+    struct obj_ref ref = OBJ_REF_INITIAL_VALUE(ref);
     int i;
     int ret;
     uint64_t mask;
@@ -1660,7 +1660,7 @@ static void file_allocate_leave_10_test(struct transaction* tr) {
 }
 
 static void future_fs_version_test(struct transaction* tr) {
-    obj_ref_t super_ref = OBJ_REF_INITIAL_VALUE(super_ref);
+    struct obj_ref super_ref = OBJ_REF_INITIAL_VALUE(super_ref);
     struct fs* fs = tr->fs;
     const struct key* key = fs->key;
     struct block_device* dev = fs->dev;

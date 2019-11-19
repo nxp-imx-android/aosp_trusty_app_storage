@@ -539,7 +539,7 @@ static struct block_cache_entry* block_cache_get(struct fs* fs,
                                                  bool load,
                                                  const void* mac,
                                                  size_t mac_size,
-                                                 obj_ref_t* ref) {
+                                                 struct obj_ref* ref) {
     bool loaded;
     struct block_cache_entry* entry;
 
@@ -590,7 +590,7 @@ static void* block_cache_get_data(struct fs* fs,
                                   bool load,
                                   const void* mac,
                                   size_t mac_size,
-                                  obj_ref_t* ref) {
+                                  struct obj_ref* ref) {
     struct block_cache_entry* entry;
     entry = block_cache_get(fs, dev, block, load, mac, mac_size, ref);
     if (!entry) {
@@ -636,7 +636,7 @@ static struct block_cache_entry* data_to_block_cache_entry_or_null(
  * allocated object, the cache entry is not destroyed here. It is instead left
  * in a state where block_cache_lookup can reuse it.
  */
-static void block_cache_entry_destroy(obj_t* obj) {
+static void block_cache_entry_destroy(struct obj* obj) {
     struct block_cache_entry* entry =
             containerof(obj, struct block_cache_entry, obj);
 
@@ -653,7 +653,7 @@ static void block_cache_entry_destroy(obj_t* obj) {
  */
 void block_cache_init(void) {
     int i;
-    obj_ref_t ref;
+    struct obj_ref ref;
     struct block_cache_entry* entry;
 
     assert(!block_cache_entries);
@@ -799,7 +799,7 @@ void block_cache_discard_transaction(struct transaction* tr, bool discard_all) {
  */
 const void* block_get_no_read(struct transaction* tr,
                               data_block_t block,
-                              obj_ref_t* ref) {
+                              struct obj_ref* ref) {
     assert(tr);
     assert(tr->fs);
 
@@ -817,7 +817,9 @@ const void* block_get_no_read(struct transaction* tr,
  *
  * Should only be used if block device performs tamper detection.
  */
-const void* block_get_super(struct fs* fs, data_block_t block, obj_ref_t* ref) {
+const void* block_get_super(struct fs* fs,
+                            data_block_t block,
+                            struct obj_ref* ref) {
     assert(fs);
     assert(fs->super_dev);
     assert(fs->super_dev->tamper_detecting);
@@ -841,7 +843,7 @@ const void* block_get_super(struct fs* fs, data_block_t block, obj_ref_t* ref) {
 const void* block_get_no_tr_fail(struct transaction* tr,
                                  const struct block_mac* block_mac,
                                  const struct iv* iv,
-                                 obj_ref_t* ref) {
+                                 struct obj_ref* ref) {
     data_block_t block;
 
     assert(tr);
@@ -873,7 +875,7 @@ const void* block_get_no_tr_fail(struct transaction* tr,
 const void* block_get(struct transaction* tr,
                       const struct block_mac* block_mac,
                       const struct iv* iv,
-                      obj_ref_t* ref) {
+                      struct obj_ref* ref) {
     const void* data;
 
     assert(tr);
@@ -991,7 +993,7 @@ void block_discard_dirty_by_block(struct block_device* dev,
  */
 static void block_put_dirty_etc(struct transaction* tr,
                                 void* data,
-                                obj_ref_t* data_ref,
+                                struct obj_ref* data_ref,
                                 struct block_mac* block_mac,
                                 void* block_mac_ref) {
     int ret;
@@ -1049,7 +1051,7 @@ static void block_put_dirty_etc(struct transaction* tr,
  */
 void block_put_dirty(struct transaction* tr,
                      void* data,
-                     obj_ref_t* data_ref,
+                     struct obj_ref* data_ref,
                      struct block_mac* block_mac,
                      void* block_mac_ref) {
     assert(tr);
@@ -1064,7 +1066,7 @@ void block_put_dirty(struct transaction* tr,
  *
  * Similar to block_put_dirty except no transaction or block_mac is needed.
  */
-void block_put_dirty_no_mac(void* data, obj_ref_t* data_ref) {
+void block_put_dirty_no_mac(void* data, struct obj_ref* data_ref) {
     struct block_cache_entry* entry = data_to_block_cache_entry(data);
 
     assert(entry->dev);
@@ -1079,7 +1081,7 @@ void block_put_dirty_no_mac(void* data, obj_ref_t* data_ref) {
  *
  * Similar to block_put_dirty except data can be discarded.
  */
-void block_put_dirty_discard(void* data, obj_ref_t* data_ref) {
+void block_put_dirty_discard(void* data, struct obj_ref* data_ref) {
     block_discard_dirty(data);
     block_put_dirty_etc(NULL, data, data_ref, NULL, NULL);
 }
@@ -1098,7 +1100,7 @@ void block_put_dirty_discard(void* data, obj_ref_t* data_ref) {
 void* block_get_write_no_read(struct transaction* tr,
                               data_block_t block,
                               bool is_tmp,
-                              obj_ref_t* ref) {
+                              struct obj_ref* ref) {
     const void* data_ro = block_get_no_read(tr, block, ref);
     return block_dirty(tr, data_ro, is_tmp);
 }
@@ -1121,7 +1123,7 @@ void* block_get_write(struct transaction* tr,
                       const struct block_mac* block_mac,
                       const struct iv* iv,
                       bool is_tmp,
-                      obj_ref_t* ref) {
+                      struct obj_ref* ref) {
     const void* data_ro = block_get(tr, block_mac, iv, ref);
     if (!data_ro) {
         return NULL;
@@ -1141,7 +1143,7 @@ void* block_get_write(struct transaction* tr,
 void* block_get_cleared(struct transaction* tr,
                         data_block_t block,
                         bool is_tmp,
-                        obj_ref_t* ref) {
+                        struct obj_ref* ref) {
     void* data = block_get_write_no_read(tr, block, is_tmp, ref);
     memset(data, 0, MAX_BLOCK_SIZE);
     return data;
@@ -1157,7 +1159,7 @@ void* block_get_cleared(struct transaction* tr,
  */
 void* block_get_cleared_super(struct transaction* tr,
                               data_block_t block,
-                              obj_ref_t* ref) {
+                              struct obj_ref* ref) {
     void* data_rw;
     const void* data_ro = block_cache_get_data(tr->fs, tr->fs->super_dev, block,
                                                false, NULL, 0, ref);
@@ -1181,7 +1183,7 @@ void* block_get_copy(struct transaction* tr,
                      const void* data,
                      data_block_t block,
                      bool is_tmp,
-                     obj_ref_t* new_ref) {
+                     struct obj_ref* new_ref) {
     void* dst_data;
     struct block_cache_entry* src_entry = data_to_block_cache_entry(data);
 
@@ -1249,7 +1251,7 @@ void* block_move(struct transaction* tr,
  * @data:           Block data pointer
  * @data_ref:       Reference pointer to release
  */
-void block_put(const void* data, obj_ref_t* ref) {
+void block_put(const void* data, struct obj_ref* ref) {
     struct block_cache_entry* entry = data_to_block_cache_entry(data);
 
     if (print_block_ops) {
