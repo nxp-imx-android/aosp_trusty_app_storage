@@ -3111,7 +3111,7 @@ void block_tree_check_config(struct block_device* dev) {
     printf("est. tree depth needed for %" PRIu64 " entries: %g\n",
            ((data_block_t)~0),
            ceil(log_n(ceil(node_max_child_count / 2.0),
-                      ceil(((data_block_t)~0) / 2.0)) +
+                      (((data_block_t)~0) / 2 + 1)) +
                 1.0));
     assert(tree_min_entry_count >= max_entries_needed);
     if (tree_min_entry_count / node_min_child_count < max_entries_needed) {
