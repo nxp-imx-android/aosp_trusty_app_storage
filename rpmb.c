@@ -33,6 +33,13 @@
 #define RPMB_DEBUG 0
 #define MAX_PACKET_COUNT 2
 
+#define RPMB_PROTOCOL_MMC 1
+#define RPMB_PROTOCOL_UFS 2
+
+#if RPMB_PROTOCOL != RPMB_PROTOCOL_MMC && RPMB_PROTOCOL != RPMB_PROTOCOL_UFS
+#error "invalid RPMB_PROTOCOL!"
+#endif
+
 struct rpmb_state {
     struct rpmb_key key;
     void* mmc_handle;
@@ -227,9 +234,12 @@ int rpmb_read(struct rpmb_state* state,
     struct rpmb_key mac;
     struct rpmb_nonce nonce = rpmb_nonce_init();
     struct rpmb_packet cmd = {
-            .nonce = nonce,
-            .address = rpmb_u16(addr),
-            .req_resp = rpmb_u16(RPMB_REQ_DATA_READ),
+        .nonce = nonce,
+        .address = rpmb_u16(addr),
+#if RPMB_PROTOCOL == RPMB_PROTOCOL_UFS
+        .block_count = rpmb_u16(count),
+#endif
+        .req_resp = rpmb_u16(RPMB_REQ_DATA_READ),
     };
     struct rpmb_packet res[MAX_PACKET_COUNT];
     uint8_t* bufp;
