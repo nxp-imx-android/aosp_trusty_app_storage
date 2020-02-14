@@ -49,7 +49,8 @@ static bool print_cache_get_ref_block_count = true;
 #define BLOCK_CACHE_GUARD_2 (0xdead0005dead0007)
 
 static struct list_node block_cache_lru = LIST_INITIAL_VALUE(block_cache_lru);
-static struct block_cache_entry* block_cache_entries;
+static struct block_cache_entry block_cache_entries[BLOCK_CACHE_SIZE];
+static bool block_cache_init_called = false;
 
 /**
  * block_cache_queue_io_op - Helper function to start a read or write operation
@@ -654,30 +655,28 @@ static void block_cache_entry_destroy(struct obj* obj) {
 void block_cache_init(void) {
     int i;
     struct obj_ref ref;
-    struct block_cache_entry* entry;
 
-    assert(!block_cache_entries);
+    assert(!block_cache_init_called);
 
-    entry = malloc(sizeof(block_cache_entries[0]) * BLOCK_CACHE_SIZE);
-    assert(entry);
-    full_assert(memset(entry, 1,
-                       sizeof(block_cache_entries[0]) * BLOCK_CACHE_SIZE));
-    block_cache_entries = entry;
+    block_cache_init_called = true;
 
-    for (i = 0; i < BLOCK_CACHE_SIZE; i++, entry++) {
-        entry->guard1 = BLOCK_CACHE_GUARD_1;
-        entry->guard2 = BLOCK_CACHE_GUARD_2;
-        entry->dev = NULL;
-        entry->block = DATA_BLOCK_INVALID;
-        entry->dirty = false;
-        entry->dirty_ref = false;
-        entry->dirty_mac = false;
-        entry->dirty_tr = NULL;
-        entry->io_op = BLOCK_CACHE_IO_OP_NONE;
-        obj_init(&entry->obj, &ref);
-        list_clear_node(&entry->io_op_node);
-        list_add_head(&block_cache_lru, &entry->lru_node);
-        obj_del_ref(&entry->obj, &ref, block_cache_entry_destroy);
+    full_assert(memset(block_cache_entries, 1, sizeof(block_cache_entries)));
+
+    for (i = 0; i < BLOCK_CACHE_SIZE; i++) {
+        block_cache_entries[i].guard1 = BLOCK_CACHE_GUARD_1;
+        block_cache_entries[i].guard2 = BLOCK_CACHE_GUARD_2;
+        block_cache_entries[i].dev = NULL;
+        block_cache_entries[i].block = DATA_BLOCK_INVALID;
+        block_cache_entries[i].dirty = false;
+        block_cache_entries[i].dirty_ref = false;
+        block_cache_entries[i].dirty_mac = false;
+        block_cache_entries[i].dirty_tr = NULL;
+        block_cache_entries[i].io_op = BLOCK_CACHE_IO_OP_NONE;
+        obj_init(&block_cache_entries[i].obj, &ref);
+        list_clear_node(&block_cache_entries[i].io_op_node);
+        list_add_head(&block_cache_lru, &block_cache_entries[i].lru_node);
+        obj_del_ref(&block_cache_entries[i].obj, &ref,
+                    block_cache_entry_destroy);
     }
 }
 
