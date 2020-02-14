@@ -19,6 +19,8 @@ MODULE := $(LOCAL_DIR)
 
 STORAGE_RPMB_PROTOCOL ?= MMC
 
+MANIFEST := $(LOCAL_DIR)/manifest.json
+
 MODULE_DEFINES := \
 	RPMB_PROTOCOL=RPMB_PROTOCOL_$(STORAGE_RPMB_PROTOCOL) \
 
@@ -35,7 +37,6 @@ MODULE_SRCS := \
 	$(LOCAL_DIR)/file.c \
 	$(LOCAL_DIR)/ipc.c \
 	$(LOCAL_DIR)/main.c \
-	$(LOCAL_DIR)/manifest.c \
 	$(LOCAL_DIR)/proxy.c \
 	$(LOCAL_DIR)/rpmb.c \
 	$(LOCAL_DIR)/super.c \
