@@ -564,7 +564,7 @@ static struct block_cache_entry* block_cache_get(struct fs* fs,
     }
 
     assert(!entry->dirty_ref);
-    obj_add_ref(&entry->obj, ref);
+    obj_add_ref_allow_unreferenced_obj(&entry->obj, ref);
     if (print_block_ops) {
         printf("%s: block %" PRIu64 ", cache entry %zd, loaded %d, dirty %d\n",
                __func__, block, entry - block_cache_entries, entry->loaded,
