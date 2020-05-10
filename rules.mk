@@ -24,6 +24,17 @@ MANIFEST := $(LOCAL_DIR)/manifest.json
 MODULE_DEFINES := \
 	RPMB_PROTOCOL=RPMB_PROTOCOL_$(STORAGE_RPMB_PROTOCOL) \
 
+# WITH_HKDF_RPMB_KEY indicates that storage server derives rpmb key
+# from a random sequence stored in the rpmb partition itself,
+# and that the storage server supports auto provisioning.
+# Otherwise, keyslot will provide the rpmb key.
+# By default we obtain rpmb key from keyslot.
+WITH_HKDF_RPMB_KEY ?= false
+
+ifeq (true,$(call TOBOOL,$(WITH_HKDF_RPMB_KEY)))
+    MODULE_DEFINES += WITH_HKDF_RPMB_KEY=1
+endif
+
 MODULE_SRCS := \
 	$(LOCAL_DIR)/block_allocator.c \
 	$(LOCAL_DIR)/block_cache.c \
@@ -47,6 +58,7 @@ MODULE_DEPS := \
 	trusty/user/base/interface/storage \
 	trusty/user/base/lib/hwkey \
 	trusty/user/base/lib/libc-trusty \
+	trusty/user/base/lib/system_state \
 	external/boringssl \
 
 MODULE_DEPS += \

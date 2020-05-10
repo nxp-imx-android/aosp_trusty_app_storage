@@ -17,12 +17,17 @@
 #include "block_device_tipc.h"
 
 #include <errno.h>
+#include <lib/system_state/system_state.h>
 #include <lk/compiler.h>
 #include <stdint.h>
 #include <string.h>
 #include <trusty_ipc.h>
+#include <uapi/err.h>
 
 #include <interface/storage/storage.h>
+
+#include <openssl/mem.h>
+#include <openssl/rand.h>
 
 #include "block_cache.h"
 #include "client_tipc.h"
@@ -67,6 +72,16 @@ STATIC_ASSERT(BLOCK_SIZE_MAIN >= BLOCK_SIZE_RPMB);
 #define SS_DBG_IO(args...) \
     do {                   \
     } while (0)
+
+struct rpmb_key_derivation_in {
+    uint8_t prefix[sizeof(struct key)];
+    uint8_t block_data[RPMB_BUF_SIZE];
+};
+
+struct rpmb_key_derivation_out {
+    struct rpmb_key rpmb_key;
+    uint8_t unused[sizeof(struct key)];
+};
 
 static int rpmb_check(struct block_device_tipc* state, uint16_t block) {
     int ret;
@@ -212,25 +227,182 @@ static void block_device_tipc_init_dev_rpmb(struct block_device_rpmb* dev_rpmb,
     dev_rpmb->base = base;
 }
 
+/**
+ * hwkey_derive_rpmb_key() - Derive rpmb key through hwkey server.
+ * @session:  The hwkey session handle.
+ * @in:       The input data to derive rpmb key.
+ * @out:      The output data from deriving rpmb key.
+ *
+ * Return: NO_ERROR on success, error code less than 0 on error.
+ */
+static int hwkey_derive_rpmb_key(hwkey_session_t session,
+                                 const struct rpmb_key_derivation_in* in,
+                                 struct rpmb_key_derivation_out* out) {
+    uint32_t kdf_version = HWKEY_KDF_VERSION_1;
+    const void* in_buf = in;
+    void* out_buf = out;
+    uint32_t key_size = sizeof(*out);
+    STATIC_ASSERT(sizeof(*in) >= sizeof(*out));
+
+    int ret = hwkey_derive(session, &kdf_version, in_buf, out_buf, key_size);
+    if (ret < 0) {
+        SS_ERR("%s: failed to get key: %d\n", __func__, ret);
+        return ret;
+    }
+
+    return NO_ERROR;
+}
+
+/**
+ * block_device_tipc_program_key() - Program a rpmb key derived through hwkey
+ * server.
+ * @state:              The rpmb state.
+ * @rpmb_key_part_base: The base of rpmb_key_part in rpmb partition.
+ * @in                  The input rpmb key derivation data.
+ * @out                 The output rpmb key derivation data.
+ * @hwkey_session:      The hwkey session handle.
+ *
+ * Return: NO_ERROR on success, error code less than 0 on error.
+ */
+static int block_device_tipc_program_key(struct rpmb_state* state,
+                                         uint16_t rpmb_key_part_base,
+                                         struct rpmb_key_derivation_in* in,
+                                         struct rpmb_key_derivation_out* out,
+                                         hwkey_session_t hwkey_session) {
+    int ret;
+
+    if (!system_state_provisioning_allowed()) {
+        ret = ERR_NOT_ALLOWED;
+        SS_ERR("%s: rpmb key provisioning is not allowed (%d)\n", __func__,
+               ret);
+        return ret;
+    }
+
+    STATIC_ASSERT(sizeof(in->block_data) >= sizeof(out->rpmb_key));
+    RAND_bytes(in->block_data, sizeof(out->rpmb_key.byte));
+    ret = hwkey_derive_rpmb_key(hwkey_session, in, out);
+    if (ret < 0) {
+        SS_ERR("%s: hwkey_derive_rpmb_key failed (%d)\n", __func__, ret);
+        return ret;
+    }
+
+    ret = rpmb_program_key(state, &out->rpmb_key);
+    if (ret < 0) {
+        SS_ERR("%s: rpmb_program_key failed (%d)\n", __func__, ret);
+        return ret;
+    }
+
+    rpmb_set_key(state, &out->rpmb_key);
+
+    ret = rpmb_write(state, in->block_data,
+                     rpmb_key_part_base * BLOCK_SIZE_RPMB_BLOCKS, 1, false);
+    if (ret < 0) {
+        SS_ERR("%s: rpmb_write failed (%d)\n", __func__, ret);
+        return ret;
+    }
+
+    return 0;
+}
+
+static int block_device_tipc_derive_rpmb_key(struct rpmb_state* state,
+                                             uint16_t rpmb_key_part_base,
+                                             hwkey_session_t hwkey_session) {
+    int ret;
+    struct rpmb_key_derivation_in in = {
+            .prefix = {
+                    0x74, 0x68, 0x43, 0x49, 0x2b, 0xa2, 0x4f, 0x77,
+                    0xb0, 0x8e, 0xd1, 0xd4, 0xb7, 0x01, 0x0e, 0xc6,
+                    0x86, 0x4c, 0xa9, 0xe5, 0x28, 0xf0, 0x20, 0xb1,
+                    0xb8, 0x1e, 0x73, 0x3d, 0x8c, 0x9d, 0xb9, 0x96,
+            }};
+    struct rpmb_key_derivation_out out;
+
+    ret = rpmb_read_no_mac(state, in.block_data,
+                           rpmb_key_part_base * BLOCK_SIZE_RPMB_BLOCKS, 1);
+
+    if (ret < 0) {
+        ret = block_device_tipc_program_key(state, rpmb_key_part_base, &in,
+                                            &out, hwkey_session);
+        if (ret < 0) {
+            SS_ERR("%s: program_key failed (%d)\n", __func__, ret);
+            return ret;
+        }
+
+        return 0;
+    }
+
+    ret = hwkey_derive_rpmb_key(hwkey_session, &in, &out);
+    if (ret < 0) {
+        SS_ERR("%s: hwkey_derive_rpmb_key failed (%d)\n", __func__, ret);
+        return ret;
+    }
+
+    rpmb_set_key(state, &out.rpmb_key);
+
+    /*
+     * Validate that the derived rpmb key is correct as we use it to check
+     * both mac and content of the block_data.
+     */
+    ret = rpmb_verify(state, in.block_data,
+                      rpmb_key_part_base * BLOCK_SIZE_RPMB_BLOCKS, 1);
+    if (ret < 0) {
+        SS_ERR("%s: rpmb_verify failed with the derived rpmb key (%d)\n",
+               __func__, ret);
+        return ret;
+    }
+
+    return 0;
+}
+
+static int block_device_tipc_init_rpmb_key(struct rpmb_state* state,
+                                           const struct rpmb_key* rpmb_key,
+                                           uint16_t rpmb_key_part_base,
+                                           hwkey_session_t hwkey_session) {
+    int ret = 0;
+
+    if (rpmb_key) {
+        rpmb_set_key(state, rpmb_key);
+    } else {
+        ret = block_device_tipc_derive_rpmb_key(state, rpmb_key_part_base,
+                                                hwkey_session);
+    }
+
+    return ret;
+}
+
 int block_device_tipc_init(struct block_device_tipc* state,
                            handle_t ipc_handle,
                            const struct key* fs_key,
-                           const struct rpmb_key* rpmb_key) {
+                           const struct rpmb_key* rpmb_key,
+                           hwkey_session_t hwkey_session) {
     int ret;
     bool new_ns_fs;
     uint8_t probe;
+    uint16_t rpmb_key_part_base = 0;
     uint32_t rpmb_block_count;
     uint32_t rpmb_part1_block_count = 2;
-    uint16_t rpmb_part1_base = 1; /* TODO: change to 0 and overwrite old fs */
+    /*
+     * First block is reserved for rpmb key derivation data, whose base is
+     * rpmb_key_part_base
+     */
+    uint16_t rpmb_part1_base = 1;
     uint16_t rpmb_part2_base = rpmb_part1_base + rpmb_part1_block_count;
 
     state->ipc_handle = ipc_handle;
 
     /* init rpmb */
-    ret = rpmb_init(&state->rpmb_state, &state->ipc_handle, rpmb_key);
+    ret = rpmb_init(&state->rpmb_state, &state->ipc_handle);
     if (ret < 0) {
         SS_ERR("%s: rpmb_init failed (%d)\n", __func__, ret);
         goto err_rpmb_init;
+    }
+
+    ret = block_device_tipc_init_rpmb_key(state->rpmb_state, rpmb_key,
+                                          rpmb_key_part_base, hwkey_session);
+    if (ret < 0) {
+        SS_ERR("%s: block_device_tipc_init_rpmb_key failed (%d)\n", __func__,
+               ret);
+        goto err_init_rpmb_key;
     }
 
     if (BLOCK_COUNT_RPMB) {
@@ -327,8 +499,9 @@ err_fs_rpmb_boot_create_port:
 err_fs_rpmb_create_port:
     /* undo fs_init */
 err_init_tr_state_rpmb:
-    rpmb_uninit(state->rpmb_state);
 err_bad_rpmb_size:
+err_init_rpmb_key:
+    rpmb_uninit(state->rpmb_state);
 err_rpmb_init:
     return ret;
 }

@@ -66,6 +66,7 @@ static int get_storage_encryption_key(hwkey_session_t session,
     return NO_ERROR;
 }
 
+#if !WITH_HKDF_RPMB_KEY
 static int get_rpmb_auth_key(hwkey_session_t session,
                              uint8_t* key,
                              uint32_t key_size) {
@@ -80,11 +81,12 @@ static int get_rpmb_auth_key(hwkey_session_t session,
 
     return NO_ERROR;
 }
+#endif
 
 struct ipc_channel_context* proxy_connect(struct ipc_port_context* parent_ctx,
                                           const uuid_t* peer_uuid,
                                           handle_t chan_handle) {
-    struct rpmb_key rpmb_key;
+    struct rpmb_key* rpmb_key_ptr = NULL;
     int rc;
 
     struct storage_session* session = calloc(1, sizeof(*session));
@@ -112,14 +114,19 @@ struct ipc_channel_context* proxy_connect(struct ipc_port_context* parent_ctx,
     }
 
     /* Init RPMB key */
+#if !WITH_HKDF_RPMB_KEY
+    struct rpmb_key rpmb_key;
     rc = get_rpmb_auth_key(hwkey_session, rpmb_key.byte, sizeof(rpmb_key.byte));
     if (rc < 0) {
         SS_ERR("%s: can't get storage auth key: (%d)\n", __func__, rc);
         goto err_get_rpmb_key;
     }
 
+    rpmb_key_ptr = &rpmb_key;
+#endif
+
     rc = block_device_tipc_init(&session->block_device, chan_handle,
-                                &session->key, &rpmb_key);
+                                &session->key, rpmb_key_ptr, hwkey_session);
     if (rc < 0) {
         SS_ERR("%s: block_device_tipc_init failed (%d)\n", __func__, rc);
         goto err_init_block_device;
@@ -132,7 +139,9 @@ struct ipc_channel_context* proxy_connect(struct ipc_port_context* parent_ctx,
     return &session->proxy_ctx;
 
 err_init_block_device:
+#if !WITH_HKDF_RPMB_KEY
 err_get_rpmb_key:
+#endif
 err_get_storage_key:
     hwkey_close(hwkey_session);
 err_hwkey_open:

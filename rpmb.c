@@ -189,6 +189,35 @@ static int rpmb_check_response(const char* cmd_str,
     return 0;
 }
 
+int rpmb_program_key(struct rpmb_state* state, const struct rpmb_key* key) {
+    int ret;
+    struct rpmb_packet cmd = {
+            .req_resp = rpmb_u16(RPMB_REQ_PROGRAM_KEY),
+    };
+    struct rpmb_packet rescmd = {
+            .req_resp = rpmb_u16(RPMB_REQ_RESULT_READ),
+    };
+    struct rpmb_packet res;
+
+    memcpy(cmd.key_mac.byte, key->byte, sizeof(cmd.key_mac.byte));
+
+    ret = rpmb_send(state->mmc_handle, &cmd, sizeof(cmd), &rescmd,
+                    sizeof(rescmd), &res, sizeof(res), false);
+    if (ret < 0)
+        return ret;
+
+    rpmb_dprint_key("  key/mac       ", res.key_mac, "   expected mac ",
+                    res.key_mac);
+    rpmb_dprint_buf("  nonce         ", res.nonce.byte, sizeof(res.nonce.byte));
+    rpmb_dprint_u32("  write_counter ", res.write_counter);
+    rpmb_dprint_u16("  result        ", res.result);
+    rpmb_dprint_u16("  req/resp      ", res.req_resp);
+
+    ret = rpmb_check_response("program key", RPMB_RESP_PROGRAM_KEY, &res, 1,
+                              NULL, NULL, NULL);
+    return ret;
+}
+
 static int rpmb_read_counter(struct rpmb_state* state,
                              uint32_t* write_counter) {
     int ret;
@@ -225,13 +254,14 @@ static int rpmb_read_counter(struct rpmb_state* state,
     return ret;
 }
 
-int rpmb_read(struct rpmb_state* state,
-              void* buf,
-              uint16_t addr,
-              uint16_t count) {
+static int rpmb_read_data(struct rpmb_state* state,
+                          const void* cmp_buf,
+                          void* out_buf,
+                          uint16_t addr,
+                          uint16_t count,
+                          struct rpmb_key* mac) {
     int i;
     int ret;
-    struct rpmb_key mac;
     struct rpmb_nonce nonce = rpmb_nonce_init();
     struct rpmb_packet cmd = {
         .nonce = nonce,
@@ -242,7 +272,8 @@ int rpmb_read(struct rpmb_state* state,
         .req_resp = rpmb_u16(RPMB_REQ_DATA_READ),
     };
     struct rpmb_packet res[MAX_PACKET_COUNT];
-    uint8_t* bufp;
+    const uint8_t* cmp_bufp;
+    uint8_t* out_bufp;
 
     assert(count <= MAX_PACKET_COUNT);
 
@@ -254,17 +285,19 @@ int rpmb_read(struct rpmb_state* state,
     if (ret < 0)
         return ret;
 
-    ret = rpmb_mac(state->key, res, count, &mac);
-    if (ret < 0)
-        return ret;
+    if (mac) {
+        ret = rpmb_mac(state->key, res, count, mac);
+        if (ret < 0)
+            return ret;
+    }
 
     rpmb_dprintf("rpmb: read data, addr %d, count %d, response:\n", addr,
                  count);
     for (i = 0; i < count; i++) {
         rpmb_dprintf("  block %d\n", i);
-        if (i == count - 1)
+        if (i == count - 1 && mac)
             rpmb_dprint_key("    key/mac       ", res[i].key_mac,
-                            "     expected mac ", mac);
+                            "     expected mac ", *mac);
         rpmb_dprint_buf("    data          ", res[i].data, sizeof(res[i].data));
         rpmb_dprint_buf("    nonce         ", res[i].nonce.byte,
                         sizeof(res[i].nonce.byte));
@@ -274,15 +307,52 @@ int rpmb_read(struct rpmb_state* state,
         rpmb_dprint_u16("    req/resp      ", res[i].req_resp);
     }
 
-    ret = rpmb_check_response("read data", RPMB_RESP_DATA_READ, res, count,
-                              &mac, &nonce, &addr);
+    ret = rpmb_check_response("read data", RPMB_RESP_DATA_READ, res, count, mac,
+                              &nonce, &addr);
     if (ret < 0)
         return ret;
 
-    for (bufp = buf, i = 0; i < count; i++, bufp += sizeof(res[i].data))
-        memcpy(bufp, res[i].data, sizeof(res[i].data));
+    if (cmp_buf) {
+        for (cmp_bufp = cmp_buf, i = 0; i < count;
+             i++, cmp_bufp += sizeof(res[i].data)) {
+            if (memcmp(cmp_bufp, res[i].data, sizeof(res[i].data))) {
+                fprintf(stderr, "verify read: data compare failed\n");
+                return -1;
+            }
+        }
+    }
+
+    if (out_buf) {
+        for (out_bufp = out_buf, i = 0; i < count;
+             i++, out_bufp += sizeof(res[i].data)) {
+            memcpy(out_bufp, res[i].data, sizeof(res[i].data));
+        }
+    }
 
     return 0;
+}
+
+int rpmb_read(struct rpmb_state* state,
+              void* buf,
+              uint16_t addr,
+              uint16_t count) {
+    struct rpmb_key mac;
+    return rpmb_read_data(state, NULL, buf, addr, count, &mac);
+}
+
+int rpmb_read_no_mac(struct rpmb_state* state,
+                     void* buf,
+                     uint16_t addr,
+                     uint16_t count) {
+    return rpmb_read_data(state, NULL, buf, addr, count, NULL);
+}
+
+int rpmb_verify(struct rpmb_state* state,
+                const void* buf,
+                uint16_t addr,
+                uint16_t count) {
+    struct rpmb_key mac;
+    return rpmb_read_data(state, buf, NULL, addr, count, &mac);
 }
 
 static int rpmb_write_data(struct rpmb_state* state,
@@ -365,16 +435,17 @@ int rpmb_write(struct rpmb_state* state,
     return rpmb_write_data(state, buf, addr, count, sync);
 }
 
-int rpmb_init(struct rpmb_state** statep,
-              void* mmc_handle,
-              const struct rpmb_key* key) {
-    struct rpmb_state* state = malloc(sizeof(*state));
+void rpmb_set_key(struct rpmb_state* state, const struct rpmb_key* key) {
+    assert(state);
+    state->key = *key;
+}
 
+int rpmb_init(struct rpmb_state** statep, void* mmc_handle) {
+    struct rpmb_state* state = malloc(sizeof(*state));
     if (!state)
         return -ENOMEM;
 
     state->mmc_handle = mmc_handle;
-    state->key = *key;
     state->write_counter = 0;
 
     *statep = state;

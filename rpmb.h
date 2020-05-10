@@ -30,14 +30,22 @@ struct rpmb_state;
 #define RPMB_BUF_SIZE 256
 
 /* provides */
-int rpmb_init(struct rpmb_state** statep,
-              void* mmc_handle,
-              const struct rpmb_key* key);
+int rpmb_init(struct rpmb_state** statep, void* mmc_handle);
+void rpmb_set_key(struct rpmb_state* state, const struct rpmb_key* key);
 void rpmb_uninit(struct rpmb_state* statep);
 int rpmb_read(struct rpmb_state* state,
               void* buf,
               uint16_t addr,
               uint16_t count);
+int rpmb_read_no_mac(struct rpmb_state* state,
+                     void* buf,
+                     uint16_t addr,
+                     uint16_t count);
+int rpmb_verify(struct rpmb_state* state,
+                const void* buf,
+                uint16_t addr,
+                uint16_t count);
+int rpmb_program_key(struct rpmb_state* state, const struct rpmb_key* key);
 /* count must be 1 or 2, addr must be aligned */
 int rpmb_write(struct rpmb_state* state,
                const void* buf,
