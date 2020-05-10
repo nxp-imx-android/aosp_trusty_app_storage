@@ -16,6 +16,7 @@
 
 #pragma once
 
+#include <lib/hwkey/hwkey.h>
 #include <trusty_ipc.h>
 #include "block_device.h"
 #include "ipc.h"
@@ -66,5 +67,6 @@ struct block_device_tipc {
 int block_device_tipc_init(struct block_device_tipc* state,
                            handle_t ipc_handle,
                            const struct key* fs_key,
-                           const struct rpmb_key* rpmb_key);
+                           const struct rpmb_key* rpmb_key,
+                           hwkey_session_t hwkey_session);
 void block_device_tipc_uninit(struct block_device_tipc* state);
