@@ -1,4 +1,4 @@
-# Copyright (C) 2018 The Android Open Source Project
+# Copyright (C) 2019 The Android Open Source Project
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,20 +13,6 @@
 # limitations under the License.
 #
 
-# This host test is to test the implementation for mock secure storage
-# interface.
-HOST_TEST := mock_storage_test
+TRUSTY_ALL_USER_TASKS += \
+	trusty/user/app/storage/test/storage-unittest \
 
-HOST_SRCS += \
-	trusty/user/app/storage/test/storage-unittest/main.c \
-
-HOST_INCLUDE_DIRS += \
-	lib/include \
-	lib/interface/storage/include \
-
-HOST_FLAGS := \
-	-Wno-deprecated-declarations \
-	-DSTORAGE_FAKE \
-
-include trusty/user/app/storage/storage_mock/add_mock_storage.mk
-include trusty/kernel/make/host_test.mk

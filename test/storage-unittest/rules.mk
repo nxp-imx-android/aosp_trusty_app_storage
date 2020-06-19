@@ -1,4 +1,4 @@
-# Copyright (C) 2018 The Android Open Source Project
+# Copyright (C) 2015 The Android Open Source Project
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,20 +13,25 @@
 # limitations under the License.
 #
 
-# This host test is to test the implementation for mock secure storage
-# interface.
-HOST_TEST := mock_storage_test
+LOCAL_DIR := $(GET_LOCAL_DIR)
 
-HOST_SRCS += \
-	trusty/user/app/storage/test/storage-unittest/main.c \
+MODULE := $(LOCAL_DIR)
 
-HOST_INCLUDE_DIRS += \
-	lib/include \
-	lib/interface/storage/include \
+MANIFEST := $(LOCAL_DIR)/manifest.json
 
-HOST_FLAGS := \
-	-Wno-deprecated-declarations \
-	-DSTORAGE_FAKE \
+MODULE_SRCS += \
+	$(LOCAL_DIR)/main.c \
 
-include trusty/user/app/storage/storage_mock/add_mock_storage.mk
-include trusty/kernel/make/host_test.mk
+MODULE_DEPS += \
+	trusty/user/base/lib/libc-trusty \
+	trusty/user/base/lib/storage \
+	trusty/user/base/lib/unittest \
+
+# This test was written using variable-length arrays. We shouldn't be using
+# VLAs for security reasons, but this is just a test. Grandfather in this test
+# rather than rewriting it.
+MODULE_COMPILEFLAGS := -Wno-vla
+
+include make/module.mk
+
+
