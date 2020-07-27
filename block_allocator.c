@@ -112,12 +112,13 @@ static int block_allocator_queue_find(struct block_allocator_queue* q,
 }
 
 /**
- * block_allocator_queue_add_dummy - Add a dummy entry to block allocator queue
+ * block_allocator_queue_add_removed - Add a removed entry to block allocator
+ * queue
  * @q:          Queue object.
  *
- * Add a dummy entry to @q to make it non-empty.
+ * Add a removed entry to @q to make it non-empty.
  */
-static void block_allocator_queue_add_dummy(struct block_allocator_queue* q) {
+static void block_allocator_queue_add_removed(struct block_allocator_queue* q) {
     assert(block_allocator_queue_empty(q));
     unsigned int new_tail = (q->tail + 1) % countof(q->entry);
     q->entry[q->tail].removed = true;
@@ -465,7 +466,7 @@ static void block_allocator_add_free(struct transaction* tr,
  * @tr:         Transaction object.
  */
 void block_allocator_suspend_set_updates(struct transaction* tr) {
-    block_allocator_queue_add_dummy(&block_allocator_queue);
+    block_allocator_queue_add_removed(&block_allocator_queue);
 }
 
 /**
