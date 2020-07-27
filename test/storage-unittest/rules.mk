@@ -28,8 +28,8 @@ MODULE_DEPS += \
 	trusty/user/base/lib/unittest \
 
 # This test was written using variable-length arrays. We shouldn't be using
-# VLAs for security reasons, but this is just a test. Grandfather in this test
-# rather than rewriting it.
+# VLAs for security reasons, but this is just a test. Exempt this test rather
+# than rewrite it.
 MODULE_COMPILEFLAGS := -Wno-vla
 
 include make/module.mk
