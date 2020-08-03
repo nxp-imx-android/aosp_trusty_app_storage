@@ -147,7 +147,8 @@ static int rpmb_check_response(const char* cmd_str,
                                int res_count,
                                struct rpmb_key* mac,
                                struct rpmb_nonce* nonce,
-                               uint16_t* addrp) {
+                               uint16_t* addrp,
+                               uint32_t write_counter) {
     int i;
     for (i = 0; i < res_count; i++) {
         if (rpmb_get_u16(res[i].req_resp) != response_type) {
@@ -176,6 +177,13 @@ static int rpmb_check_response(const char* cmd_str,
         if (nonce && CRYPTO_memcmp(res[i].nonce.byte, nonce->byte,
                                    sizeof(nonce->byte))) {
             fprintf(stderr, "%s: Bad nonce\n", cmd_str);
+            return -1;
+        }
+
+        if (write_counter &&
+            write_counter != rpmb_get_u32(res[i].write_counter)) {
+            fprintf(stderr, "%s: Bad write counter, got %u, expected %u\n",
+                    cmd_str, rpmb_get_u32(res[i].write_counter), write_counter);
             return -1;
         }
 
@@ -214,7 +222,7 @@ int rpmb_program_key(struct rpmb_state* state, const struct rpmb_key* key) {
     rpmb_dprint_u16("  req/resp      ", res.req_resp);
 
     ret = rpmb_check_response("program key", RPMB_RESP_PROGRAM_KEY, &res, 1,
-                              NULL, NULL, NULL);
+                              NULL, NULL, NULL, 0);
     return ret;
 }
 
@@ -245,13 +253,15 @@ static int rpmb_read_counter(struct rpmb_state* state,
     rpmb_dprint_u16("  result        ", res.result);
     rpmb_dprint_u16("  req/resp      ", res.req_resp);
 
+    ret = rpmb_check_response("read counter", RPMB_RESP_GET_COUNTER, &res, 1,
+                              &mac, &nonce, NULL, 0);
+    if (ret < 0)
+        return ret;
+
     if (write_counter)
         *write_counter = rpmb_get_u32(res.write_counter);
 
-    ret = rpmb_check_response("read counter", RPMB_RESP_GET_COUNTER, &res, 1,
-                              &mac, &nonce, NULL);
-
-    return ret;
+    return 0;
 }
 
 static int rpmb_read_data(struct rpmb_state* state,
@@ -308,7 +318,7 @@ static int rpmb_read_data(struct rpmb_state* state,
     }
 
     ret = rpmb_check_response("read data", RPMB_RESP_DATA_READ, res, count, mac,
-                              &nonce, &addr);
+                              &nonce, &addr, 0);
     if (ret < 0)
         return ret;
 
@@ -405,7 +415,7 @@ static int rpmb_write_data(struct rpmb_state* state,
     rpmb_dprint_u16("  req/resp      ", res.req_resp);
 
     ret = rpmb_check_response("write data", RPMB_RESP_DATA_WRITE, &res, 1, &mac,
-                              NULL, &addr);
+                              NULL, &addr, state->write_counter + 1);
     if (ret < 0) {
         if (rpmb_get_u16(res.result) == RPMB_RES_COUNT_FAILURE)
             state->write_counter = 0; /* clear counter to trigger a re-read */
