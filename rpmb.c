@@ -44,6 +44,7 @@ struct rpmb_state {
     struct rpmb_key key;
     void* mmc_handle;
     uint32_t write_counter;
+    bool first_write_complete;
 };
 
 #if RPMB_DEBUG
@@ -398,11 +399,11 @@ static int rpmb_write_data(struct rpmb_state* state,
     ret = rpmb_send(state->mmc_handle, cmd, sizeof(cmd[0]) * count, &rescmd,
                     sizeof(rescmd), &res, sizeof(res), sync);
     if (ret < 0)
-        return ret;
+        goto err_sent;
 
     ret = rpmb_mac(state->key, &res, 1, &mac);
     if (ret < 0)
-        return ret;
+        goto err_sent;
 
     rpmb_dprintf(
             "rpmb: write data, addr %d, count %d, write_counter %d, response\n",
@@ -417,14 +418,68 @@ static int rpmb_write_data(struct rpmb_state* state,
     ret = rpmb_check_response("write data", RPMB_RESP_DATA_WRITE, &res, 1, &mac,
                               NULL, &addr, state->write_counter + 1);
     if (ret < 0) {
-        if (rpmb_get_u16(res.result) == RPMB_RES_COUNT_FAILURE)
-            state->write_counter = 0; /* clear counter to trigger a re-read */
-        return ret;
+        if (rpmb_get_u16(res.result) == RPMB_RES_COUNT_FAILURE) {
+            fprintf(stderr, "rpmb write counter failure\n");
+            abort(); /* see comment in err_sent */
+        }
+        goto err_sent;
     }
 
     state->write_counter++;
 
     return 0;
+
+err_sent:
+    /*
+     * An error occurred after the write requestst was sent. An attacker might
+     * have saved this write request and might send it to the rpmb device at
+     * any time. Any other write with this write counter value now needs extra
+     * checks to make sure there is no corruption:
+     *
+     * 1. The next write fails.
+     *
+     * 1.1. The failure is a count failure.
+     * A write operation that was previously reported as an error must have
+     * actually been written. The filesystem may now be in a state where is it
+     * not safe to write any other block.
+     *
+     * 1.1.1. The block actually written was a super-block.
+     * This means a transaction was committed to disk that the file-system code
+     * think was aborted. The in-memory view of free blocks will not match the
+     * on disk state. It is not safe to proceed with any other write operations
+     * in this state as the file-system could pick an block to write to that is
+     * not actually free until the super block gets updated again with the
+     * in-memory state.
+     *
+     * 1.1.2. The block actually written was a data block.
+     * It might be possible to recover from this state (by incrementing the
+     * write counter by one) as any transaction that used that block should have
+     * already been aborted. The rpmb layer does not currently know if the
+     * write requests are for super blocks or data blocks though, so we can't
+     * currently know if we are in this state. The count failure would also have
+     * to be authenticated as otherwise an attacker could report a fake count
+     * failure to get write requests with more than one counter value.
+     *
+     * 1.2. The failure is not reported as count failure.
+     * This can be handled the same way as the inital failure. We now have one
+     * more possible write request that can be saved and written at any time by
+     * an attacker, but it is in the same class as before.
+     *
+     * 2. The next write succeeds.
+     *
+     * 2.1. The same block number and counter value has already been sent.
+     * This success status cannot be trusted. We read back the data to verify.
+     * 2.1.1. Verify failed.
+     * This has the same effect as 1.1.
+     *
+     * 2.1.2. Verify passed.
+     * We are back to a normal state.
+     *
+     * 2.2. The same block number and counter has not already been sent.
+     * We are back to a normal state.
+     */
+    state->first_write_complete = false;
+    return ret;
 }
 
 int rpmb_write(struct rpmb_state* state,
@@ -437,17 +492,58 @@ int rpmb_write(struct rpmb_state* state,
     if (!state)
         return -EINVAL;
 
-    if (!state->write_counter) {
-        ret = rpmb_read_counter(state, &state->write_counter);
-        if (ret < 0)
-            return ret;
+    ret = rpmb_write_data(state, buf, addr, count, sync);
+    if (ret < 0)
+        return ret;
+
+    if (!state->first_write_complete) {
+        /*
+         * The first write request after reading the write counter could get a
+         * signed response from a different write request. There is no nonce in
+         * the write request, only a write counter. The response could be from
+         * another valid write request we generated on a previous boot that was
+         * not completed. Read back the data and verify that the correct data
+         * was written for this case. Note that this only works if we never
+         * send more than one write request to the non-secure proxy at once. If
+         * we later add support for pipelining rpmb operation we need to verify
+         * the first n write requests here instead, where n is the max pipeline
+         * depth of any build that may have run on the same device. We would
+         * also need ensure that a superblock write request is not sent until
+         * all other write requests have been validated and that an attacker
+         * cannot have any saved write requests to the same filesystem with a
+         * larger write-counter value than the superblock update (e.g. by
+         * repeating a non-superblock write request until only one write
+         * operation remains to be verified).
+         */
+        ret = rpmb_verify(state, buf, addr, count);
+        if (ret < 0) {
+            fprintf(stderr, "rpmb write counter failure\n");
+            abort(); /* see comment in rpmb_write_data:err_sent */
+        }
+        state->first_write_complete = true;
     }
-    return rpmb_write_data(state, buf, addr, count, sync);
+    return 0;
 }
 
 void rpmb_set_key(struct rpmb_state* state, const struct rpmb_key* key) {
     assert(state);
     state->key = *key;
+
+    /*
+     * We need to read the counter before reading the super blocks. If an
+     * attacker writes to a super block after we read it, but before we read the
+     * write counter, or next write would succeed without us detecting that the
+     * in-memory super block does not match the on-disk state.
+     */
+    int ret;
+    ret = rpmb_read_counter(state, &state->write_counter);
+    if (ret < 0) {
+        fprintf(stderr, "failed to read rpmb write counter\n");
+        /*
+         * Ignore errors. Any future write will fail since we initialized the
+         * write_counter with the value where it expires.
+         */
+    }
 }
 
 int rpmb_init(struct rpmb_state** statep, void* mmc_handle) {
@@ -456,7 +552,8 @@ int rpmb_init(struct rpmb_state** statep, void* mmc_handle) {
         return -ENOMEM;
 
     state->mmc_handle = mmc_handle;
-    state->write_counter = 0;
+    state->write_counter = RPMB_WRITE_COUNTER_EXPIRED_VALUE;
+    state->first_write_complete = false;
 
     *statep = state;
 
