@@ -45,6 +45,7 @@ struct rpmb_u32 {
 };
 
 #define RPMB_PACKET_DATA_SIZE (256)
+#define RPMB_WRITE_COUNTER_EXPIRED_VALUE (~0U)
 
 struct rpmb_packet {
     uint8_t pad[196];
