@@ -235,10 +235,11 @@ static int rpmb_read_counter(struct rpmb_state* state,
     return 0;
 }
 
-int rpmb_read(struct rpmb_state* state,
-              void* buf,
-              uint16_t addr,
-              uint16_t count) {
+static int rpmb_read_data(struct rpmb_state* state,
+                          const void* cmp_buf,
+                          void* out_buf,
+                          uint16_t addr,
+                          uint16_t count) {
     int i;
     int ret;
     struct rpmb_key mac;
@@ -252,7 +253,8 @@ int rpmb_read(struct rpmb_state* state,
         .req_resp = rpmb_u16(RPMB_REQ_DATA_READ),
     };
     struct rpmb_packet res[MAX_PACKET_COUNT];
-    uint8_t* bufp;
+    const uint8_t* cmp_bufp;
+    uint8_t* out_bufp;
 
     assert(count <= MAX_PACKET_COUNT);
 
@@ -289,10 +291,38 @@ int rpmb_read(struct rpmb_state* state,
     if (ret < 0)
         return ret;
 
-    for (bufp = buf, i = 0; i < count; i++, bufp += sizeof(res[i].data))
-        memcpy(bufp, res[i].data, sizeof(res[i].data));
+    if (cmp_buf) {
+        for (cmp_bufp = cmp_buf, i = 0; i < count;
+             i++, cmp_bufp += sizeof(res[i].data)) {
+            if (memcmp(cmp_bufp, res[i].data, sizeof(res[i].data))) {
+                fprintf(stderr, "verify read: data compare failed\n");
+                return -1;
+            }
+        }
+    }
+
+    if (out_buf) {
+        for (out_bufp = out_buf, i = 0; i < count;
+             i++, out_bufp += sizeof(res[i].data)) {
+            memcpy(out_bufp, res[i].data, sizeof(res[i].data));
+        }
+    }
 
     return 0;
+}
+
+int rpmb_read(struct rpmb_state* state,
+              void* buf,
+              uint16_t addr,
+              uint16_t count) {
+    return rpmb_read_data(state, NULL, buf, addr, count);
+}
+
+static int rpmb_verify(struct rpmb_state* state,
+                const void* buf,
+                uint16_t addr,
+                uint16_t count) {
+    return rpmb_read_data(state, buf, NULL, addr, count);
 }
 
 static int rpmb_write_data(struct rpmb_state* state,
@@ -375,6 +405,11 @@ int rpmb_write(struct rpmb_state* state,
     return rpmb_write_data(state, buf, addr, count, sync);
 }
 
+void rpmb_set_key(struct rpmb_state* state, const struct rpmb_key* key) {
+    assert(state);
+    state->key = *key;
+}
+
 int rpmb_init(struct rpmb_state** statep,
               void* mmc_handle,
               const struct rpmb_key* key) {
@@ -384,8 +419,9 @@ int rpmb_init(struct rpmb_state** statep,
         return -ENOMEM;
 
     state->mmc_handle = mmc_handle;
-    state->key = *key;
     state->write_counter = 0;
+
+    rpmb_set_key(state, key);
 
     *statep = state;
 
