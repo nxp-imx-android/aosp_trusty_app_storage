@@ -64,7 +64,7 @@ MODULE_SRCS := \
 	$(LOCAL_DIR)/tipc_ns.c \
 	$(LOCAL_DIR)/transaction.c \
 
-MODULE_DEPS := \
+MODULE_LIBRARY_DEPS := \
 	trusty/user/base/interface/storage \
 	trusty/user/base/lib/hwkey \
 	trusty/user/base/lib/libc-trusty \
@@ -74,7 +74,7 @@ MODULE_DEPS := \
 MODULE_DEPS += \
 	trusty/user/app/storage/test \
 
-include make/module.mk
+include make/trusted_app.mk
 
 # Build host side unit tests for mock storage implementation.
 include trusty/user/app/storage/storage_mock/test_mock_storage_rules.mk
