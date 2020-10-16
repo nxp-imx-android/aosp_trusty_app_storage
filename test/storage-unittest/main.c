@@ -26,6 +26,7 @@
 
 #ifndef STORAGE_FAKE
 #include <lib/unittest/unittest.h>
+#include <trusty/time.h>
 #endif
 
 #include <trusty_unittest.h>
