@@ -755,12 +755,20 @@ void block_cache_discard_transaction(struct transaction* tr, bool discard_all) {
             continue;
         }
 
-        if (!dev) {
-            dev = entry->dev;
-            assert(dev == tr->fs->dev || dev == tr->fs->super_dev);
+        if (entry->dirty_tmp) {
+            /* tmp blocks should never be on the superblock device */
+            assert(entry->dev == tr->fs->dev);
+        } else {
+            /*
+             * An transaction should never have dirty non-tmp blocks both
+             * devices at the same time.
+             */
+            if (!dev) {
+                dev = entry->dev;
+                assert(dev == tr->fs->dev || dev == tr->fs->super_dev);
+            }
+            assert(entry->dev == dev);
         }
-
-        assert(entry->dev == dev);
         assert(entry->dirty);
 
         if (print_clean_transaction) {
