@@ -173,18 +173,18 @@ static void block_device_tipc_rpmb_wait_for_io(struct block_device* dev) {
     assert(0); /* TODO: use async read/write */
 }
 
-static struct block_device_tipc* dev_ns_to_state(struct block_device* dev) {
+static struct block_device_ns* to_block_device_ns(struct block_device* dev) {
     assert(dev);
-    return containerof(dev, struct block_device_tipc, dev_ns);
+    return containerof(dev, struct block_device_ns, dev);
 }
 
 static void block_device_tipc_ns_start_read(struct block_device* dev,
                                             data_block_t block) {
     int ret;
     uint8_t tmp[BLOCK_SIZE_MAIN]; /* TODO: pass data in? */
-    struct block_device_tipc* state = dev_ns_to_state(dev);
+    struct block_device_ns* dev_ns = to_block_device_ns(dev);
 
-    ret = ns_read_pos(state->ipc_handle, state->ns_handle,
+    ret = ns_read_pos(dev_ns->state->ipc_handle, dev_ns->ns_handle,
                       block * BLOCK_SIZE_MAIN, tmp, BLOCK_SIZE_MAIN);
     SS_DBG_IO("%s: block %" PRIu64 ", ret %d\n", __func__, block, ret);
     block_cache_complete_read(dev, block, tmp, BLOCK_SIZE_MAIN,
@@ -196,11 +196,11 @@ static void block_device_tipc_ns_start_write(struct block_device* dev,
                                              const void* data,
                                              size_t data_size) {
     int ret;
-    struct block_device_tipc* state = dev_ns_to_state(dev);
+    struct block_device_ns* dev_ns = to_block_device_ns(dev);
 
     assert(data_size == BLOCK_SIZE_MAIN);
 
-    ret = ns_write_pos(state->ipc_handle, state->ns_handle,
+    ret = ns_write_pos(dev_ns->state->ipc_handle, dev_ns->ns_handle,
                        block * BLOCK_SIZE_MAIN, data, data_size);
     SS_DBG_IO("%s: block %" PRIu64 ", ret %d\n", __func__, block, ret);
     block_cache_complete_write(dev, block, ret != BLOCK_SIZE_MAIN);
@@ -225,6 +225,21 @@ static void block_device_tipc_init_dev_rpmb(struct block_device_rpmb* dev_rpmb,
     list_initialize(&dev_rpmb->dev.io_ops);
     dev_rpmb->state = state;
     dev_rpmb->base = base;
+}
+
+static void block_device_tipc_init_dev_ns(struct block_device_ns* dev_ns,
+                                          struct block_device_tipc* state) {
+    dev_ns->dev.start_read = block_device_tipc_ns_start_read;
+    dev_ns->dev.start_write = block_device_tipc_ns_start_write;
+    dev_ns->dev.wait_for_io = block_device_tipc_ns_wait_for_io;
+    dev_ns->dev.block_count = BLOCK_COUNT_MAIN;
+    dev_ns->dev.block_size = BLOCK_SIZE_MAIN;
+    dev_ns->dev.block_num_size = sizeof(data_block_t);
+    dev_ns->dev.mac_size = sizeof(struct mac);
+    dev_ns->dev.tamper_detecting = false;
+    list_initialize(&dev_ns->dev.io_ops);
+    dev_ns->state = state;
+    dev_ns->ns_handle = 0; /* Filled in later */
 }
 
 /**
@@ -450,19 +465,12 @@ int block_device_tipc_init(struct block_device_tipc* state,
         goto err_fs_rpmb_boot_create_port;
     }
 
-    state->dev_ns.start_read = block_device_tipc_ns_start_read;
-    state->dev_ns.start_write = block_device_tipc_ns_start_write;
-    state->dev_ns.wait_for_io = block_device_tipc_ns_wait_for_io;
-    state->dev_ns.block_count = BLOCK_COUNT_MAIN;
-    state->dev_ns.block_size = BLOCK_SIZE_MAIN;
-    state->dev_ns.block_num_size = sizeof(data_block_t);
-    state->dev_ns.mac_size = sizeof(struct mac);
-    list_initialize(&state->dev_ns.io_ops);
+    block_device_tipc_init_dev_ns(&state->dev_ns, state);
 
-    ret = ns_open_file(state->ipc_handle, "0", &state->ns_handle, true);
+    ret = ns_open_file(state->ipc_handle, "0", &state->dev_ns.ns_handle, true);
     if (ret < 0) {
         /* RPMB fs only */
-        state->dev_ns.block_count = 0;
+        state->dev_ns.dev.block_count = 0;
         return 0;
     }
 
@@ -483,7 +491,7 @@ int block_device_tipc_init(struct block_device_tipc* state,
     }
 
     /* Request empty file system if file is empty */
-    ret = ns_read_pos(state->ipc_handle, state->ns_handle, 0, &probe,
+    ret = ns_read_pos(state->ipc_handle, state->dev_ns.ns_handle, 0, &probe,
                       sizeof(probe));
     new_ns_fs = ret < (int)sizeof(probe);
 
@@ -492,7 +500,7 @@ int block_device_tipc_init(struct block_device_tipc* state,
     block_device_tipc_init_dev_rpmb(&state->dev_ns_rpmb, state, rpmb_part1_base,
                                     rpmb_part1_block_count);
 
-    ret = fs_init(&state->tr_state_ns, fs_key, &state->dev_ns,
+    ret = fs_init(&state->tr_state_ns, fs_key, &state->dev_ns.dev,
                   &state->dev_ns_rpmb.dev, new_ns_fs);
     if (ret < 0) {
         goto err_init_fs_ns_tr_state;
@@ -510,7 +518,7 @@ err_fs_ns_create_port:
 err_init_fs_ns_tr_state:
     ipc_port_destroy(&state->fs_tdp.client_ctx);
 err_fs_rpmb_tdp_create_port:
-    ns_close_file(state->ipc_handle, state->ns_handle);
+    ns_close_file(state->ipc_handle, state->dev_ns.ns_handle);
     ipc_port_destroy(&state->fs_rpmb_boot.client_ctx);
 err_fs_rpmb_boot_create_port:
     ipc_port_destroy(&state->fs_rpmb.client_ctx);
@@ -525,10 +533,10 @@ err_rpmb_init:
 }
 
 void block_device_tipc_uninit(struct block_device_tipc* state) {
-    if (state->dev_ns.block_count) {
+    if (state->dev_ns.dev.block_count) {
         ipc_port_destroy(&state->fs_ns.client_ctx);
         /* undo fs_init */
-        ns_close_file(state->ipc_handle, state->ns_handle);
+        ns_close_file(state->ipc_handle, state->dev_ns.ns_handle);
 
         ipc_port_destroy(&state->fs_tdp.client_ctx);
     }

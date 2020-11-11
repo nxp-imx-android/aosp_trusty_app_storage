@@ -38,6 +38,18 @@ struct block_device_rpmb {
     uint16_t base;
 };
 
+/**
+ * struct block_device_ns
+ * @dev:        Block device state
+ * @state:      Pointer to shared state containing ipc_handle
+ * @ns_handle:  Handle
+ */
+struct block_device_ns {
+    struct block_device dev;
+    struct block_device_tipc* state;
+    ns_handle_t ns_handle;
+};
+
 struct client_port_context {
     struct fs* tr_state;
     struct ipc_port_context client_ctx;
@@ -58,8 +70,7 @@ struct block_device_tipc {
     struct client_port_context fs_rpmb_boot;
     struct client_port_context fs_tdp;
 
-    ns_handle_t ns_handle;
-    struct block_device dev_ns;
+    struct block_device_ns dev_ns;
     struct block_device_rpmb dev_ns_rpmb;
     struct fs tr_state_ns;
     struct client_port_context fs_ns;
