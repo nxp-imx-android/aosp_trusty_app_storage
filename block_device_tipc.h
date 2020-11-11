@@ -56,6 +56,7 @@ struct block_device_tipc {
     struct fs tr_state_rpmb;
     struct client_port_context fs_rpmb;
     struct client_port_context fs_rpmb_boot;
+    struct client_port_context fs_tdp;
 
     ns_handle_t ns_handle;
     struct block_device dev_ns;

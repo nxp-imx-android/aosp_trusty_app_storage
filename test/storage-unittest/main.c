@@ -2853,6 +2853,7 @@ static bool run_test(struct unittest* test) {
 int main(void) {
     static struct storage_unittest storage_unittests[] = {
             DEFINE_STORAGE_UNIT_TESTS_FS(STORAGE_CLIENT_TD_PORT, "td"),
+            DEFINE_STORAGE_UNIT_TESTS_FS(STORAGE_CLIENT_TDP_PORT, "tdp"),
             DEFINE_STORAGE_UNIT_TESTS_FS(STORAGE_CLIENT_TDEA_PORT, "tdea"),
             DEFINE_STORAGE_UNIT_TESTS_FS(STORAGE_CLIENT_TP_PORT, "tp"),
     };

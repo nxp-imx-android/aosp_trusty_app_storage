@@ -38,6 +38,7 @@
     needs(
         [
             porttest("com.android.storage-unittest.td"),
+            porttest("com.android.storage-unittest.tdp"),
         ],
         storage_full=True,
     ),

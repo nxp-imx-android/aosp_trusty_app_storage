@@ -466,6 +466,22 @@ int block_device_tipc_init(struct block_device_tipc* state,
         return 0;
     }
 
+    /*
+     * Create STORAGE_CLIENT_TDP_PORT alias after we know the backing file for
+     * STORAGE_CLIENT_TD_PORT is available. On future devices
+     * STORAGE_CLIENT_TDP_PORT will not be available when the bootloader is
+     * running, so we limit access to this alias as well to prevent apps
+     * developed on old devices from relying on STORAGE_CLIENT_TDP_PORT being
+     * available early.
+     */
+    state->fs_tdp.tr_state = &state->tr_state_rpmb;
+
+    ret = client_create_port(&state->fs_tdp.client_ctx,
+                             STORAGE_CLIENT_TDP_PORT);
+    if (ret < 0) {
+        goto err_fs_rpmb_tdp_create_port;
+    }
+
     /* Request empty file system if file is empty */
     ret = ns_read_pos(state->ipc_handle, state->ns_handle, 0, &probe,
                       sizeof(probe));
@@ -492,6 +508,8 @@ int block_device_tipc_init(struct block_device_tipc* state,
 err_fs_ns_create_port:
     /* undo fs_init */
 err_init_fs_ns_tr_state:
+    ipc_port_destroy(&state->fs_tdp.client_ctx);
+err_fs_rpmb_tdp_create_port:
     ns_close_file(state->ipc_handle, state->ns_handle);
     ipc_port_destroy(&state->fs_rpmb_boot.client_ctx);
 err_fs_rpmb_boot_create_port:
@@ -511,6 +529,8 @@ void block_device_tipc_uninit(struct block_device_tipc* state) {
         ipc_port_destroy(&state->fs_ns.client_ctx);
         /* undo fs_init */
         ns_close_file(state->ipc_handle, state->ns_handle);
+
+        ipc_port_destroy(&state->fs_tdp.client_ctx);
     }
     ipc_port_destroy(&state->fs_rpmb_boot.client_ctx);
     ipc_port_destroy(&state->fs_rpmb.client_ctx);
