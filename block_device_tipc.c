@@ -17,6 +17,7 @@
 #include "block_device_tipc.h"
 
 #include <errno.h>
+#include <inttypes.h>
 #include <lib/system_state/system_state.h>
 #include <lk/compiler.h>
 #include <stdint.h>
@@ -69,9 +70,14 @@ STATIC_ASSERT(BLOCK_SIZE_MAIN >= BLOCK_SIZE_RPMB);
 
 #define SS_ERR(args...) fprintf(stderr, "ss: " args)
 #define SS_WARN(args...) fprintf(stderr, "ss: " args)
+
+#ifdef SS_DATA_DEBUG_IO
+#define SS_DBG_IO(args...) fprintf(stdout, "ss: " args)
+#else
 #define SS_DBG_IO(args...) \
     do {                   \
     } while (0)
+#endif
 
 struct rpmb_key_derivation_in {
     uint8_t prefix[sizeof(struct key)];

@@ -40,6 +40,11 @@ ifeq (true,$(call TOBOOL,$(STORAGE_HAS_FS_TDP)))
     MODULE_DEFINES += HAS_FS_TDP=1
 endif
 
+SS_DATA_DEBUG_IO ?= false
+ifeq (true,$(call TOBOOL,$(SS_DATA_DEBUG_IO)))
+    MODULE_DEFINES += SS_DATA_DEBUG_IO=1
+endif
+
 MODULE_SRCS := \
 	$(LOCAL_DIR)/block_allocator.c \
 	$(LOCAL_DIR)/block_cache.c \
