@@ -35,6 +35,11 @@ ifeq (true,$(call TOBOOL,$(WITH_HKDF_RPMB_KEY)))
     MODULE_DEFINES += WITH_HKDF_RPMB_KEY=1
 endif
 
+STORAGE_HAS_FS_TDP ?= false
+ifeq (true,$(call TOBOOL,$(STORAGE_HAS_FS_TDP)))
+    MODULE_DEFINES += HAS_FS_TDP=1
+endif
+
 MODULE_SRCS := \
 	$(LOCAL_DIR)/block_allocator.c \
 	$(LOCAL_DIR)/block_cache.c \

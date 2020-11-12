@@ -395,14 +395,17 @@ int block_device_tipc_init(struct block_device_tipc* state,
     uint8_t probe;
     uint16_t rpmb_key_part_base = 0;
     uint32_t rpmb_block_count;
-    uint32_t rpmb_part1_block_count = 2;
+    uint32_t rpmb_part_sb_ns_block_count = 2;
     /*
      * First block is reserved for rpmb key derivation data, whose base is
      * rpmb_key_part_base
      */
     uint16_t rpmb_part1_base = 1;
-    uint16_t rpmb_part2_base = rpmb_part1_base + rpmb_part1_block_count;
-
+    uint16_t rpmb_part2_base = rpmb_part1_base + rpmb_part_sb_ns_block_count;
+#if HAS_FS_TDP
+    uint16_t rpmb_part_sb_tdp_base = rpmb_part2_base;
+    rpmb_part2_base += rpmb_part_sb_ns_block_count;
+#endif
     state->ipc_handle = ipc_handle;
 
     /* init rpmb */
@@ -474,15 +477,38 @@ int block_device_tipc_init(struct block_device_tipc* state,
         return 0;
     }
 
+#if HAS_FS_TDP
+    block_device_tipc_init_dev_ns(&state->dev_ns_tdp, state);
+
+    ret = ns_open_file(state->ipc_handle, "persist/0",
+                       &state->dev_ns_tdp.ns_handle, true);
+    if (ret < 0) {
+        goto err_open_tdp;
+    }
+
+    state->fs_tdp.tr_state = &state->tr_state_ns_tdp;
+
+    block_device_tipc_init_dev_rpmb(&state->dev_ns_tdp_rpmb, state,
+                                    rpmb_part_sb_tdp_base,
+                                    rpmb_part_sb_ns_block_count);
+
+    ret = fs_init(&state->tr_state_ns_tdp, fs_key, &state->dev_ns_tdp.dev,
+                  &state->dev_ns_tdp_rpmb.dev, false /* Don't allow wiping */);
+    if (ret < 0) {
+        goto err_init_fs_ns_tdp_tr_state;
+    }
+
+#else
     /*
      * Create STORAGE_CLIENT_TDP_PORT alias after we know the backing file for
-     * STORAGE_CLIENT_TD_PORT is available. On future devices
+     * STORAGE_CLIENT_TD_PORT is available. On future devices, using HAS_FS_TDP,
      * STORAGE_CLIENT_TDP_PORT will not be available when the bootloader is
      * running, so we limit access to this alias as well to prevent apps
      * developed on old devices from relying on STORAGE_CLIENT_TDP_PORT being
      * available early.
      */
     state->fs_tdp.tr_state = &state->tr_state_rpmb;
+#endif
 
     ret = client_create_port(&state->fs_tdp.client_ctx,
                              STORAGE_CLIENT_TDP_PORT);
@@ -498,7 +524,7 @@ int block_device_tipc_init(struct block_device_tipc* state,
     state->fs_ns.tr_state = &state->tr_state_ns;
 
     block_device_tipc_init_dev_rpmb(&state->dev_ns_rpmb, state, rpmb_part1_base,
-                                    rpmb_part1_block_count);
+                                    rpmb_part_sb_ns_block_count);
 
     ret = fs_init(&state->tr_state_ns, fs_key, &state->dev_ns.dev,
                   &state->dev_ns_rpmb.dev, new_ns_fs);
@@ -518,6 +544,12 @@ err_fs_ns_create_port:
 err_init_fs_ns_tr_state:
     ipc_port_destroy(&state->fs_tdp.client_ctx);
 err_fs_rpmb_tdp_create_port:
+#if HAS_FS_TDP
+    /* undo fs_init */
+err_init_fs_ns_tdp_tr_state:
+    ns_close_file(state->ipc_handle, state->dev_ns_tdp.ns_handle);
+err_open_tdp:
+#endif
     ns_close_file(state->ipc_handle, state->dev_ns.ns_handle);
     ipc_port_destroy(&state->fs_rpmb_boot.client_ctx);
 err_fs_rpmb_boot_create_port:
@@ -539,6 +571,10 @@ void block_device_tipc_uninit(struct block_device_tipc* state) {
         ns_close_file(state->ipc_handle, state->dev_ns.ns_handle);
 
         ipc_port_destroy(&state->fs_tdp.client_ctx);
+#if HAS_FS_TDP
+        /* undo fs_init */
+        ns_close_file(state->ipc_handle, state->dev_ns_tdp.ns_handle);
+#endif
     }
     ipc_port_destroy(&state->fs_rpmb_boot.client_ctx);
     ipc_port_destroy(&state->fs_rpmb.client_ctx);

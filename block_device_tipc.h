@@ -68,6 +68,12 @@ struct block_device_tipc {
     struct fs tr_state_rpmb;
     struct client_port_context fs_rpmb;
     struct client_port_context fs_rpmb_boot;
+
+#if HAS_FS_TDP
+    struct block_device_ns dev_ns_tdp;
+    struct block_device_rpmb dev_ns_tdp_rpmb;
+    struct fs tr_state_ns_tdp;
+#endif
     struct client_port_context fs_tdp;
 
     struct block_device_ns dev_ns;
