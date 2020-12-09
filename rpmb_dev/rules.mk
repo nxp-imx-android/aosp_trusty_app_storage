@@ -25,7 +25,17 @@ HOST_FLAGS := -DBUILD_STORAGE_TEST=1
 
 HOST_LIBS := \
 	m \
+
+# We need to statically link openssl into the host tool in case the version
+# we're building with is unavailable on the host it will be running on.
+ifeq (true,$(call TOBOOL,$(RPMB_DEV_STATIC)))
+HOST_LIBS += \
+	:libcrypto.a \
+	:libssl.a
+else
+HOST_LIBS += \
 	crypto \
-	ssl \
+	ssl
+endif
 
 include make/host_tool.mk
