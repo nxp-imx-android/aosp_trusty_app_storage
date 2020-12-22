@@ -489,6 +489,7 @@ int block_device_tipc_init(struct block_device_tipc* state,
     ret = ns_open_file(state->ipc_handle, "persist/0",
                        &state->dev_ns_tdp.ns_handle, true);
     if (ret < 0) {
+        SS_ERR("%s: failed to open tdp file (%d)\n", __func__, ret);
         goto err_open_tdp;
     }
 
