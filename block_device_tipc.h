@@ -70,3 +70,5 @@ int block_device_tipc_init(struct block_device_tipc* state,
                            const struct rpmb_key* rpmb_key,
                            hwkey_session_t hwkey_session);
 void block_device_tipc_uninit(struct block_device_tipc* state);
+int storage_program_rpmb_key(struct rpmb_state* rpmb_state);
+int storage_erase_rpmb(struct rpmb_state* rpmb_state);
