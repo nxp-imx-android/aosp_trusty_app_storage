@@ -30,6 +30,8 @@
 #define SS_ERR(args...) fprintf(stderr, "ss: " args)
 
 static void proxy_disconnect(struct ipc_channel_context* ctx);
+static int proxy_handle_msg(struct ipc_channel_context* ctx,
+                            void* msg_buf, size_t msg_size);
 
 static struct storage_session* proxy_context_to_session(
         struct ipc_channel_context* context) {
@@ -129,10 +131,10 @@ struct ipc_channel_context* proxy_connect(struct ipc_port_context* parent_ctx,
                                 &session->key, rpmb_key_ptr, hwkey_session);
     if (rc < 0) {
         SS_ERR("%s: block_device_tipc_init failed (%d)\n", __func__, rc);
-        goto err_init_block_device;
     }
 
     session->proxy_ctx.ops.on_disconnect = proxy_disconnect;
+    session->proxy_ctx.ops.on_handle_msg = proxy_handle_msg;
 
     hwkey_close(hwkey_session);
 
@@ -156,4 +158,68 @@ void proxy_disconnect(struct ipc_channel_context* ctx) {
     block_device_tipc_uninit(&session->block_device);
 
     free(session);
+}
+
+static int send_response(struct storage_session* session,
+                         enum storage_err result,
+                         struct storage_msg* msg,
+                         void* out,
+                         size_t out_size) {
+    size_t resp_buf_count = 1;
+    if (result == STORAGE_NO_ERROR && out != NULL && out_size != 0) {
+        ++resp_buf_count;
+    }
+
+    struct iovec resp_bufs[2];
+
+    msg->cmd |= STORAGE_RESP_BIT;
+    msg->flags = 0;
+    msg->size = sizeof(struct storage_msg) + out_size;
+    msg->result = result;
+
+    resp_bufs[0].iov_base = msg;
+    resp_bufs[0].iov_len = sizeof(struct storage_msg);
+
+    if (resp_buf_count == 2) {
+        resp_bufs[1].iov_base = out;
+        resp_bufs[1].iov_len = out_size;
+    }
+
+    struct ipc_msg resp_ipc_msg = {
+            .iov = resp_bufs,
+            .num_iov = resp_buf_count,
+    };
+
+    return send_msg(session->proxy_ctx.common.handle, &resp_ipc_msg);
+}
+
+static int proxy_handle_msg(struct ipc_channel_context* ctx,
+                            void* msg_buf, size_t msg_size) {
+    struct storage_session* session;
+    struct storage_msg* msg = msg_buf;
+    enum storage_err result;
+
+    session = proxy_context_to_session(ctx);
+
+    if (msg_size < sizeof(struct storage_msg)) {
+        SS_ERR("%s: invalid message of size (%zu)\n", __func__, msg_size);
+        return send_response(session, STORAGE_ERR_NOT_VALID, msg, NULL, 0);
+    }
+
+    switch (msg->cmd) {
+    case STORAGE_RPMB_KEY_SET:
+        result = storage_program_rpmb_key(session->block_device.rpmb_state);
+        break;
+#if SUPPORT_ERASE_RPMB
+    case STORAGE_RPMB_ERASE_ALL:
+        result = storage_erase_rpmb(session->block_device.rpmb_state);
+        break;
+#endif
+    default:
+        SS_ERR("%s: unsupported command 0x%x\n", __func__, msg->cmd);
+        result = STORAGE_ERR_UNIMPLEMENTED;
+        break;
+    }
+
+    return send_response(session, result, msg, NULL, 0);
 }
