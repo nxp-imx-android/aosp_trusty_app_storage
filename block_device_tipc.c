@@ -431,16 +431,8 @@ static int block_device_tipc_init_rpmb_key(struct rpmb_state* state,
                                            const struct rpmb_key* rpmb_key,
                                            uint16_t rpmb_key_part_base,
                                            hwkey_session_t hwkey_session) {
-    int ret = 0;
-
-    if (rpmb_key) {
-        rpmb_set_key(state, rpmb_key);
-    } else {
-        ret = block_device_tipc_derive_rpmb_key(state, rpmb_key_part_base,
-                                                hwkey_session);
-    }
-
-    return ret;
+    rpmb_set_key(state, rpmb_key);
+    return 0;
 }
 
 static int check_storage_size(handle_t handle,
@@ -818,4 +810,57 @@ void block_device_tipc_uninit(struct block_device_tipc* state) {
     fs_destroy(&state->tr_state_rpmb);
     block_cache_dev_destroy(&state->dev_rpmb.dev);
     rpmb_uninit(state->rpmb_state);
+}
+
+int storage_program_rpmb_key(struct rpmb_state* rpmb_state)
+{
+    int rc;
+    struct rpmb_key rpmb_key;
+    uint32_t key_size = sizeof(rpmb_key.byte);
+    const char* huk_id = "com.android.trusty.storage_auth.huk";
+
+    rc = hwkey_open();
+    if (rc < 0) {
+        SS_ERR("%s: hwkey init failed: %d\n", __func__, rc);
+        goto err_hwkey_open;
+    }
+
+    hwkey_session_t hwkey_session = (hwkey_session_t)rc;
+
+    rc = hwkey_get_keyslot_data(hwkey_session, huk_id, rpmb_key.byte, &key_size);
+    if (rc < 0) {
+        SS_ERR("%s: failed to get huk: %d\n", __func__, rc);
+        goto err;
+    }
+
+    rc = rpmb_program_key(rpmb_state, &rpmb_key);
+    if (rc < 0) {
+        SS_ERR("%s: failed to program rpmb key: %d\n", __func__, rc);
+        goto err;
+    }
+
+    return STORAGE_NO_ERROR;
+
+err:
+    hwkey_close(hwkey_session);
+err_hwkey_open:
+    return STORAGE_ERR_GENERIC;
+}
+
+int storage_erase_rpmb(struct rpmb_state* rpmb_state)
+{
+    int buf[BLOCK_SIZE_RPMB];
+    int i, ret;
+
+    memset(buf, 0, BLOCK_SIZE_RPMB);
+    for (i = 0; i < BLOCK_COUNT_RPMB; i++) {
+        ret = rpmb_write(rpmb_state, buf, i * BLOCK_SIZE_RPMB_BLOCKS,
+                         BLOCK_SIZE_RPMB_BLOCKS, true, false);
+        if (ret < 0) {
+            SS_ERR("%s: failed to write to rpmb: %d\n", __func__, ret);
+            return STORAGE_ERR_GENERIC;
+        }
+    }
+
+    return STORAGE_NO_ERROR;
 }
