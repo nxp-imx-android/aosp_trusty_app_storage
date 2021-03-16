@@ -853,7 +853,7 @@ int storage_erase_rpmb(struct rpmb_state* rpmb_state)
     int i, ret;
 
     memset(buf, 0, BLOCK_SIZE_RPMB);
-    for (i = 0; i < BLOCK_COUNT_RPMB; i++) {
+    for (i = 0; i < STORAGE_TOTAL_RPMB_BLOCK_COUNT; i++) {
         ret = rpmb_write(rpmb_state, buf, i * BLOCK_SIZE_RPMB_BLOCKS,
                          BLOCK_SIZE_RPMB_BLOCKS, true, false);
         if (ret < 0) {
