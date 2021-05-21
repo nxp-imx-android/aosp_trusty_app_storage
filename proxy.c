@@ -85,6 +85,7 @@ static int get_rpmb_auth_key(hwkey_session_t session,
 }
 #endif
 
+static bool block_device_initialized = true;
 struct ipc_channel_context* proxy_connect(struct ipc_port_context* parent_ctx,
                                           const uuid_t* peer_uuid,
                                           handle_t chan_handle) {
@@ -131,6 +132,7 @@ struct ipc_channel_context* proxy_connect(struct ipc_port_context* parent_ctx,
                                 &session->key, rpmb_key_ptr, hwkey_session);
     if (rc < 0) {
         SS_ERR("%s: block_device_tipc_init failed (%d)\n", __func__, rc);
+        block_device_initialized = false;
     }
 
     session->proxy_ctx.ops.on_disconnect = proxy_disconnect;
@@ -155,7 +157,8 @@ err_alloc_session:
 void proxy_disconnect(struct ipc_channel_context* ctx) {
     struct storage_session* session = proxy_context_to_session(ctx);
 
-    block_device_tipc_uninit(&session->block_device);
+    if (block_device_initialized)
+        block_device_tipc_uninit(&session->block_device);
 
     free(session);
 }
