@@ -35,6 +35,7 @@
 typedef void (*test_body)(storage_session_t ss, storage_session_t ss_aux);
 
 static const char* storage_test_client_port;
+static storage_session_t storage_test_ss_persist = STORAGE_INVALID_SESSION;
 
 typedef struct {
     storage_session_t ss;
@@ -44,6 +45,11 @@ typedef struct {
 void StorageTest_SetUp(StorageTest_t* state) {
     state->ss = STORAGE_INVALID_SESSION;
     state->ss_aux = STORAGE_INVALID_SESSION;
+
+    if (storage_test_ss_persist != STORAGE_INVALID_SESSION) {
+        storage_close_session(storage_test_ss_persist);
+        storage_test_ss_persist = STORAGE_INVALID_SESSION;
+    }
 
     int rc = storage_open_session(&state->ss, storage_test_client_port);
     if (rc < 0) {
@@ -74,6 +80,11 @@ void StorageTest_TearDown(StorageTest_t* state) {
     TEST_F_CUSTOM_ARGS(suite_name, test_name, (state.ss, state.ss_aux), \
                        (storage_session_t ss, storage_session_t ss_aux))
 
+#ifndef STORAGE_FAKE
+TEST_FIXTURE_ALIAS(StorageInitNoCommitSmallTest, StorageTest)
+TEST_FIXTURE_ALIAS(StorageInitNoCommitLargeTest, StorageTest)
+TEST_FIXTURE_ALIAS(StorageInitNoCommitCleanupTest, StorageTest)
+#endif
 TEST_FIXTURE_ALIAS(StorageInitTest, StorageTest)
 TEST_FIXTURE_ALIAS(StorageCheckTest, StorageTest)
 TEST_FIXTURE_ALIAS(StorageCleanTest, StorageTest)
@@ -1165,6 +1176,72 @@ TEST_F(StorageTest, WriteReadAtOffsetSparse) {
 test_abort:;
 }
 
+#ifndef STORAGE_FAKE
+// STORAGE_FAKE does not support multiple sessionsa
+
+// Leave a small transaction open with uncommitted data blocks. This test should
+// fit in the cache so no data should need to be written to disk. This can be
+// used on a newly wiped filesystem to test the cleanup path if storageproxyd
+// disconnects before anything has been written.
+TEST_F(StorageInitNoCommitSmallTest, CreatePersistentNoCommitSmall) {
+    int rc;
+    file_handle_t handle;
+    const char* fname = "test_persistent_small_uncommited_file";
+
+    rc = storage_open_session(&storage_test_ss_persist,
+                              storage_test_client_port);
+    ASSERT_EQ(0, rc);
+
+    // create/truncate file.
+    rc = storage_open_file(
+            storage_test_ss_persist, &handle, fname,
+            STORAGE_FILE_OPEN_CREATE | STORAGE_FILE_OPEN_TRUNCATE, 0);
+    ASSERT_EQ(0, rc);
+
+    // close but do not delete file
+    storage_close_file(handle);
+
+test_abort:;
+}
+
+// Leave large a transaction open with uncommitted data blocks. This can be used
+// on a newly wiped filesystem to leave it in a state where only data blocks
+// have been written and expose bugs in how we auto clear the td partition.
+TEST_F(StorageInitNoCommitLargeTest, CreatePersistentNoCommitLarge) {
+    int rc;
+    file_handle_t handle;
+    size_t blk = 2048;
+    // Size of file should be too large to fit in block cache
+    size_t file_size = 64 * 2048;
+    const char* fname = "test_persistent_large_uncommited_file";
+
+    rc = storage_open_session(&storage_test_ss_persist,
+                              storage_test_client_port);
+    ASSERT_EQ(0, rc);
+
+    // create/truncate file.
+    rc = storage_open_file(
+            storage_test_ss_persist, &handle, fname,
+            STORAGE_FILE_OPEN_CREATE | STORAGE_FILE_OPEN_TRUNCATE, 0);
+    ASSERT_EQ(0, rc);
+
+    // write a bunch of blocks filled with pattern
+    rc = WritePattern(handle, 0, file_size, blk, false);
+    ASSERT_EQ((int)file_size, rc);
+
+    // close but do not delete file
+    storage_close_file(handle);
+
+test_abort:;
+}
+
+// Empty test that can be used to close the session created by
+// CreatePersistentNoCommitSmall or CreatePersistentNoCommitLarge.
+TEST_F(StorageInitNoCommitCleanupTest, NoCommitCleanup) {
+    // Fixture setup function closes the previous persistent session.
+}
+#endif
+
 TEST_F(StorageInitTest, CreatePersistent32K) {
     int rc;
     file_handle_t handle;
@@ -1172,11 +1249,11 @@ TEST_F(StorageInitTest, CreatePersistent32K) {
     size_t file_size = 32768;
     const char* fname = "test_persistent_32K_file";
 
-    // create/truncate file.
+    // create/truncate file. Don't commit until the write is complete so we
+    // only perform a single superblock update
     rc = storage_open_file(
             ss, &handle, fname,
-            STORAGE_FILE_OPEN_CREATE | STORAGE_FILE_OPEN_TRUNCATE,
-            STORAGE_OP_COMPLETE);
+            STORAGE_FILE_OPEN_CREATE | STORAGE_FILE_OPEN_TRUNCATE, 0);
     ASSERT_EQ(0, rc);
 
     // write a bunch of blocks filled with pattern
@@ -2783,6 +2860,9 @@ test_abort:;
 #endif
 
 #define RUN_MODE_ALL NULL
+#define RUN_MODE_INIT_NO_COMMIT_SMALL "StorageInitNoCommitSmallTest"
+#define RUN_MODE_INIT_NO_COMMIT_LARGE "StorageInitNoCommitLargeTest"
+#define RUN_MODE_INIT_NO_COMMIT_CLEANUP "StorageInitNoCommitClenupTest"
 #define RUN_MODE_INIT "StorageInitTest"
 #define RUN_MODE_CHECK "StorageCheckTest"
 #define RUN_MODE_CLEAN "StorageCleanTest"
@@ -2846,6 +2926,15 @@ static bool run_test(struct unittest* test) {
 
 #define DEFINE_STORAGE_UNIT_TESTS_FS(fs, fs_name)                              \
     DEFINE_STORAGE_UNIT_TEST((fs), fs_name, RUN_MODE_ALL, ""),                 \
+            DEFINE_STORAGE_UNIT_TEST((fs), fs_name,                            \
+                                     RUN_MODE_INIT_NO_COMMIT_SMALL,            \
+                                     ".initnocommitsmall"),                    \
+            DEFINE_STORAGE_UNIT_TEST((fs), fs_name,                            \
+                                     RUN_MODE_INIT_NO_COMMIT_LARGE,            \
+                                     ".initnocommitlarge"),                    \
+            DEFINE_STORAGE_UNIT_TEST((fs), fs_name,                            \
+                                     RUN_MODE_INIT_NO_COMMIT_CLEANUP,          \
+                                     ".initnocommitcleanup"),                  \
             DEFINE_STORAGE_UNIT_TEST((fs), fs_name, RUN_MODE_INIT, ".init"),   \
             DEFINE_STORAGE_UNIT_TEST((fs), fs_name, RUN_MODE_CHECK, ".check"), \
             DEFINE_STORAGE_UNIT_TEST((fs), fs_name, RUN_MODE_CLEAN, ".clean")
