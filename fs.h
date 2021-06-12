@@ -84,3 +84,5 @@ int fs_init(struct fs* fs,
             struct block_device* dev,
             struct block_device* super_dev,
             bool clear);
+
+void fs_destroy(struct fs* fs);

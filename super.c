@@ -425,3 +425,15 @@ int fs_init(struct fs* fs,
 
     return 0;
 }
+
+/**
+ * fs_destroy - Destroy file system state
+ * @fs:         File system state object.
+ *
+ * Free any dynamically allocated state and check that @fs is not referenced by
+ * any transactions.
+ */
+void fs_destroy(struct fs* fs) {
+    assert(list_is_empty(&fs->transactions));
+    assert(list_is_empty(&fs->allocated));
+}
