@@ -288,10 +288,7 @@ static int fs_init_from_super(struct fs* fs,
                super->fs_version);
         return -1;
     }
-    if (clear) {
-        super = NULL;
-    }
-    if (super) {
+    if (super && !clear) {
         fs->block_num_size = super->block_num_size;
         fs->mac_size = super->mac_size;
     } else {
@@ -310,13 +307,17 @@ static int fs_init_from_super(struct fs* fs,
     fs->reserved_count = fs->dev->block_count / 8 * 5;
 
     if (super) {
+        fs->super_block_version = super->flags & SUPER_BLOCK_FLAGS_VERSION_MASK;
+    }
+
+    if (super && !clear) {
         fs->free.block_tree.root = super->free;
         fs->files.root = super->files;
-        fs->super_block_version = super->flags & SUPER_BLOCK_FLAGS_VERSION_MASK;
         pr_init("loaded super block version %d\n", fs->super_block_version);
     } else {
         if (clear) {
-            pr_init("clear requested, create empty\n");
+            pr_init("clear requested, create empty, version %d\n",
+                    fs->super_block_version);
         } else {
             pr_init("no valid super-block found, create empty\n");
         }
