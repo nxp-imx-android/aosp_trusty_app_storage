@@ -362,6 +362,38 @@ err_transaction_failed:
 }
 
 /**
+ * transaction_initial_super_block_complete - Complete special transaction
+ * @tr:         Transaction object. Must match initial_super_block_tr in fs.
+ *
+ * Flush the initial superblock in @tr to disk. If the block could not be
+ * written return and leave @tr in a failed state. Otherwise clear
+ * @tr->fs->initial_super_block_tr and free @tr.
+ */
+void transaction_initial_super_block_complete(struct transaction* tr) {
+    assert(tr == tr->fs->initial_super_block_tr);
+    block_cache_clean_transaction(tr);
+    if (tr->failed) {
+        /*
+         * If we failed to write the superblock we leave the failed
+         * initial_super_block_tr transaction in place so all future write
+         * transactions to this filesystems will also fail.
+         */
+        return;
+    }
+    printf("%s: write initial superblock, version %d -> %d\n", __func__,
+           tr->fs->super_block_version, tr->fs->written_super_block_version);
+
+    assert(tr == tr->fs->initial_super_block_tr);
+    tr->fs->super_block_version = tr->fs->written_super_block_version;
+    tr->fs->initial_super_block_tr = NULL;
+
+    /* not a real transaction, discard the state so it can be freed */
+    transaction_fail(tr);
+    transaction_free(tr);
+    free(tr);
+}
+
+/**
  * transaction_activate - Activate transaction
  * @tr:         Transaction object.
  */

@@ -345,6 +345,30 @@ static void block_cache_entry_clean(struct block_cache_entry* entry) {
     assert(entry->encrypted);
     /* TODO: release ref to parent */
 
+    assert(entry->dirty_tr);
+    assert(entry->dirty_tr->fs);
+    struct transaction* itr = entry->dirty_tr->fs->initial_super_block_tr;
+    /*
+     * Block(s) in fs->initial_super_block_tr must be written before any other
+     * blocks to the same filesystem.
+     */
+    if (itr && itr != entry->dirty_tr) {
+        printf("%s: write initial superblock before block %" PRIu64 "\n",
+               __func__, entry->block);
+        transaction_initial_super_block_complete(itr);
+
+        /*
+         * Check that initial_super_block_tr was cleared. If it was not, it must
+         * have failed to write the initial super block and the transaction
+         * that entry belongs to must also fail.
+         */
+        if (entry->dirty_tr->fs->initial_super_block_tr) {
+            transaction_fail(entry->dirty_tr);
+            assert(!entry->dirty);
+            return;
+        }
+    }
+
     block_cache_queue_write(entry, entry->data);
     entry->dirty = false;
 }

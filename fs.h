@@ -56,6 +56,10 @@
  *                                  Must be 16 if @dev is not tamper_detecting.
  * @reserved_count:                 Number of free blocks reserved for active
  *                                  transactions.
+ * @initial_super_block_tr:         Internal transaction containing initial
+ *                                  super block that must be written before any
+ *                                  other data. If %NULL superblock is already
+ *                                  a safe state.
  */
 
 struct fs {
@@ -73,6 +77,7 @@ struct fs {
     size_t block_num_size;
     size_t mac_size;
     data_block_t reserved_count;
+    struct transaction* initial_super_block_tr;
 };
 
 bool update_super_block(struct transaction* tr,

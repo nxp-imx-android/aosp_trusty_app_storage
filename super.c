@@ -39,6 +39,8 @@
 #define SUPER_BLOCK_MAGIC (0x0073797473757274ULL) /* trustys */
 #define SUPER_BLOCK_FLAGS_VERSION_MASK (0x3U)
 #define SUPER_BLOCK_FLAGS_BLOCK_INDEX_MASK (0x1U)
+#define SUPER_BLOCK_FLAGS_EMPTY (0x4U)
+#define SUPER_BLOCK_FLAGS_SUPPORTED_MASK (0x7U)
 #define SUPER_BLOCK_FS_VERSION (0U)
 
 /**
@@ -106,12 +108,25 @@ bool update_super_block(struct transaction* tr,
     struct obj_ref super_ref = OBJ_REF_INITIAL_VALUE(super_ref);
     unsigned int ver;
     unsigned int index;
+    uint32_t flags;
     uint32_t block_size = tr->fs->super_dev->block_size;
 
     assert(block_size >= sizeof(struct super_block));
 
     ver = (tr->fs->super_block_version + 1) & SUPER_BLOCK_FLAGS_VERSION_MASK;
     index = ver & SUPER_BLOCK_FLAGS_BLOCK_INDEX_MASK;
+    flags = ver;
+    if (!free && !files) {
+        /*
+         * If the free and files trees are not provided, the filesystem is in
+         * the initial empty state.
+         */
+        flags |= SUPER_BLOCK_FLAGS_EMPTY;
+    } else {
+        /* Non-empty filesystems must have both trees (with root node blocks) */
+        assert(free);
+        assert(files);
+    }
 
     pr_write("write super block %" PRIu64 ", ver %d\n",
              tr->fs->super_block[index], ver);
@@ -123,22 +138,49 @@ bool update_super_block(struct transaction* tr,
         return false;
     }
     super_rw->magic = SUPER_BLOCK_MAGIC;
-    super_rw->flags = ver;
+    super_rw->flags = flags;
     /* TODO: keep existing fs version when possible */
     super_rw->fs_version = SUPER_BLOCK_FS_VERSION;
     super_rw->block_size = tr->fs->dev->block_size;
     super_rw->block_num_size = tr->fs->block_num_size;
     super_rw->mac_size = tr->fs->mac_size;
     super_rw->block_count = tr->fs->dev->block_count;
-    super_rw->free = *free;
+    if (free) {
+        super_rw->free = *free;
+    }
     super_rw->free_count = 0; /* TODO: remove or update */
-    super_rw->files = *files;
-    super_rw->flags2 = ver;
+    if (files) {
+        super_rw->files = *files;
+    }
+    super_rw->flags2 = flags;
     tr->fs->written_super_block_version = ver;
 
     block_put_dirty_no_mac(super_rw, &super_ref);
 
     return true;
+}
+
+/**
+ * write_initial_super_block - Write initial superblock to internal transaction
+ * @fs:         File system state object.
+ *
+ * When needed, this must be called before creating any other transactions on
+ * this filesystem so we don't fill up the cache with entries that can't be
+ * flushed to make room for this block.
+ *
+ * Return: %true if the initial empty superblock was successfully written to the
+ * cache, or %false otherwise.
+ */
+static bool write_initial_super_block(struct fs* fs) {
+    struct transaction* tr;
+    tr = calloc(1, sizeof(*tr));
+    if (!tr) {
+        return false;
+    }
+    fs->initial_super_block_tr = tr;
+
+    transaction_init(tr, fs, true);
+    return update_super_block(tr, NULL, NULL);
 }
 
 /**
@@ -163,7 +205,7 @@ static bool super_block_valid(const struct block_device* dev,
         pr_warn("super block is from the future: 0x%x\n", super->fs_version);
         return true;
     }
-    if (super->flags & ~SUPER_BLOCK_FLAGS_VERSION_MASK) {
+    if (super->flags & ~SUPER_BLOCK_FLAGS_SUPPORTED_MASK) {
         pr_warn("unknown flags set, 0x%x\n", super->flags);
         return false;
     }
@@ -280,15 +322,16 @@ static void fs_init_empty(struct fs* fs) {
  */
 static int fs_init_from_super(struct fs* fs,
                               const struct super_block* super,
-                              bool clear) {
+                              bool do_clear) {
     size_t block_mac_size;
+    bool is_clear = false;
 
     if (super && super->fs_version > SUPER_BLOCK_FS_VERSION) {
         pr_err("ERROR: super block is from the future 0x%x\n",
                super->fs_version);
         return -1;
     }
-    if (super && !clear) {
+    if (super && !do_clear) {
         fs->block_num_size = super->block_num_size;
         fs->mac_size = super->mac_size;
     } else {
@@ -308,14 +351,20 @@ static int fs_init_from_super(struct fs* fs,
 
     if (super) {
         fs->super_block_version = super->flags & SUPER_BLOCK_FLAGS_VERSION_MASK;
+        if (super->flags & SUPER_BLOCK_FLAGS_EMPTY) {
+            is_clear = true;
+        }
     }
 
-    if (super && !clear) {
+    if (super && !is_clear && !do_clear) {
         fs->free.block_tree.root = super->free;
         fs->files.root = super->files;
         pr_init("loaded super block version %d\n", fs->super_block_version);
     } else {
-        if (clear) {
+        if (is_clear) {
+            pr_init("superblock, version %d, is empty fs\n",
+                    fs->super_block_version);
+        } else if (do_clear) {
             pr_init("clear requested, create empty, version %d\n",
                     fs->super_block_version);
         } else {
@@ -328,6 +377,12 @@ static int fs_init_from_super(struct fs* fs,
     assert(fs->mac_size >= fs->dev->mac_size);
     assert(fs->mac_size <= sizeof(struct mac));
     assert(fs->mac_size == sizeof(struct mac) || fs->dev->tamper_detecting);
+
+    if (do_clear && !is_clear) {
+        if (!write_initial_super_block(fs)) {
+            return -1;
+        }
+    }
 
     return 0;
 }
@@ -408,6 +463,7 @@ int fs_init(struct fs* fs,
     fs->super_dev = super_dev;
     list_initialize(&fs->transactions);
     list_initialize(&fs->allocated);
+    fs->initial_super_block_tr = NULL;
 
     if (dev == super_dev) {
         fs->min_block_num = 2;
@@ -419,6 +475,7 @@ int fs_init(struct fs* fs,
     fs->super_block[1] = 1;
     ret = load_super_block(fs, clear);
     if (ret) {
+        fs_destroy(fs);
         fs->dev = NULL;
         fs->super_dev = NULL;
         return ret;
@@ -435,6 +492,12 @@ int fs_init(struct fs* fs,
  * any transactions.
  */
 void fs_destroy(struct fs* fs) {
+    if (fs->initial_super_block_tr) {
+        transaction_fail(fs->initial_super_block_tr);
+        transaction_free(fs->initial_super_block_tr);
+        free(fs->initial_super_block_tr);
+        fs->initial_super_block_tr = NULL;
+    }
     assert(list_is_empty(&fs->transactions));
     assert(list_is_empty(&fs->allocated));
 }

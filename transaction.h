@@ -71,6 +71,7 @@ void transaction_free(struct transaction* tr);
 void transaction_activate(struct transaction* tr);
 void transaction_fail(struct transaction* tr);
 void transaction_complete(struct transaction* tr);
+void transaction_initial_super_block_complete(struct transaction* tr);
 
 static inline bool transaction_is_active(struct transaction* tr) {
     return list_in_list(&tr->allocated.node);
