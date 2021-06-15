@@ -38,6 +38,8 @@ void block_cache_complete_write(struct block_device* dev,
 
 void block_cache_init(void);
 
+void block_cache_dev_destroy(struct block_device* dev);
+
 void block_cache_clean_transaction(struct transaction* tr);
 
 void block_cache_discard_transaction(struct transaction* tr, bool discard_all);

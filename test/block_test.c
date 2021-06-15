@@ -1683,6 +1683,7 @@ static void future_fs_version_test(struct transaction* tr) {
 
     transaction_free(tr);
     fs_destroy(fs);
+    block_cache_dev_destroy(dev);
 
     ret = fs_init(fs, key, dev, super_dev, false);
     assert(ret == -1);
@@ -1896,6 +1897,7 @@ int main(int argc, const char* argv[]) {
         if (test_remount) {
             transaction_free(&tr);
             fs_destroy(&fs);
+            block_cache_dev_destroy(&dev);
             fs_init(&fs, &key, &dev, &dev, false);
             fs.reserved_count = 18; /* HACK: override default reserved space */
             transaction_init(&tr, &fs, false);
@@ -1907,6 +1909,7 @@ int main(int argc, const char* argv[]) {
     stats_timer_print();
     transaction_free(&tr);
     fs_destroy(&fs);
+    block_cache_dev_destroy(&dev);
     crypt_shutdown();
 
     printf("%s: done\n", __func__);

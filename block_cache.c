@@ -366,6 +366,34 @@ static unsigned int block_cache_entry_score(struct block_cache_entry* entry,
 }
 
 /**
+ * block_cache_entry_discard_dirty - Discard cache entry (can be dirty).
+ * @entry:      Block cache entry to discard
+ */
+static void block_cache_entry_discard_dirty(struct block_cache_entry* entry) {
+    assert(!entry->dirty_ref);
+    assert(!list_in_list(&entry->io_op_node));
+    entry->loaded = false;
+    entry->dev = NULL;
+    entry->block = DATA_BLOCK_INVALID;
+    entry->dirty = false;
+    entry->dirty_tr = NULL;
+
+    entry->dirty_mac = false;
+}
+
+/**
+ * block_cache_entry_discard - Discard cache entry (must be clean and unused).
+ * @entry:      Block cache entry to discard
+ */
+static void block_cache_entry_discard(struct block_cache_entry* entry) {
+    assert(!block_cache_entry_has_refs(entry));
+    assert(!entry->dirty_ref);
+    assert(!entry->dirty_tr);
+    assert(!list_in_list(&entry->io_op_node));
+    block_cache_entry_discard_dirty(entry);
+}
+
+/**
  * block_cache_lookup - Get cache entry for a specific block
  * @fs:         File system state object, or %NULL is @allocate is %false.
  * @dev:        Block device object.
@@ -681,6 +709,19 @@ void block_cache_init(void) {
 }
 
 /**
+ * block_cache_dev_destroy - Discard all blocks associated with device
+ * @dev:        Block device to remove
+ */
+void block_cache_dev_destroy(struct block_device* dev) {
+    int i;
+    for (i = 0; i < BLOCK_CACHE_SIZE; i++) {
+        if (block_cache_entries[i].dev == dev) {
+            block_cache_entry_discard(&block_cache_entries[i]);
+        }
+    }
+}
+
+/**
  * block_cache_clean_transaction - Clean blocks modified by transaction
  * @tr:         Transaction
  */
@@ -957,11 +998,7 @@ void block_discard_dirty(const void* data) {
 
     if (entry->dirty) {
         assert(entry->dev);
-        entry->loaded = false;
-        entry->dev = NULL;
-        entry->block = DATA_BLOCK_INVALID;
-        entry->dirty = false;
-        entry->dirty_tr = NULL;
+        block_cache_entry_discard_dirty(entry);
     }
 }
 
@@ -1242,11 +1279,8 @@ void* block_move(struct transaction* tr,
             printf("%s: clear old cache entry for block %" PRIu64 ", %zd\n",
                    __func__, block, dest_entry - block_cache_entries);
         }
-        dest_entry->loaded = false;
-        dest_entry->dev = NULL;
-        dest_entry->block = DATA_BLOCK_INVALID;
-        dest_entry->dirty = false;
-        dest_entry->dirty_tr = NULL;
+        /* TODO: Use block_cache_entry_discard instead? */
+        block_cache_entry_discard_dirty(dest_entry);
     }
 
     entry->block = block;

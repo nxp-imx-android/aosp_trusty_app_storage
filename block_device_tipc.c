@@ -549,11 +549,13 @@ int block_device_tipc_init(struct block_device_tipc* state,
 err_fs_ns_create_port:
     fs_destroy(&state->tr_state_ns);
 err_init_fs_ns_tr_state:
+    block_cache_dev_destroy(&state->dev_ns.dev);
     ipc_port_destroy(&state->fs_tdp.client_ctx);
 err_fs_rpmb_tdp_create_port:
 #if HAS_FS_TDP
     fs_destroy(&state->tr_state_ns_tdp);
 err_init_fs_ns_tdp_tr_state:
+    block_cache_dev_destroy(&state->dev_ns_tdp.dev);
     ns_close_file(state->ipc_handle, state->dev_ns_tdp.ns_handle);
 err_open_tdp:
 #endif
@@ -564,6 +566,7 @@ err_fs_rpmb_boot_create_port:
 err_fs_rpmb_create_port:
     fs_destroy(&state->tr_state_rpmb);
 err_init_tr_state_rpmb:
+    block_cache_dev_destroy(&state->dev_rpmb.dev);
 err_bad_rpmb_size:
 err_init_rpmb_key:
     rpmb_uninit(state->rpmb_state);
@@ -575,16 +578,19 @@ void block_device_tipc_uninit(struct block_device_tipc* state) {
     if (state->dev_ns.dev.block_count) {
         ipc_port_destroy(&state->fs_ns.client_ctx);
         fs_destroy(&state->tr_state_ns);
+        block_cache_dev_destroy(&state->dev_ns.dev);
         ns_close_file(state->ipc_handle, state->dev_ns.ns_handle);
 
         ipc_port_destroy(&state->fs_tdp.client_ctx);
 #if HAS_FS_TDP
         fs_destroy(&state->tr_state_ns_tdp);
+        block_cache_dev_destroy(&state->dev_ns_tdp.dev);
         ns_close_file(state->ipc_handle, state->dev_ns_tdp.ns_handle);
 #endif
     }
     ipc_port_destroy(&state->fs_rpmb_boot.client_ctx);
     ipc_port_destroy(&state->fs_rpmb.client_ctx);
     fs_destroy(&state->tr_state_rpmb);
+    block_cache_dev_destroy(&state->dev_rpmb.dev);
     rpmb_uninit(state->rpmb_state);
 }
