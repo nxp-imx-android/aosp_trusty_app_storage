@@ -558,8 +558,8 @@ static bool block_cache_load_entry(struct block_cache_entry* entry,
     }
     if (mac) {
         if (CRYPTO_memcmp(&entry->mac, mac, mac_size)) {
-            printf("%s: block %" PRIu64 ", mac mismatch, %p\n", __func__,
-                   entry->block, mac);
+            printf("%s: block %" PRIu64 ", mac mismatch\n", __func__,
+                   entry->block);
             return false;
         }
     }

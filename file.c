@@ -1168,9 +1168,9 @@ static void file_restore_to_commit(struct transaction* tr,
         assert(block_mac_eq(tr, src, dest));
         return;
     }
-    pr_write("file handle %p, abort block %" PRIu64 "/%" PRIu64 " -> %" PRIu64
-             ", size %" PRIu64 " -> %" PRIu64 "\n",
-             file, block_mac_to_block(tr, &file->committed_block_mac),
+    pr_write("abort block %" PRIu64 "/%" PRIu64 " -> %" PRIu64 ", size %" PRIu64
+             " -> %" PRIu64 "\n",
+             block_mac_to_block(tr, &file->committed_block_mac),
              block_mac_to_block(tr, &file->block_mac),
              block_mac_to_block(tr, &file->to_commit_block_mac), file->size,
              file->to_commit_size);
@@ -1205,9 +1205,8 @@ static void file_apply_to_commit(struct transaction* tr,
 
     if (file_tr != tr) {
         if (file->used_by_tr) {
-            pr_warn("file handle %p, conflict %" PRIu64 " != %" PRIu64
-                    " || used_by_tr %d\n",
-                    file, block_mac_to_block(tr, &file->committed_block_mac),
+            pr_warn("conflict %" PRIu64 " != %" PRIu64 " || used_by_tr %d\n",
+                    block_mac_to_block(tr, &file->committed_block_mac),
                     block_mac_to_block(tr, &file->block_mac), file->used_by_tr);
             assert(!file_tr->failed);
             transaction_fail(file_tr);

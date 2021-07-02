@@ -333,21 +333,19 @@ void transaction_complete(struct transaction* tr) {
             continue;
         }
         if (block_set_overlap(tr, &tr->freed, &other_tr->freed)) {
-            pr_warn("tr %p, fail conflicting transaction: %p\n", tr, other_tr);
+            pr_warn("fail conflicting transaction\n");
             transaction_fail(other_tr);
         }
     }
     if (tr->failed) {
-        pr_warn("tr %p, transaction failed while failing conflicting transactions\n",
-                tr);
+        pr_warn("transaction failed while failing conflicting transactions\n");
         tr->failed = false;
         list_for_every_entry_safe(&tr->fs->transactions, other_tr, tmp_tr,
                                   struct transaction, node) {
             if (!transaction_is_active(other_tr)) {
                 continue;
             }
-            pr_warn("tr %p, fail possibly conflicting transaction: %p\n", tr,
-                    other_tr);
+            pr_warn("fail possibly conflicting transaction\n");
             transaction_fail(other_tr);
         }
     }
