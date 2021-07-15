@@ -517,7 +517,7 @@ int rpmb_write(struct rpmb_state* state,
          */
         ret = rpmb_verify(state, buf, addr, count);
         if (ret < 0) {
-            fprintf(stderr, "rpmb write counter failure\n");
+            fprintf(stderr, "rpmb write verify failure\n");
             abort(); /* see comment in rpmb_write_data:err_sent */
         }
         state->first_write_complete = true;
