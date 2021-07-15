@@ -92,6 +92,8 @@ STATIC_ASSERT(offsetof(struct super_block, flags2) == 124);
 STATIC_ASSERT(sizeof(struct super_block) <= 128);
 STATIC_ASSERT(sizeof(struct super_block) >= 128);
 
+static struct list_node fs_list = LIST_INITIAL_VALUE(fs_list);
+
 /**
  * update_super_block - Generate and write superblock
  * @tr:         Transaction object.
@@ -112,6 +114,8 @@ bool update_super_block(struct transaction* tr,
     uint32_t block_size = tr->fs->super_dev->block_size;
 
     assert(block_size >= sizeof(struct super_block));
+    assert(tr->fs->initial_super_block_tr == NULL ||
+           tr->fs->initial_super_block_tr == tr);
 
     ver = (tr->fs->super_block_version + 1) & SUPER_BLOCK_FLAGS_VERSION_MASK;
     index = ver & SUPER_BLOCK_FLAGS_BLOCK_INDEX_MASK;
@@ -181,6 +185,47 @@ static bool write_initial_super_block(struct fs* fs) {
 
     transaction_init(tr, fs, true);
     return update_super_block(tr, NULL, NULL);
+}
+
+/**
+ * write_current_super_block - Write current superblock to internal transaction
+ * @fs:         File system state object.
+ *
+ * Write the current state of the super block to an internal transaction that
+ * will be written before any other block. This can be used to re-sync the
+ * in-memory fs-state with the on-disk state after detecting a write failure
+ * where no longer know the on-disk super block state.
+ */
+static void write_current_super_block(struct fs* fs) {
+    bool super_block_updated;
+    struct transaction* tr;
+
+    if (fs->initial_super_block_tr) {
+        /*
+         * If initial_super_block_tr is already set there is no need to allocate
+         * a new one so return early.
+         *
+         * Currently initial_super_block_tr can point to a failed transaction.
+         * If that is the case @fs will never be write-able again.
+         * TODO: Make sure initial_super_block_tr does not stay in a failed
+         * state.
+         */
+        return;
+    }
+    tr = calloc(1, sizeof(*tr));
+    if (!tr) {
+        /* Not safe to proceed. TODO: add flag to defer this allocation? */
+        abort();
+    }
+    fs->initial_super_block_tr = tr;
+
+    transaction_init(tr, fs, true);
+    super_block_updated =
+            update_super_block(tr, &fs->free.block_tree.root, &fs->files.root);
+    if (!super_block_updated) {
+        /* Not safe to proceed. TODO: add flag to try again? */
+        abort();
+    }
 }
 
 /**
@@ -464,6 +509,7 @@ int fs_init(struct fs* fs,
     list_initialize(&fs->transactions);
     list_initialize(&fs->allocated);
     fs->initial_super_block_tr = NULL;
+    list_add_tail(&fs_list, &fs->node);
 
     if (dev == super_dev) {
         fs->min_block_num = 2;
@@ -500,4 +546,21 @@ void fs_destroy(struct fs* fs) {
     }
     assert(list_is_empty(&fs->transactions));
     assert(list_is_empty(&fs->allocated));
+    list_delete(&fs->node);
+}
+
+/**
+ * fs_unknown_super_block_state_all - Notify filesystems of unknown disk state
+ *
+ * Call from other layers when detecting write failues that can cause the
+ * in-memory state of super blocks (or other block that we don't care about) to
+ * be different from the on-disk state. Write in-memory state to disk before
+ * writing any other block.
+ */
+void fs_unknown_super_block_state_all(void) {
+    struct fs* fs;
+    list_for_every_entry(&fs_list, fs, struct fs, node) {
+        /* TODO: filter out filesystems that are not affected? */
+        write_current_super_block(fs);
+    }
 }

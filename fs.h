@@ -37,6 +37,7 @@
 
 /**
  * struct fs - File system state
+ * @node:                           List node for fs_list.
  * @dev:                            Main block device.
  * @transactions:                   Transaction list.
  * @allocated:                      List of block sets containing blocks
@@ -63,6 +64,7 @@
  */
 
 struct fs {
+    struct list_node node;
     struct block_device* dev;
     struct list_node transactions;
     struct list_node allocated;
@@ -89,5 +91,7 @@ int fs_init(struct fs* fs,
             struct block_device* dev,
             struct block_device* super_dev,
             bool clear);
+
+void fs_unknown_super_block_state_all(void);
 
 void fs_destroy(struct fs* fs);

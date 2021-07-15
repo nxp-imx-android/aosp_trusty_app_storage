@@ -294,6 +294,28 @@ void transaction_complete(struct transaction* tr) {
     assert(block_range_empty(new_free_set.initial_range));
     check_free_tree(tr, &new_free_set);
 
+    if (block_mac_same_block(tr, &tr->fs->free.block_tree.root,
+                             &new_free_set.block_tree.root)) {
+        /*
+         * If the root block of the free tree did not move, there can be no
+         * other changes to the filesystem.
+         */
+        assert(block_mac_eq(tr, &tr->fs->free.block_tree.root,
+                            &new_free_set.block_tree.root));
+        assert(block_mac_eq(tr, &tr->fs->files.root, &new_files));
+
+        /*
+         * Skip super block write if there are no changes to the filesystem.
+         * This is needed in case a previous write error has triggered a request
+         * to write another copy of the old super block. There can only be one
+         * copy of each block in the cache. If we try to write a new super block
+         * here before cleaning the pending one, we get a conflict. If there
+         * were changes to the filesystem, the pending super block has already
+         * been cleaned at this point.
+         */
+        goto complete_nop_transaction;
+    }
+
     super_block_updated =
             update_super_block(tr, &new_free_set.block_tree.root, &new_files);
     if (!super_block_updated) {
@@ -307,7 +329,19 @@ void transaction_complete(struct transaction* tr) {
      * If an error was detected writing the super block, it is not safe to
      * continue as we do not know if the write completed.
      */
-    assert(!tr->failed);
+    if (tr->failed) {
+        pr_warn("failed to write super block, notify fs and abort\n");
+        /*
+         * Superblock could have been written or not. Make sure no other blocks
+         * are written to the filesystem before writing another copy of the
+         * superblock with the existing file and free trees.
+         *
+         * TODO: Don't trigger a superblock write on unaffected filesystems.
+         * We update all for now to simplify testing.
+         */
+        fs_unknown_super_block_state_all();
+        goto err_transaction_failed;
+    }
 
     tr->fs->free.block_tree.root = new_free_set.block_tree.root;
     block_range_clear(
@@ -316,6 +350,7 @@ void transaction_complete(struct transaction* tr) {
     tr->fs->files.root = new_files;
     tr->fs->super_block_version = tr->fs->written_super_block_version;
 
+complete_nop_transaction:
     transaction_delete_active(tr);
     tr->complete = true;
 

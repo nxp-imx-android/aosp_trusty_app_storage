@@ -105,6 +105,8 @@ static const struct key key;
 static bool print_test_verbose = false;
 static bool print_block_tree_test_verbose = false;
 
+data_block_t block_test_fail_write_blocks;
+
 static void block_test_start_read(struct block_device* dev,
                                   data_block_t block) {
     assert(dev->block_size <= BLOCK_SIZE);
@@ -120,7 +122,8 @@ static void block_test_start_write(struct block_device* dev,
     assert(block < countof(blocks));
     assert(data_size <= sizeof(blocks[block].data));
     memcpy(blocks[block].data, data, data_size);
-    block_cache_complete_write(dev, block, false);
+    block_cache_complete_write(dev, block,
+                               block < block_test_fail_write_blocks);
 }
 
 #if FULL_ASSERT
@@ -845,6 +848,20 @@ static void allocate_all_test(struct transaction* tr) {
     assert(tr->failed);
     transaction_complete(tr);
     transaction_activate(tr);
+}
+
+static void super_block_write_failure_test(struct transaction* tr) {
+    data_block_t block1 = block_allocate(tr);
+    /* trigger a superblock write failure */
+    block_test_fail_write_blocks = 2;
+    transaction_complete(tr);
+    block_test_fail_write_blocks = 0;
+    assert(tr->failed);
+    transaction_activate(tr);
+    assert(block_allocate(tr) == block1);
+    transaction_complete(tr);
+    transaction_activate(tr);
+    block_free(tr, block1);
 }
 
 static void open_test_file_etc(struct transaction* tr,
@@ -1746,6 +1763,7 @@ struct {
         TEST(free_2_transactions_same_test_2),
         TEST(allocate_all_test),
         TEST(block_tree_allocate_all_test),
+        TEST(super_block_write_failure_test),
         TEST(file_create1_small_test),
         TEST(file_write1_small_test),
         TEST(file_delete1_small_test),
