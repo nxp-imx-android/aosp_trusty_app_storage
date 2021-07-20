@@ -13,6 +13,6 @@
 # limitations under the License.
 #
 
-TRUSTY_ALL_USER_TASKS += \
+TRUSTY_USER_TESTS += \
 	trusty/user/app/storage/test/storage-unittest \
 
