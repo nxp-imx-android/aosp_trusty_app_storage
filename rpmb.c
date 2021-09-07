@@ -393,17 +393,24 @@ static int rpmb_write_data(struct rpmb_state* state,
         cmd[i].req_resp = rpmb_u16(RPMB_REQ_DATA_WRITE);
     }
     ret = rpmb_mac(state->key, cmd, count, &cmd[count - 1].key_mac);
-    if (ret < 0)
+    if (ret < 0) {
+        fprintf(stderr, "rpmb command mac failed\n");
         return ret;
+    }
 
     ret = rpmb_send(state->mmc_handle, cmd, sizeof(cmd[0]) * count, &rescmd,
                     sizeof(rescmd), &res, sizeof(res), sync);
-    if (ret < 0)
+    if (ret < 0) {
+        fprintf(stderr, "rpmb send failed: %d, result: %hu\n", ret,
+                rpmb_get_u16(res.result));
         goto err_sent;
+    }
 
     ret = rpmb_mac(state->key, &res, 1, &mac);
-    if (ret < 0)
+    if (ret < 0) {
+        fprintf(stderr, "rpmb response mac failed\n");
         goto err_sent;
+    }
 
     rpmb_dprintf(
             "rpmb: write data, addr %d, count %d, write_counter %d, response\n",
@@ -422,6 +429,8 @@ static int rpmb_write_data(struct rpmb_state* state,
             fprintf(stderr, "rpmb write counter failure\n");
             abort(); /* see comment in err_sent */
         }
+        fprintf(stderr, "rpmb_check_response_failed: %d, result: %hu\n", ret,
+                rpmb_get_u16(res.result));
         goto err_sent;
     }
 
@@ -478,6 +487,8 @@ err_sent:
      * 2.2. The same block number and counter has not already been sent.
      * We are back to a normal state.
      */
+    fprintf(stderr, "rpmb: write failed for write counter %u\n",
+            state->write_counter);
     state->first_write_complete = false;
     return ret;
 }
