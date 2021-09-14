@@ -864,6 +864,28 @@ static void super_block_write_failure_test(struct transaction* tr) {
     block_free(tr, block1);
 }
 
+/* Test that block_put_dirty_discard actually drops the reference */
+static void block_put_dirty_discard_test(struct transaction* tr) {
+    struct obj_ref super_ref = OBJ_REF_INITIAL_VALUE(super_ref);
+    struct fs* fs = tr->fs;
+    const void* super_ro;
+    uint32_t* super_rw;
+    data_block_t block;
+
+    block = tr->fs->super_block[fs->super_block_version & 1];
+    super_ro = block_get_super(fs, block, &super_ref);
+    assert(super_ro);
+    super_rw = block_dirty(tr, super_ro, false);
+    assert(super_rw);
+    /*
+     * As part of dropping the dirty block we need to clear it from the block
+     * cache with block_cache_entry_discard_dirty, which requires that the block
+     * not have any active references. Verify that block_put_dirty_discard drops
+     * super_ref before trying to drop the block itself.
+     */
+    block_put_dirty_discard(super_rw, &super_ref);
+}
+
 static void open_test_file_etc(struct transaction* tr,
                                struct file_handle* file,
                                const char* path,
@@ -1764,6 +1786,7 @@ struct {
         TEST(allocate_all_test),
         TEST(block_tree_allocate_all_test),
         TEST(super_block_write_failure_test),
+        TEST(block_put_dirty_discard_test),
         TEST(file_create1_small_test),
         TEST(file_write1_small_test),
         TEST(file_delete1_small_test),

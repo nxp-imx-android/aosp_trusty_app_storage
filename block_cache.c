@@ -1150,8 +1150,8 @@ void block_put_dirty_no_mac(void* data, struct obj_ref* data_ref) {
  * Similar to block_put_dirty except data can be discarded.
  */
 void block_put_dirty_discard(void* data, struct obj_ref* data_ref) {
-    block_discard_dirty(data);
     block_put_dirty_etc(NULL, data, data_ref, NULL, NULL);
+    block_discard_dirty(data);
 }
 
 /**
