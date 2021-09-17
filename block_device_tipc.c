@@ -152,6 +152,17 @@ static void block_device_tipc_rpmb_start_read(struct block_device* dev,
     block_cache_complete_read(dev, block, tmp, BLOCK_SIZE_RPMB, !!ret);
 }
 
+static inline enum block_write_error translate_write_error(int rc) {
+    switch (rc) {
+    case 0:
+        return BLOCK_WRITE_SUCCESS;
+    case -EUCLEAN:
+        return BLOCK_WRITE_FAILED_UNKNOWN_STATE;
+    default:
+        return BLOCK_WRITE_FAILED;
+    }
+}
+
 static void block_device_tipc_rpmb_start_write(struct block_device* dev,
                                                data_block_t block,
                                                const void* data,
@@ -172,7 +183,7 @@ static void block_device_tipc_rpmb_start_write(struct block_device* dev,
     SS_DBG_IO("%s: block %" PRIu64 ", base %d, rpmb_block %d, ret %d\n",
               __func__, block, dev_rpmb->base, rpmb_block, ret);
 
-    block_cache_complete_write(dev, block, !!ret);
+    block_cache_complete_write(dev, block, translate_write_error(ret));
 }
 
 static void block_device_tipc_rpmb_wait_for_io(struct block_device* dev) {
@@ -210,7 +221,9 @@ static void block_device_tipc_ns_start_write(struct block_device* dev,
                        block * BLOCK_SIZE_MAIN, data, data_size,
                        dev_ns->is_userdata);
     SS_DBG_IO("%s: block %" PRIu64 ", ret %d\n", __func__, block, ret);
-    block_cache_complete_write(dev, block, ret != BLOCK_SIZE_MAIN);
+    block_cache_complete_write(
+            dev, block,
+            ret == BLOCK_SIZE_MAIN ? BLOCK_WRITE_SUCCESS : BLOCK_WRITE_FAILED);
 }
 
 static void block_device_tipc_ns_wait_for_io(struct block_device* dev) {

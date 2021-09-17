@@ -200,7 +200,7 @@ void block_cache_complete_read(struct block_device* dev,
  */
 void block_cache_complete_write(struct block_device* dev,
                                 data_block_t block,
-                                bool failed) {
+                                enum block_write_error res) {
     struct block_cache_entry* entry;
 
     entry = block_cache_pop_io_op(dev, block, BLOCK_CACHE_IO_OP_WRITE);
@@ -209,7 +209,10 @@ void block_cache_complete_write(struct block_device* dev,
                entry->block);
     }
     assert(entry->dirty_tr);
-    if (failed) {
+    if (res == BLOCK_WRITE_SUCCESS) {
+        entry->dirty_tr = NULL;
+        entry->pinned = false;
+    } else {
         pr_err("write block %" PRIu64 " failed, fail transaction\n",
                entry->block);
         transaction_fail(entry->dirty_tr);
@@ -220,9 +223,15 @@ void block_cache_complete_write(struct block_device* dev,
          * cache entry when reinitializing a special transaction.
          */
         assert(block == entry->block);
-    } else {
-        entry->dirty_tr = NULL;
-        entry->pinned = false;
+
+        if (res == BLOCK_WRITE_FAILED_UNKNOWN_STATE) {
+            /*
+             * We don't know what was written, force superblock to be rewritten.
+             * This must be done after we have failed the transaction in case we
+             * need to reuse block that was part of this transaction.
+             */
+            fs_unknown_super_block_state_all();
+        }
     }
 }
 
@@ -355,6 +364,14 @@ static void block_cache_entry_clean(struct block_cache_entry* entry) {
     /* TODO: release ref to parent */
 
     assert(entry->dirty_tr);
+    /*
+     * We have to save the current transaction for this entry because we need it
+     * to check for transaction failure after queueing the write. Transactions
+     * are managed by the storage client layer, and thus will outlive this
+     * function, which is internal to the block cache.
+     */
+    struct transaction* tr = entry->dirty_tr;
+
     assert(entry->dirty_tr->fs);
     struct transaction* itr = entry->dirty_tr->fs->initial_super_block_tr;
     /*
@@ -384,7 +401,23 @@ static void block_cache_entry_clean(struct block_cache_entry* entry) {
     }
 
     block_cache_queue_write(entry, entry->data);
-    entry->dirty = false;
+
+    /*
+     * If we fail the transaction in block_cache_complete_write(), which is
+     * currently called during block_cache_queue_write(), we will clear the
+     * dirty flag on all cache entries associate with the transaction, including
+     * the one we're currently trying to clean.
+     *
+     * We can't redundantly clear the flag again here if the transaction has
+     * failed, because the write failure may have forced us to trigger
+     * fs_unknown_super_block_state_all(). Triggering this function creates
+     * writes for the current superblock state of each filesystem, and this may
+     * have reused the (now) clean entry we are trying to clean. If so,
+     * entry->dirty must stay set.
+     */
+    if (!tr->failed) {
+        entry->dirty = false;
+    }
 }
 
 /**
@@ -461,90 +494,129 @@ static struct block_cache_entry* block_cache_lookup(struct fs* fs,
     assert(fs || !allocate);
 
     stats_timer_start(STATS_CACHE_LOOKUP);
-    list_for_every_entry(&block_cache_lru, entry, struct block_cache_entry,
-                         lru_node) {
-        assert(entry->guard1 == BLOCK_CACHE_GUARD_1);
-        assert(entry->guard2 == BLOCK_CACHE_GUARD_2);
-        if (entry->dev == dev && entry->block == block) {
+    /*
+     * We may need to attempt to find and flush a cache entry multiple times
+     * before finding one that we could successfully use that was not reused
+     * during the clean. This relies on the block cache being large enough to
+     * hold a super block for each filesystem plus all currently referenced
+     * blocks (which is less than the maximum block path length). We cap the
+     * number of retries here to avoid an infinite loop, but we should only need
+     * one retry attempt since the block cache is LRU and the fresh super block
+     * will be the most recently used entry.
+     */
+    for (int retry = 0; retry < BLOCK_CACHE_SIZE; ++retry) {
+        unused_entry = NULL;
+        unused_entry_score = 0;
+        available = 0;
+        in_use = 0;
+
+        list_for_every_entry(&block_cache_lru, entry, struct block_cache_entry,
+                             lru_node) {
+            assert(entry->guard1 == BLOCK_CACHE_GUARD_1);
+            assert(entry->guard2 == BLOCK_CACHE_GUARD_2);
+            if (entry->dev == dev && entry->block == block) {
+                if (print_cache_lookup) {
+                    printf("%s: block %" PRIu64
+                           ", found cache entry %zd, loaded %d, dirty %d\n",
+                           __func__, block, entry - block_cache_entries,
+                           entry->loaded, entry->dirty);
+                }
+                stats_timer_start(STATS_CACHE_LOOKUP_FOUND);
+                stats_timer_stop(STATS_CACHE_LOOKUP_FOUND);
+                goto done;
+            }
+            /*
+             * Do not select any cache entries that have active references as
+             * they aren't ready to flush, and do not select any pinned entries.
+             * Pinned entries can only be flushed by
+             * transaction_initial_super_block_complete() and may not be flushed
+             * by another transaction. We need to keep special superblock writes
+             * pinned in the cache because otherwise we might fill the cache up
+             * with other data, flushing the special superblock, which might
+             * fail to write. In this case we would leave no room to recreate
+             * the write later, since the cache is full of data which can't be
+             * flushed until the initial superblock write is completed.
+             */
+            if (!block_cache_entry_has_refs(entry) && !entry->pinned) {
+                score = block_cache_entry_score(entry, available);
+                available++;
+                if (score >= unused_entry_score) {
+                    unused_entry = entry;
+                    unused_entry_score = score;
+                }
+                if (print_cache_lookup_verbose) {
+                    printf("%s: block %" PRIu64
+                           ", cache entry %zd available last used for %" PRIu64
+                           "\n",
+                           __func__, block, entry - block_cache_entries,
+                           entry->block);
+                }
+            } else {
+                /*
+                 * Pinned entries must have a valid block number so they can be
+                 * reused.
+                 */
+                if (entry->pinned) {
+                    assert(entry->block != DATA_BLOCK_INVALID);
+                }
+                if (print_cache_lookup_verbose) {
+                    printf("%s: block %" PRIu64
+                           ", cache entry %zd in use for %" PRIu64 "\n",
+                           __func__, block, entry - block_cache_entries,
+                           entry->block);
+                }
+                in_use++;
+            }
+        }
+        entry = unused_entry;
+
+        if (!entry || !allocate) {
             if (print_cache_lookup) {
                 printf("%s: block %" PRIu64
-                       ", found cache entry %zd, loaded %d, dirty %d\n",
-                       __func__, block, entry - block_cache_entries,
-                       entry->loaded, entry->dirty);
+                       ", no available entries, %u in use, allocate %d\n",
+                       __func__, block, in_use, allocate);
             }
-            stats_timer_start(STATS_CACHE_LOOKUP_FOUND);
-            stats_timer_stop(STATS_CACHE_LOOKUP_FOUND);
+            entry = NULL;
             goto done;
         }
-        /*
-         * Do not select any cache entries that have active references as they
-         * aren't ready to flush, and do not select any pinned entries. Pinned
-         * entries can only be flushed by
-         * transaction_initial_super_block_complete() and may not be flushed by
-         * another transaction. We need to keep special superblock writes pinned
-         * in the cache because otherwise we might fill the cache up with other
-         * data, flushing the special superblock, which might fail to write. In
-         * this case we would leave no room to recreate the write later, since
-         * the cache is full of data which can't be flushed until the initial
-         * superblock write is completed.
-         */
-        if (!block_cache_entry_has_refs(entry) && !entry->pinned) {
-            score = block_cache_entry_score(entry, available);
-            available++;
-            if (score >= unused_entry_score) {
-                unused_entry = entry;
-                unused_entry_score = score;
-            }
-            if (print_cache_lookup_verbose) {
-                printf("%s: block %" PRIu64
-                       ", cache entry %zd available last used for %" PRIu64
-                       "\n",
-                       __func__, block, entry - block_cache_entries,
-                       entry->block);
-            }
-        } else {
-            /*
-             * Pinned entries must have a valid block number so they can be
-             * reused.
-             */
-            if (entry->pinned) {
-                assert(entry->block != DATA_BLOCK_INVALID);
-            }
-            if (print_cache_lookup_verbose) {
-                printf("%s: block %" PRIu64
-                       ", cache entry %zd in use for %" PRIu64 "\n",
-                       __func__, block, entry - block_cache_entries,
-                       entry->block);
-            }
-            in_use++;
-        }
-    }
-    entry = unused_entry;
 
-    if (!entry || !allocate) {
         if (print_cache_lookup) {
             printf("%s: block %" PRIu64
-                   ", no available entries, %u in use, allocate %d\n",
-                   __func__, block, in_use, allocate);
+                   ", use cache entry %zd, dirty %d, %u available, %u in_use\n",
+                   __func__, block, entry - block_cache_entries, entry->dirty,
+                   available, in_use);
         }
-        entry = NULL;
-        goto done;
-    }
 
-    if (print_cache_lookup) {
-        printf("%s: block %" PRIu64
-               ", use cache entry %zd, dirty %d, %u available, %u in_use\n",
-               __func__, block, entry - block_cache_entries, entry->dirty,
-               available, in_use);
-    }
+        assert(!entry->dirty_ref);
 
-    assert(!entry->dirty_ref);
+        if (entry->dirty) {
+            stats_timer_start(STATS_CACHE_LOOKUP_CLEAN);
+            block_cache_entry_clean(entry);
+            block_cache_complete_io(entry->dev);
+            stats_timer_stop(STATS_CACHE_LOOKUP_CLEAN);
+        }
 
-    if (entry->dirty) {
-        stats_timer_start(STATS_CACHE_LOOKUP_CLEAN);
-        block_cache_entry_clean(entry);
-        block_cache_complete_io(entry->dev);
-        stats_timer_stop(STATS_CACHE_LOOKUP_CLEAN);
+        /*
+         * The chosen entry we are flushing can't have been a special superblock
+         * write because we do not select pinned entries, however, any RPMB data
+         * write may create a new pinned superblock entry if the RPMB write
+         * failed but the write counter was incremented. In this case
+         * block_cache_entry_clean() will create a new superblock write by
+         * calling fs_unknown_super_block_state_all(). This new write may reuse
+         * the block cache entry we just chose and cleaned, resulting in our
+         * chosen entry now being pinned for a different transaction. In this
+         * case we restart the search for a cache entry and try to pick (and if
+         * needed clean) a new entry.
+         */
+
+        if (!entry->pinned) {
+            /* We found a clean entry to use */
+            break;
+        }
+
+        pr_warn("%s: Retrying attempt to lookup and (if needed) free a block cache entry. "
+                "Entry block %" PRIu64 " was reused during cleaning.\n",
+                __func__, entry->block);
     }
     assert(!entry->dirty);
     assert(!entry->dirty_mac);
@@ -823,8 +895,15 @@ void block_cache_clean_transaction(struct transaction* tr) {
         stats_timer_start(STATS_CACHE_CLEAN_TRANSACTION_ENT_CLN);
         block_cache_entry_clean(entry);
         stats_timer_stop(STATS_CACHE_CLEAN_TRANSACTION_ENT_CLN);
-        assert(!entry->dirty);
-        assert(!entry->dirty_tr);
+        assert(entry->dirty_tr != tr);
+        if (!tr->failed) {
+            /*
+             * If the write failed we may have reused this block cache entry for
+             * a super block write and it therefore might not be clean.
+             */
+            assert(!entry->dirty);
+            assert(!entry->dirty_tr);
+        }
     }
 
     if (dev) {

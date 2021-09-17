@@ -327,10 +327,16 @@ void transaction_complete(struct transaction* tr) {
 
     /*
      * If an error was detected writing the super block, it is not safe to
-     * continue as we do not know if the write completed.
+     * continue as we do not know if the write completed. We need to rewrite a
+     * known state over the unknown super block to avoid an inconsistent view of
+     * the filesystem.
+     *
+     * At this point block_cache_complete_write has been called by the block
+     * device, so the current superblock slot in the block cache is free and not
+     * associated with the pending transaction.
      */
     if (tr->failed) {
-        pr_warn("failed to write super block, notify fs and abort\n");
+        pr_warn("failed to write super block, notify fs and abort the transaction\n");
         /*
          * Superblock could have been written or not. Make sure no other blocks
          * are written to the filesystem before writing another copy of the

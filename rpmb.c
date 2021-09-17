@@ -383,6 +383,41 @@ int rpmb_verify(struct rpmb_state* state,
     return rpmb_read_data(state, buf, NULL, addr, count, &mac);
 }
 
+/**
+ * check_write_counter() - Check that the write counter matches
+ *                         @expected_write_counter
+ * @state:                  Current RPMB state
+ * @expected_write_counter: Write counter we expect
+ *
+ * Return: %true if the write counter is confirmed to be
+ *         @expected_write_counter
+ */
+static bool check_write_counter(struct rpmb_state* state,
+                                uint32_t expected_write_counter) {
+    /*
+     * Query the RPMB chip for the current write counter. Although there was
+     * some sort of exceptional condition, we don't actually know if a
+     * write went through and therefore the counter was incremented.
+     */
+    int ret;
+    uint32_t new_write_counter = 0;
+    ret = rpmb_read_counter_retry(state, &new_write_counter);
+    if (ret == 0) {
+        if (new_write_counter == expected_write_counter) {
+            return true;
+        } else {
+            fprintf(stderr,
+                    "%s: Could not resync write counter. "
+                    "expected write counter: %u, queried write counter: %u\n",
+                    __func__, expected_write_counter, new_write_counter);
+        }
+    } else {
+        fprintf(stderr, "%s: rpmb_read_counter failed: %d\n", __func__, ret);
+    }
+
+    return false;
+}
+
 static int rpmb_write_data(struct rpmb_state* state,
                            const char* buf,
                            uint16_t addr,
@@ -443,12 +478,22 @@ static int rpmb_write_data(struct rpmb_state* state,
     ret = rpmb_check_response("write data", RPMB_RESP_DATA_WRITE, &res, 1, &mac,
                               NULL, &addr, state->write_counter + 1);
     if (ret < 0) {
-        if (rpmb_get_u16(res.result) == RPMB_RES_COUNT_FAILURE) {
-            fprintf(stderr, "rpmb write counter failure\n");
-            abort(); /* see comment in err_sent */
-        }
         fprintf(stderr, "rpmb_check_response_failed: %d, result: %hu\n", ret,
                 rpmb_get_u16(res.result));
+        if (check_write_counter(state, state->write_counter + 1)) {
+            state->write_counter++;
+
+            fprintf(stderr,
+                    "Write was committed with failed response. New write counter: %u\n",
+                    state->write_counter);
+
+            /*
+             * Indicate to block device that the FS state is unknown and a clean
+             * superblock must be written.
+             */
+            ret = -EUCLEAN;
+        }
+
         goto err_sent;
     }
 
@@ -458,34 +503,55 @@ static int rpmb_write_data(struct rpmb_state* state,
 
 err_sent:
     /*
-     * An error occurred after the write requestst was sent. An attacker might
+     * An error occurred after the write request was sent. An attacker might
      * have saved this write request and might send it to the rpmb device at
      * any time. Any other write with this write counter value now needs extra
-     * checks to make sure there is no corruption:
+     * checks to make sure there is no corruption.
      *
      * 1. The next write fails.
      *
      * 1.1. The failure is a count failure.
      * A write operation that was previously reported as an error must have
      * actually been written. The filesystem may now be in a state where is it
-     * not safe to write any other block.
+     * not safe to write any other block. The write that actually went through
+     * may have been from a previous write attempt, so we don't know the current
+     * state.
+     *
+     * We pass BLOCK_WRITE_FAILED_UNKNOWN_STATE to block_cache_complete_write()
+     * in this case which causes the block device to queue writes of all
+     * filesystem superblocks before doing any new writes.
      *
      * 1.1.1. The block actually written was a super-block.
      * This means a transaction was committed to disk that the file-system code
-     * think was aborted. The in-memory view of free blocks will not match the
+     * thought was aborted. The in-memory view of free blocks will not match the
      * on disk state. It is not safe to proceed with any other write operations
-     * in this state as the file-system could pick an block to write to that is
+     * in this state as the file-system could pick a block to write to that is
      * not actually free until the super block gets updated again with the
      * in-memory state.
      *
+     * We mitigate this case by immediately rewriting a new, valid super-block
+     * with the current in-memory (i.e. not including the current, failing
+     * transaction) state when a super-block write fails. If this second write
+     * fails, we are left with a failed transaction in fs->inital_super_block_tr
+     * and all future writes to this filesystem will fail. If it succeeds we
+     * validate the write in 2.1 below. If the device reboots before completing
+     * the second super-block write attempt, a malicious host can replay this
+     * block on a later boot. In the case of TD filesystems, this can cause
+     * detectable filesystem corruption as data blocks may not match the
+     * super-block now, however, that is allowed. For TP filesystems, the next
+     * data write will be validated as it is the first RPMB write after boot,
+     * and if it fails we abort the service (2.1.1), forcing a reboot and
+     * re-initializing the filesystem state from the now committed super-block.
+     *
+     * It's worth noting that in this case, we may have sent a failed response
+     * to a client for a transaction that was eventually committed.
+     *
      * 1.1.2. The block actually written was a data block.
-     * It might be possible to recover from this state (by incrementing the
-     * write counter by one) as any transaction that used that block should have
-     * already been aborted. The rpmb layer does not currently know if the
-     * write requests are for super blocks or data blocks though, so we can't
-     * currently know if we are in this state. The count failure would also have
-     * to be authenticated as otherwise an attacker could report a fake count
-     * failure to get write requests with more than one counter value.
+     *
+     * The write must have been to a block that was free, and the transaction
+     * that block was part of could never have been committed. We don't actually
+     * care about this write, but we rewrite the superblock as described in
+     * 1.1.1. because we can't know what was written.
      *
      * 1.2. The failure is not reported as count failure.
      * This can be handled the same way as the inital failure. We now have one
@@ -497,7 +563,8 @@ err_sent:
      * 2.1. The same block number and counter value has already been sent.
      * This success status cannot be trusted. We read back the data to verify.
      * 2.1.1. Verify failed.
-     * This has the same effect as 1.1.
+     * This has the same effect as 1.1. We currently abort here because it is
+     * not safe to recover from this state in a TP filesystem.
      *
      * 2.1.2. Verify passed.
      * We are back to a normal state.
@@ -547,11 +614,14 @@ int rpmb_write(struct rpmb_state* state,
          */
         ret = rpmb_verify(state, buf, addr, count);
         if (ret < 0) {
-            fprintf(stderr, "rpmb write verify failure\n");
+            fprintf(stderr,
+                    "rpmb write verify failure: %d, addr: %hu, count: %hu\n",
+                    ret, addr, count);
             abort(); /* see comment in rpmb_write_data:err_sent */
         }
         state->first_write_complete = true;
     }
+
     return 0;
 }
 
@@ -586,6 +656,11 @@ int rpmb_init(struct rpmb_state** statep, void* mmc_handle) {
 
     state->mmc_handle = mmc_handle;
     state->write_counter = RPMB_WRITE_COUNTER_EXPIRED_VALUE;
+    /*
+     * We don't know if the last write before reboot completed successfully.
+     * There may be writes for the current write counter that can be replayed at
+     * this point, so we need to validate our next write.
+     */
     state->first_write_complete = false;
 
     *statep = state;

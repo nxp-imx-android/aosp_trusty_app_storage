@@ -288,6 +288,9 @@ void write_current_super_block(struct fs* fs, bool reinitialize) {
     }
     if (!super_block_updated) {
         /* Not safe to proceed. TODO: add flag to try again? */
+        fprintf(stderr,
+                "Could not create pending write for current superblock state. "
+                "Not safe to proceed.\n");
         abort();
     }
 }

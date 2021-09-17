@@ -123,7 +123,9 @@ static void block_test_start_write(struct block_device* dev,
     assert(data_size <= sizeof(blocks[block].data));
     memcpy(blocks[block].data, data, data_size);
     block_cache_complete_write(dev, block,
-                               block < block_test_fail_write_blocks);
+                               block < block_test_fail_write_blocks
+                                       ? BLOCK_WRITE_FAILED
+                                       : BLOCK_WRITE_SUCCESS);
 }
 
 #if FULL_ASSERT

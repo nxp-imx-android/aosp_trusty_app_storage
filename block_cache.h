@@ -32,9 +32,15 @@ void block_cache_complete_read(struct block_device* dev,
                                size_t data_size,
                                bool failed);
 
+enum block_write_error {
+    BLOCK_WRITE_SUCCESS = 0,
+    BLOCK_WRITE_FAILED,
+    BLOCK_WRITE_FAILED_UNKNOWN_STATE,
+};
+
 void block_cache_complete_write(struct block_device* dev,
                                 data_block_t block,
-                                bool failed);
+                                enum block_write_error res);
 
 void block_cache_init(void);
 
