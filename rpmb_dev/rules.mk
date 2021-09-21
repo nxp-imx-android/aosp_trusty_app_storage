@@ -19,6 +19,7 @@ HOST_TOOL_NAME := rpmb_dev
 
 HOST_SRCS := \
 	$(LOCAL_DIR)/../crypt.c \
+	$(LOCAL_DIR)/main.c \
 	$(LOCAL_DIR)/rpmb_dev.c \
 
 HOST_FLAGS := -DBUILD_STORAGE_TEST=1
