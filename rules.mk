@@ -87,7 +87,7 @@ MODULE_LIBRARY_DEPS := \
 	external/boringssl \
 
 MODULE_DEPS += \
-	trusty/user/app/storage/test \
+	trusty/user/app/storage/test/block_host_test \
 
 include make/trusted_app.mk
 

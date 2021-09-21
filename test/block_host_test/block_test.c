@@ -25,14 +25,14 @@
 
 #include <openssl/rand.h>
 
-#include "../block_allocator.h"
-#include "../block_cache.h"
-#include "../block_map.h"
-#include "../block_set.h"
-#include "../crypt.h"
-#include "../debug_stats.h"
-#include "../file.h"
-#include "../transaction.h"
+#include "block_allocator.h"
+#include "block_cache.h"
+#include "block_map.h"
+#include "block_set.h"
+#include "crypt.h"
+#include "debug_stats.h"
+#include "file.h"
+#include "transaction.h"
 
 #include <time.h>
 
@@ -689,6 +689,7 @@ static void free_test_etc(struct transaction* tr,
     transaction_free(&tr2);
 }
 
+/* clang-format off */
 enum {
     test_free_start = BLOCK_SIZE > 112 ? 20 : 200,
     test_free_split = test_free_start + (BLOCK_SIZE > 112 ? 60 : 20),
@@ -700,6 +701,7 @@ enum {
     allocated_size = BLOCK_SIZE > 128 ? 40 : 10,
     allocated2_size = BLOCK_SIZE > 64 ? allocated_size : 4,
 };
+/* clang-format on */
 static data_block_t allocated[allocated_size];
 static data_block_t allocated2[allocated2_size];
 

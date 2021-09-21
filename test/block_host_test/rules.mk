@@ -14,23 +14,27 @@
 #
 
 LOCAL_DIR := $(GET_LOCAL_DIR)
+STORAGE_DIR := $(LOCAL_DIR)/../..
 
-HOST_TEST := storage_test
+HOST_TEST := storage_block_test
 
 HOST_SRCS := \
-	$(LOCAL_DIR)/../block_allocator.c \
-	$(LOCAL_DIR)/../block_cache.c \
-	$(LOCAL_DIR)/../block_mac.c \
-	$(LOCAL_DIR)/../block_map.c \
-	$(LOCAL_DIR)/../block_set.c \
-	$(LOCAL_DIR)/../block_tree.c \
-	$(LOCAL_DIR)/../crypt.c \
-	$(LOCAL_DIR)/../file.c \
-	$(LOCAL_DIR)/../super.c \
-	$(LOCAL_DIR)/../transaction.c \
+	$(STORAGE_DIR)/block_allocator.c \
+	$(STORAGE_DIR)/block_cache.c \
+	$(STORAGE_DIR)/block_mac.c \
+	$(STORAGE_DIR)/block_map.c \
+	$(STORAGE_DIR)/block_set.c \
+	$(STORAGE_DIR)/block_tree.c \
+	$(STORAGE_DIR)/crypt.c \
+	$(STORAGE_DIR)/file.c \
+	$(STORAGE_DIR)/super.c \
+	$(STORAGE_DIR)/transaction.c \
 	$(LOCAL_DIR)/block_test.c \
 
 HOST_FLAGS := -DBUILD_STORAGE_TEST=1
+
+HOST_INCLUDE_DIRS += \
+	$(STORAGE_DIR)
 
 HOST_LIBS := \
 	m \
