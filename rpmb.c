@@ -36,6 +36,8 @@
 #define RPMB_PROTOCOL_MMC 1
 #define RPMB_PROTOCOL_UFS 2
 
+#define RPMB_READ_COUNTER_MAX_RETRIES 3
+
 #if RPMB_PROTOCOL != RPMB_PROTOCOL_MMC && RPMB_PROTOCOL != RPMB_PROTOCOL_UFS
 #error "invalid RPMB_PROTOCOL!"
 #endif
@@ -263,6 +265,21 @@ static int rpmb_read_counter(struct rpmb_state* state,
         *write_counter = rpmb_get_u32(res.write_counter);
 
     return 0;
+}
+
+static int rpmb_read_counter_retry(struct rpmb_state* state,
+                                   uint32_t* write_counter) {
+    int retries;
+    int ret = 0;
+    for (retries = 0; retries < RPMB_READ_COUNTER_MAX_RETRIES; retries++) {
+        ret = rpmb_read_counter(state, write_counter);
+        if (ret >= 0) {
+            return ret;
+        }
+    }
+
+    /* Return the last error */
+    return ret;
 }
 
 static int rpmb_read_data(struct rpmb_state* state,
@@ -545,9 +562,12 @@ void rpmb_set_key(struct rpmb_state* state, const struct rpmb_key* key) {
      * attacker writes to a super block after we read it, but before we read the
      * write counter, or next write would succeed without us detecting that the
      * in-memory super block does not match the on-disk state.
+     *
+     * We retry reading the write counter several times because
+     * we occasionally get an incorrect response
      */
     int ret;
-    ret = rpmb_read_counter(state, &state->write_counter);
+    ret = rpmb_read_counter_retry(state, &state->write_counter);
     if (ret < 0) {
         fprintf(stderr, "failed to read rpmb write counter\n");
         /*
