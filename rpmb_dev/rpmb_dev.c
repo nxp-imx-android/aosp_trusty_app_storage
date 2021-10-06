@@ -125,6 +125,15 @@ static uint16_t rpmb_dev_program_key(struct rpmb_dev_state* s) {
 }
 
 static uint16_t rpmb_dev_get_counter(struct rpmb_dev_state* s) {
+    if (s->fail_next_get_counters > 0) {
+        if (verbose) {
+            fprintf(stderr,
+                    "rpmb_dev: failing to get RPMB counter as requested by debug state\n");
+        }
+        s->fail_next_get_counters--;
+        return RPMB_RES_COUNT_FAILURE;
+    }
+
     s->res[0].write_counter = rpmb_u32(s->header.write_counter);
 
     return RPMB_RES_OK;
@@ -135,6 +144,15 @@ static uint16_t rpmb_dev_data_write(struct rpmb_dev_state* s) {
     uint16_t block_count = s->cmd_count;
     uint32_t write_counter;
     int ret;
+
+    if (s->fail_next_writes > 0 && !s->commit_failed_writes) {
+        if (verbose) {
+            fprintf(stderr,
+                    "rpmb_dev: failing write as requested by debug state\n");
+        }
+        s->fail_next_writes--;
+        return RPMB_RES_WRITE_FAILURE;
+    }
 
     if (s->header.write_counter == MAX_WRITE_COUNTER) {
         if (verbose) {
@@ -171,6 +189,15 @@ static uint16_t rpmb_dev_data_write(struct rpmb_dev_state* s) {
 
     s->header.write_counter++;
 
+    if (s->fail_next_writes > 0) {
+        if (verbose) {
+            fprintf(stderr,
+                    "rpmb_dev: Failing write after commit as requested by debug state\n");
+        }
+        s->fail_next_writes--;
+        return RPMB_RES_WRITE_FAILURE;
+    }
+
     ret = lseek(s->data_fd, 0, SEEK_SET);
     if (ret) {
         fprintf(stderr, "rpmb_dev: Failed to seek rpmb data file\n");
@@ -195,6 +222,15 @@ static uint16_t rpmb_dev_data_read(struct rpmb_dev_state* s) {
     uint16_t addr;
     uint16_t block_count;
     int ret;
+
+    if (s->fail_next_reads > 0) {
+        if (verbose) {
+            fprintf(stderr,
+                    "rpmb_dev: failing read as requested by debug state\n");
+        }
+        s->fail_next_reads--;
+        return RPMB_RES_READ_FAILURE;
+    }
 
     addr = rpmb_get_u16(s->cmd[0].address);
     block_count = s->res_count;

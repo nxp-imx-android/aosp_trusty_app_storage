@@ -39,6 +39,10 @@ struct rpmb_dev_state {
     uint16_t cmd_count;
     uint16_t res_count;
     int data_fd;
+    int fail_next_writes;
+    bool commit_failed_writes;
+    int fail_next_reads;
+    int fail_next_get_counters;
 };
 
 void rpmb_dev_process_cmd(struct rpmb_dev_state* s);
