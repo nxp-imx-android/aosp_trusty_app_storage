@@ -213,7 +213,7 @@ int rpmb_program_key(struct rpmb_state* state, const struct rpmb_key* key) {
     memcpy(cmd.key_mac.byte, key->byte, sizeof(cmd.key_mac.byte));
 
     ret = rpmb_send(state->mmc_handle, &cmd, sizeof(cmd), &rescmd,
-                    sizeof(rescmd), &res, sizeof(res), false);
+                    sizeof(rescmd), &res, sizeof(res), false, false);
     if (ret < 0)
         return ret;
 
@@ -241,7 +241,7 @@ static int rpmb_read_counter(struct rpmb_state* state,
     struct rpmb_packet res;
 
     ret = rpmb_send(state->mmc_handle, NULL, 0, &cmd, sizeof(cmd), &res,
-                    sizeof(res), false);
+                    sizeof(res), false, false);
     if (ret < 0)
         return ret;
 
@@ -309,7 +309,7 @@ static int rpmb_read_data(struct rpmb_state* state,
         return -EINVAL;
 
     ret = rpmb_send(state->mmc_handle, NULL, 0, &cmd, sizeof(cmd), res,
-                    sizeof(res[0]) * count, false);
+                    sizeof(res[0]) * count, false, false);
     if (ret < 0)
         return ret;
 
@@ -387,7 +387,8 @@ static int rpmb_write_data(struct rpmb_state* state,
                            const char* buf,
                            uint16_t addr,
                            uint16_t count,
-                           bool sync) {
+                           bool sync,
+                           bool sync_checkpoint) {
     int i;
     int ret;
     struct rpmb_key mac;
@@ -416,7 +417,7 @@ static int rpmb_write_data(struct rpmb_state* state,
     }
 
     ret = rpmb_send(state->mmc_handle, cmd, sizeof(cmd[0]) * count, &rescmd,
-                    sizeof(rescmd), &res, sizeof(res), sync);
+                    sizeof(rescmd), &res, sizeof(res), sync, sync_checkpoint);
     if (ret < 0) {
         fprintf(stderr, "rpmb send failed: %d, result: %hu\n", ret,
                 rpmb_get_u16(res.result));
@@ -514,13 +515,14 @@ int rpmb_write(struct rpmb_state* state,
                const void* buf,
                uint16_t addr,
                uint16_t count,
-               bool sync) {
+               bool sync,
+               bool sync_checkpoint) {
     int ret;
 
     if (!state)
         return -EINVAL;
 
-    ret = rpmb_write_data(state, buf, addr, count, sync);
+    ret = rpmb_write_data(state, buf, addr, count, sync, sync_checkpoint);
     if (ret < 0)
         return ret;
 

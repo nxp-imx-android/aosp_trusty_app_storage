@@ -51,7 +51,8 @@ int rpmb_write(struct rpmb_state* state,
                const void* buf,
                uint16_t addr,
                uint16_t count,
-               bool sync);
+               bool sync,
+               bool sync_checkpoint);
 
 /* needs */
 int rpmb_send(void* mmc_handle,
@@ -61,6 +62,7 @@ int rpmb_send(void* mmc_handle,
               size_t write_buf_size,
               void* read_buf,
               size_t read_buf_size,
-              bool sync);
+              bool sync,
+              bool sync_checkpoint);
 
 #endif

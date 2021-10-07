@@ -28,14 +28,17 @@ struct block_device_tipc;
 
 /**
  * struct block_device_rpmb
- * @state:      Pointer to shared state containing ipc_handle and rpmb_state
- * @dev:        Block device state
- * @base:       First block to use in rpmb partition
+ * @state:       Pointer to shared state containing ipc_handle and rpmb_state
+ * @dev:         Block device state
+ * @base:        First block to use in rpmb partition
+ * @is_userdata: Is this RPMB device tied to the state of the userdata
+ * partition?
  */
 struct block_device_rpmb {
     struct block_device dev;
     struct block_device_tipc* state;
     uint16_t base;
+    bool is_userdata;
 };
 
 /**
@@ -43,11 +46,14 @@ struct block_device_rpmb {
  * @dev:        Block device state
  * @state:      Pointer to shared state containing ipc_handle
  * @ns_handle:  Handle
+ * @is_userdata: Is the backing file for this device in the (non-persistent)
+ *               userdata partition?
  */
 struct block_device_ns {
     struct block_device dev;
     struct block_device_tipc* state;
     ns_handle_t ns_handle;
+    bool is_userdata;
 };
 
 struct client_port_context {

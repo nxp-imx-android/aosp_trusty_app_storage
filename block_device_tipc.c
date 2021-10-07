@@ -167,7 +167,7 @@ static void block_device_tipc_rpmb_start_write(struct block_device* dev,
 
     ret = rpmb_write(dev_rpmb->state->rpmb_state, data,
                      rpmb_block * BLOCK_SIZE_RPMB_BLOCKS,
-                     BLOCK_SIZE_RPMB_BLOCKS, true);
+                     BLOCK_SIZE_RPMB_BLOCKS, true, dev_rpmb->is_userdata);
 
     SS_DBG_IO("%s: block %" PRIu64 ", base %d, rpmb_block %d, ret %d\n",
               __func__, block, dev_rpmb->base, rpmb_block, ret);
@@ -207,7 +207,8 @@ static void block_device_tipc_ns_start_write(struct block_device* dev,
     assert(data_size == BLOCK_SIZE_MAIN);
 
     ret = ns_write_pos(dev_ns->state->ipc_handle, dev_ns->ns_handle,
-                       block * BLOCK_SIZE_MAIN, data, data_size);
+                       block * BLOCK_SIZE_MAIN, data, data_size,
+                       dev_ns->is_userdata);
     SS_DBG_IO("%s: block %" PRIu64 ", ret %d\n", __func__, block, ret);
     block_cache_complete_write(dev, block, ret != BLOCK_SIZE_MAIN);
 }
@@ -219,7 +220,8 @@ static void block_device_tipc_ns_wait_for_io(struct block_device* dev) {
 static void block_device_tipc_init_dev_rpmb(struct block_device_rpmb* dev_rpmb,
                                             struct block_device_tipc* state,
                                             uint16_t base,
-                                            uint32_t block_count) {
+                                            uint32_t block_count,
+                                            bool is_userdata) {
     dev_rpmb->dev.start_read = block_device_tipc_rpmb_start_read;
     dev_rpmb->dev.start_write = block_device_tipc_rpmb_start_write;
     dev_rpmb->dev.wait_for_io = block_device_tipc_rpmb_wait_for_io;
@@ -231,10 +233,12 @@ static void block_device_tipc_init_dev_rpmb(struct block_device_rpmb* dev_rpmb,
     list_initialize(&dev_rpmb->dev.io_ops);
     dev_rpmb->state = state;
     dev_rpmb->base = base;
+    dev_rpmb->is_userdata = is_userdata;
 }
 
 static void block_device_tipc_init_dev_ns(struct block_device_ns* dev_ns,
-                                          struct block_device_tipc* state) {
+                                          struct block_device_tipc* state,
+                                          bool is_userdata) {
     dev_ns->dev.start_read = block_device_tipc_ns_start_read;
     dev_ns->dev.start_write = block_device_tipc_ns_start_write;
     dev_ns->dev.wait_for_io = block_device_tipc_ns_wait_for_io;
@@ -246,6 +250,7 @@ static void block_device_tipc_init_dev_ns(struct block_device_ns* dev_ns,
     list_initialize(&dev_ns->dev.io_ops);
     dev_ns->state = state;
     dev_ns->ns_handle = 0; /* Filled in later */
+    dev_ns->is_userdata = is_userdata;
 }
 
 /**
@@ -316,7 +321,8 @@ static int block_device_tipc_program_key(struct rpmb_state* state,
     rpmb_set_key(state, &out->rpmb_key);
 
     ret = rpmb_write(state, in->block_data,
-                     rpmb_key_part_base * BLOCK_SIZE_RPMB_BLOCKS, 1, false);
+                     rpmb_key_part_base * BLOCK_SIZE_RPMB_BLOCKS, 1, false,
+                     false);
     if (ret < 0) {
         SS_ERR("%s: rpmb_write failed (%d)\n", __func__, ret);
         return ret;
@@ -449,7 +455,7 @@ int block_device_tipc_init(struct block_device_tipc* state,
     }
 
     block_device_tipc_init_dev_rpmb(&state->dev_rpmb, state, rpmb_part2_base,
-                                    rpmb_block_count - rpmb_part2_base);
+                                    rpmb_block_count - rpmb_part2_base, false);
 
     /* TODO: allow non-rpmb based tamper proof storage */
     ret = fs_init(&state->tr_state_rpmb, fs_key, &state->dev_rpmb.dev,
@@ -474,7 +480,7 @@ int block_device_tipc_init(struct block_device_tipc* state,
         goto err_fs_rpmb_boot_create_port;
     }
 
-    block_device_tipc_init_dev_ns(&state->dev_ns, state);
+    block_device_tipc_init_dev_ns(&state->dev_ns, state, true);
 
     ret = ns_open_file(state->ipc_handle, "0", &state->dev_ns.ns_handle, true);
     if (ret < 0) {
@@ -484,7 +490,7 @@ int block_device_tipc_init(struct block_device_tipc* state,
     }
 
 #if HAS_FS_TDP
-    block_device_tipc_init_dev_ns(&state->dev_ns_tdp, state);
+    block_device_tipc_init_dev_ns(&state->dev_ns_tdp, state, false);
 
     ret = ns_open_file(state->ipc_handle, "persist/0",
                        &state->dev_ns_tdp.ns_handle, true);
@@ -497,7 +503,7 @@ int block_device_tipc_init(struct block_device_tipc* state,
 
     block_device_tipc_init_dev_rpmb(&state->dev_ns_tdp_rpmb, state,
                                     rpmb_part_sb_tdp_base,
-                                    rpmb_part_sb_ns_block_count);
+                                    rpmb_part_sb_ns_block_count, false);
 
     ret = fs_init(&state->tr_state_ns_tdp, fs_key, &state->dev_ns_tdp.dev,
                   &state->dev_ns_tdp_rpmb.dev, false /* Don't allow wiping */);
@@ -531,7 +537,7 @@ int block_device_tipc_init(struct block_device_tipc* state,
     state->fs_ns.tr_state = &state->tr_state_ns;
 
     block_device_tipc_init_dev_rpmb(&state->dev_ns_rpmb, state, rpmb_part1_base,
-                                    rpmb_part_sb_ns_block_count);
+                                    rpmb_part_sb_ns_block_count, true);
 
     ret = fs_init(&state->tr_state_ns, fs_key, &state->dev_ns.dev,
                   &state->dev_ns_rpmb.dev, new_ns_fs);

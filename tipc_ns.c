@@ -66,7 +66,8 @@ int rpmb_send(void* handle_,
               size_t write_size,
               void* read_buf,
               size_t read_size,
-              bool sync) {
+              bool sync,
+              bool sync_checkpoint) {
     SS_DBG_IO(
             "%s: handle %p, rel_write size %zu, write size %zu, read size %zu\n",
             __func__, handle_, reliable_write_size, write_size, read_size);
@@ -89,6 +90,10 @@ int rpmb_send(void* handle_,
             .size = sizeof(msg) + sizeof(req) + reliable_write_size +
                     write_size,
     };
+
+    if (sync_checkpoint) {
+        msg.flags |= STORAGE_MSG_FLAG_PRE_COMMIT_CHECKPOINT;
+    }
 
     struct iovec rx_iov[] = {
             {.iov_base = &msg, .iov_len = sizeof(msg)},
@@ -242,7 +247,8 @@ int ns_write_pos(handle_t ipc_handle,
                  ns_handle_t handle,
                  ns_off_t pos,
                  const void* data,
-                 int data_size) {
+                 int data_size,
+                 bool is_userdata) {
     SS_DBG_IO("%s: handle %llu, pos %llu, size %d\n", __func__, handle, pos,
               data_size);
 
@@ -253,6 +259,7 @@ int ns_write_pos(handle_t ipc_handle,
 
     struct storage_msg msg = {
             .cmd = STORAGE_FILE_WRITE,
+            .flags = is_userdata ? STORAGE_MSG_FLAG_PRE_COMMIT_CHECKPOINT : 0,
             .size = sizeof(msg) + sizeof(req) + data_size,
     };
 
