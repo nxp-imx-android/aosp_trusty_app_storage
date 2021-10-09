@@ -98,7 +98,8 @@ void* block_get_cleared(struct transaction* tr,
 
 void* block_get_cleared_super(struct transaction* tr,
                               data_block_t block,
-                              struct obj_ref* ref);
+                              struct obj_ref* ref,
+                              bool pinned);
 
 void* block_move(struct transaction* tr,
                  const void* data,

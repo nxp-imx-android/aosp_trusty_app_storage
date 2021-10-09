@@ -93,5 +93,6 @@ int fs_init(struct fs* fs,
             bool clear);
 
 void fs_unknown_super_block_state_all(void);
+void write_current_super_block(struct fs* fs, bool reinitialize);
 
 void fs_destroy(struct fs* fs);

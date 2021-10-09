@@ -213,8 +213,17 @@ void block_cache_complete_write(struct block_device* dev,
         pr_err("write block %" PRIu64 " failed, fail transaction\n",
                entry->block);
         transaction_fail(entry->dirty_tr);
+
+        /*
+         * Failing the transaction must not clear the block number, as we rely
+         * on the block number + pinned flag to reserve and reuse the block
+         * cache entry when reinitializing a special transaction.
+         */
+        assert(block == entry->block);
+    } else {
+        entry->dirty_tr = NULL;
+        entry->pinned = false;
     }
-    entry->dirty_tr = NULL;
 }
 
 /**
@@ -363,6 +372,11 @@ static void block_cache_entry_clean(struct block_cache_entry* entry) {
          * that entry belongs to must also fail.
          */
         if (entry->dirty_tr->fs->initial_super_block_tr) {
+            /*
+             * transaction_initial_super_block_complete() always reinitialize
+             * initial_super_block_tr if the write failed.
+             */
+            assert(!entry->dirty_tr->fs->initial_super_block_tr->failed);
             transaction_fail(entry->dirty_tr);
             assert(!entry->dirty);
             return;
@@ -401,6 +415,8 @@ static void block_cache_entry_discard_dirty(struct block_cache_entry* entry) {
     entry->block = DATA_BLOCK_INVALID;
     entry->dirty = false;
     entry->dirty_tr = NULL;
+    /* We have to unpin here because we're clearing the block number */
+    entry->pinned = false;
 
     entry->dirty_mac = false;
 }
@@ -460,7 +476,19 @@ static struct block_cache_entry* block_cache_lookup(struct fs* fs,
             stats_timer_stop(STATS_CACHE_LOOKUP_FOUND);
             goto done;
         }
-        if (!block_cache_entry_has_refs(entry)) {
+        /*
+         * Do not select any cache entries that have active references as they
+         * aren't ready to flush, and do not select any pinned entries. Pinned
+         * entries can only be flushed by
+         * transaction_initial_super_block_complete() and may not be flushed by
+         * another transaction. We need to keep special superblock writes pinned
+         * in the cache because otherwise we might fill the cache up with other
+         * data, flushing the special superblock, which might fail to write. In
+         * this case we would leave no room to recreate the write later, since
+         * the cache is full of data which can't be flushed until the initial
+         * superblock write is completed.
+         */
+        if (!block_cache_entry_has_refs(entry) && !entry->pinned) {
             score = block_cache_entry_score(entry, available);
             available++;
             if (score >= unused_entry_score) {
@@ -475,6 +503,13 @@ static struct block_cache_entry* block_cache_lookup(struct fs* fs,
                        entry->block);
             }
         } else {
+            /*
+             * Pinned entries must have a valid block number so they can be
+             * reused.
+             */
+            if (entry->pinned) {
+                assert(entry->block != DATA_BLOCK_INVALID);
+            }
             if (print_cache_lookup_verbose) {
                 printf("%s: block %" PRIu64
                        ", cache entry %zd in use for %" PRIu64 "\n",
@@ -722,6 +757,7 @@ void block_cache_init(void) {
         block_cache_entries[i].dirty = false;
         block_cache_entries[i].dirty_ref = false;
         block_cache_entries[i].dirty_mac = false;
+        block_cache_entries[i].pinned = false;
         block_cache_entries[i].dirty_tr = NULL;
         block_cache_entries[i].io_op = BLOCK_CACHE_IO_OP_NONE;
         obj_init(&block_cache_entries[i].obj, &ref);
@@ -1222,15 +1258,34 @@ void* block_get_cleared(struct transaction* tr,
  * @tr:         Transaction
  * @block:      Block number
  * @ref:        Pointer to store reference in.
+ * @pinned:     Pin this block in the cache until it is successfully written
  *
  * Return: Block data pointer.
  */
 void* block_get_cleared_super(struct transaction* tr,
                               data_block_t block,
-                              struct obj_ref* ref) {
+                              struct obj_ref* ref,
+                              bool pinned) {
     void* data_rw;
     const void* data_ro = block_cache_get_data(tr->fs, tr->fs->super_dev, block,
                                                false, NULL, 0, ref);
+
+    /*
+     * We should never end up in a situation where there is a dirty copy of a
+     * super block in the cache while we are trying to rewrite that super block.
+     * If a super block entry was created via write_current_super_block(), it
+     * must be flushed before the necessary data writes go through to write new
+     * root nodes. If we are trying to commit an empty transaction (i.e. no data
+     * blocks changed), we skip the super block update in
+     * transaction_complete(). The only other way to write a new super block,
+     * write_current_super_block(), will be a no-op if there is already a
+     * pending super block rewrite.
+     */
+    assert(data_ro);
+    struct block_cache_entry* entry = data_to_block_cache_entry(data_ro);
+    assert(!entry->dirty);
+    entry->pinned = pinned;
+
     data_rw = block_dirty(tr, data_ro, false);
     assert(tr->fs->super_dev->block_size <= MAX_BLOCK_SIZE);
     memset(data_rw, 0, tr->fs->super_dev->block_size);

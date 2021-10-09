@@ -399,18 +399,26 @@ err_transaction_failed:
  * @tr:         Transaction object. Must match initial_super_block_tr in fs.
  *
  * Flush the initial superblock in @tr to disk. If the block could not be
- * written return and leave @tr in a failed state. Otherwise clear
- * @tr->fs->initial_super_block_tr and free @tr.
+ * written re-initialize @tr and leave it in place for another attempt.
+ * Otherwise clear @tr->fs->initial_super_block_tr and free @tr.
+ *
+ * The initial superblock can only be flushed from the block cache by the
+ * block_cache_clean_transaction() call here, as we do not allow initial
+ * superblocks to be flushed to make room for other data. This ensures that we
+ * don't run out of room to recreate the superblock write in case it fails.
  */
 void transaction_initial_super_block_complete(struct transaction* tr) {
     assert(tr == tr->fs->initial_super_block_tr);
     block_cache_clean_transaction(tr);
     if (tr->failed) {
         /*
-         * If we failed to write the superblock we leave the failed
-         * initial_super_block_tr transaction in place so all future write
-         * transactions to this filesystems will also fail.
+         * If we failed to write the superblock we re-initialize a new attempt
+         * to write that superblock before the next time we write to this
+         * filesystem.
          */
+        pr_err("%s: failed to write initial superblock, version %d.\n",
+               __func__, tr->fs->written_super_block_version);
+        write_current_super_block(tr->fs, true /* reinitialize */);
         return;
     }
     printf("%s: write initial superblock, version %d -> %d\n", __func__,

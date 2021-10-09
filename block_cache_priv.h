@@ -56,6 +56,7 @@
  *                          after encrypting block.
  * @dirty_tmp:              Data can be discarded by
  *                          block_cache_discard_transaction.
+ * @pinned:                 Block cannot be reused if it fails to write.
  * @dirty_tr:               Transaction that modified block.
  * @obj:                    Reference tracking struct.
  * @lru_node:               List node for tracking least recently used cache
@@ -80,6 +81,7 @@ struct block_cache_entry {
     bool dirty_ref;
     bool dirty_mac;
     bool dirty_tmp;
+    bool pinned;
     struct transaction* dirty_tr;
 
     struct obj obj;

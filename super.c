@@ -34,6 +34,7 @@
 #include "block_set.h"
 #include "debug.h"
 #include "file.h"
+#include "fs.h"
 #include "transaction.h"
 
 #define SUPER_BLOCK_MAGIC (0x0073797473757274ULL) /* trustys */
@@ -95,17 +96,20 @@ STATIC_ASSERT(sizeof(struct super_block) >= 128);
 static struct list_node fs_list = LIST_INITIAL_VALUE(fs_list);
 
 /**
- * update_super_block - Generate and write superblock
+ * update_super_block_internal - Generate and write superblock
  * @tr:         Transaction object.
  * @free:       New free root.
  * @files:      New files root.
+ * @pinned:     New block should not be reused in the block cache until
+ *              it is successfully written.
  *
  * Return: %true if super block was updated (in cache), %false if transaction
  * failed before super block was updated.
  */
-bool update_super_block(struct transaction* tr,
-                        const struct block_mac* free,
-                        const struct block_mac* files) {
+static bool update_super_block_internal(struct transaction* tr,
+                                        const struct block_mac* free,
+                                        const struct block_mac* files,
+                                        bool pinned) {
     struct super_block* super_rw;
     struct obj_ref super_ref = OBJ_REF_INITIAL_VALUE(super_ref);
     unsigned int ver;
@@ -135,8 +139,8 @@ bool update_super_block(struct transaction* tr,
     pr_write("write super block %" PRIu64 ", ver %d\n",
              tr->fs->super_block[index], ver);
 
-    super_rw =
-            block_get_cleared_super(tr, tr->fs->super_block[index], &super_ref);
+    super_rw = block_get_cleared_super(tr, tr->fs->super_block[index],
+                                       &super_ref, pinned);
     if (tr->failed) {
         block_put_dirty_discard(super_rw, &super_ref);
         return false;
@@ -165,6 +169,21 @@ bool update_super_block(struct transaction* tr,
 }
 
 /**
+ * update_super_block - Generate and write superblock
+ * @tr:         Transaction object.
+ * @free:       New free root.
+ * @files:      New files root.
+ *
+ * Return: %true if super block was updated (in cache), %false if transaction
+ * failed before super block was updated.
+ */
+bool update_super_block(struct transaction* tr,
+                        const struct block_mac* free,
+                        const struct block_mac* files) {
+    return update_super_block_internal(tr, free, files, false);
+}
+
+/**
  * write_initial_super_block - Write initial superblock to internal transaction
  * @fs:         File system state object.
  *
@@ -184,44 +203,89 @@ static bool write_initial_super_block(struct fs* fs) {
     fs->initial_super_block_tr = tr;
 
     transaction_init(tr, fs, true);
-    return update_super_block(tr, NULL, NULL);
+    return update_super_block_internal(tr, NULL, NULL, true);
 }
 
 /**
  * write_current_super_block - Write current superblock to internal transaction
- * @fs:         File system state object.
+ * @fs:           File system state object.
+ * @reinitialize: Allow the special transaction to be reinitialized if it has
+ *                failed
  *
  * Write the current state of the super block to an internal transaction that
  * will be written before any other block. This can be used to re-sync the
  * in-memory fs-state with the on-disk state after detecting a write failure
  * where no longer know the on-disk super block state.
  */
-static void write_current_super_block(struct fs* fs) {
+void write_current_super_block(struct fs* fs, bool reinitialize) {
     bool super_block_updated;
     struct transaction* tr;
 
     if (fs->initial_super_block_tr) {
         /*
-         * If initial_super_block_tr is already set there is no need to allocate
-         * a new one so return early.
+         * If initial_super_block_tr is already pending and not failed there is
+         * no need to allocate a new one so return early.
          *
-         * Currently initial_super_block_tr can point to a failed transaction.
-         * If that is the case @fs will never be write-able again.
-         * TODO: Make sure initial_super_block_tr does not stay in a failed
-         * state.
+         * If the special transaction has failed, we need to re-initialize it so
+         * that we can attempt to recover to a good state.
+         *
+         * We are only allowed to reinitialze if the @reinitialize parameter is
+         * true. We don't want to allow reinitialization while cleaning blocks
+         * (i.e. via fs_unknown_super_block_state_all()), as this would reset
+         * the special transaction to non-failed state and create a situation
+         * where transaction_initial_super_block_complete() cannot know if it
+         * successfully flushed the special transaction to disk. Therefore we
+         * only allow transaction_initial_super_block_complete() to reinitialize
+         * a failed special transaction after it attempts and fails to write the
+         * block to disk.
+         *
+         * Since we pin special superblock entries in the block cache and
+         * therefore cannot evict them with normal transactions,
+         * transaction_initial_super_block_complete() is the only place we can
+         * attempt a special transaction write, and if it fails the transaction
+         * is immediately reinitialized. Therefore we should only ever be in a
+         * failed state if reinitialize is true (i.e. we are being called from
+         * transaction_initial_super_block_complete()).
          */
-        return;
-    }
-    tr = calloc(1, sizeof(*tr));
-    if (!tr) {
-        /* Not safe to proceed. TODO: add flag to defer this allocation? */
-        abort();
-    }
-    fs->initial_super_block_tr = tr;
 
-    transaction_init(tr, fs, true);
-    super_block_updated =
-            update_super_block(tr, &fs->free.block_tree.root, &fs->files.root);
+        assert(reinitialize || !fs->initial_super_block_tr->failed);
+        if (!fs->initial_super_block_tr->failed || !reinitialize) {
+            return;
+        }
+
+        tr = fs->initial_super_block_tr;
+        transaction_activate(tr);
+    } else {
+        tr = calloc(1, sizeof(*tr));
+        if (!tr) {
+            /* Not safe to proceed. TODO: add flag to defer this allocation? */
+            abort();
+        }
+        transaction_init(tr, fs, true);
+        fs->initial_super_block_tr = tr;
+    }
+
+    /*
+     * Until the filesystem contains committed data, fs->free.block_tree.root
+     * will be zero, i.e. an invalid block mac. fs->free.block_tree.root is only
+     * updated in transaction_complete() after successfully writing a new
+     * superblock. If the filesystem is empty, we need to emit a cleared
+     * superblock with a special flag to prevent the superblock state from
+     * getting out of sync with the filesystem data if a reboot occurrs before
+     * committing a superblock with data.
+     *
+     * We can't use fs->files.root here because it may be invalid if there are
+     * no files in the filesystem. If the free node is zero, then the files node
+     * must be as well, so we assert this.
+     */
+    bool fs_is_cleared = !block_mac_valid(tr, &fs->free.block_tree.root);
+    if (fs_is_cleared) {
+        assert(!block_mac_valid(tr, &fs->files.root));
+        super_block_updated = update_super_block_internal(tr, NULL, NULL, true);
+    } else {
+        super_block_updated = update_super_block_internal(
+                tr, &fs->free.block_tree.root, &fs->files.root, true);
+    }
     if (!super_block_updated) {
         /* Not safe to proceed. TODO: add flag to try again? */
         abort();
@@ -561,6 +625,16 @@ void fs_unknown_super_block_state_all(void) {
     struct fs* fs;
     list_for_every_entry(&fs_list, fs, struct fs, node) {
         /* TODO: filter out filesystems that are not affected? */
-        write_current_super_block(fs);
+        /*
+         * We can't reinitialize an existing, failed special transaction here.
+         * If a initial superblock write failed and triggered
+         * fs_unknown_super_block_state_all() we need to leave that superblock
+         * transaction in a failed state so that the transaction that that
+         * triggered the failing write can also be failed further up the call
+         * chain. If a special transaction already exists we are guaranteed that
+         * it will be reinitialized and flushed to disk before any new writes to
+         * that FS, so we don't need to reinitialize it here.
+         */
+        write_current_super_block(fs, false /* reinitialize */);
     }
 }
