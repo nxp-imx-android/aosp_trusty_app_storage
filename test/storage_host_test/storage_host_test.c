@@ -410,6 +410,83 @@ TEST_P(StorageTest, FailDataWriteFullCacheWithIncrement) {
 test_abort:;
 }
 
+TEST(StorageTest, FlushFailingSpecialTransaction) {
+    struct transaction td_tr;
+    struct transaction tp_tr;
+    transaction_init(&tp_tr, &test_block_device.tr_state_rpmb, true);
+    int tp_initial_super_block_version = tp_tr.fs->super_block_version;
+
+    fail_next_rpmb_writes(1, true);
+    file_test(&tp_tr, __func__, FILE_OPEN_CREATE_EXCLUSIVE, 1, 0, 0, false, 0);
+
+    /* force data block to be written */
+    block_cache_clean_transaction(&tp_tr);
+    ASSERT_EQ(true, tp_tr.failed);
+    ASSERT_NE(NULL, tp_tr.fs->initial_super_block_tr);
+    ASSERT_NE(tp_tr.fs->super_block_version,
+              tp_tr.fs->written_super_block_version);
+    transaction_activate(&tp_tr);
+
+    /*
+     * At this point there is a resync superblock write queueud up for each
+     * FS
+     */
+
+    fail_next_rpmb_writes(1, false);
+    transaction_init(&td_tr, &test_block_device.tr_state_ns, true);
+    file_test(&td_tr, "FlushFailingSpecialTransaction_td",
+              FILE_OPEN_CREATE_EXCLUSIVE, BLOCK_CACHE_SIZE, 0, 0, false, 0);
+    block_cache_clean_transaction(&td_tr);
+    /*
+     * This transaction will fail because we couldn't write the superblock to
+     * disk
+     */
+    ASSERT_EQ(true, td_tr.failed);
+    transaction_activate(&td_tr);
+
+    file_test(&td_tr, "FlushFailingSpecialTransaction_td",
+              FILE_OPEN_CREATE_EXCLUSIVE, BLOCK_CACHE_SIZE, 0, 0, false, 0);
+    block_cache_clean_transaction(&td_tr);
+    ASSERT_EQ(false, td_tr.failed);
+    transaction_complete(&td_tr);
+    ASSERT_EQ(false, td_tr.failed);
+    transaction_activate(&td_tr);
+
+    /* TD resync is done, TP is pending */
+    ASSERT_EQ(NULL, td_tr.fs->initial_super_block_tr);
+    ASSERT_NE(NULL, tp_tr.fs->initial_super_block_tr);
+
+    /* Fill the cache up */
+    file_test(&td_tr, "FlushFailingSpecialTransaction_td", FILE_OPEN_CREATE,
+              BLOCK_CACHE_SIZE + 1, 0, 0, false, 0);
+    ASSERT_EQ(false, td_tr.failed);
+    block_cache_clean_transaction(&td_tr);
+    ASSERT_EQ(false, td_tr.failed);
+    ASSERT_NE(NULL, tp_tr.fs->initial_super_block_tr);
+
+    /* did we recover? */
+    file_test(&tp_tr, __func__, FILE_OPEN_CREATE_EXCLUSIVE, 1, 0, 0, false, 0);
+
+    block_cache_clean_transaction(&tp_tr);
+    ASSERT_EQ(false, tp_tr.failed);
+    /* assert that we have overwritten the superblock */
+    ASSERT_NE(tp_initial_super_block_version, tp_tr.fs->super_block_version);
+
+    transaction_complete(&tp_tr);
+    ASSERT_EQ(false, tp_tr.failed);
+
+test_abort:;
+    if (!tp_tr.failed) {
+        transaction_fail(&tp_tr);
+    }
+    if (!td_tr.failed) {
+        transaction_fail(&td_tr);
+    }
+    transaction_free(&tp_tr);
+    transaction_free(&td_tr);
+    clear_all_pending_superblock_writes();
+}
+
 INSTANTIATE_TEST_SUITE_P(Filesystem,
                          StorageTest,
                          testing_Values(&test_block_device.tr_state_rpmb,
