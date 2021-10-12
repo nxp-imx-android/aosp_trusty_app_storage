@@ -714,7 +714,9 @@ int fs_init(struct fs* fs,
  */
 void fs_destroy(struct fs* fs) {
     if (fs->initial_super_block_tr) {
-        transaction_fail(fs->initial_super_block_tr);
+        if (!fs->initial_super_block_tr->failed) {
+            transaction_fail(fs->initial_super_block_tr);
+        }
         transaction_free(fs->initial_super_block_tr);
         free(fs->initial_super_block_tr);
         fs->initial_super_block_tr = NULL;
