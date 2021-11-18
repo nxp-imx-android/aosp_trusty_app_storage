@@ -1726,10 +1726,10 @@ static void future_fs_version_test(struct transaction* tr) {
     fs_destroy(fs);
     block_cache_dev_destroy(dev);
 
-    ret = fs_init(fs, key, dev, super_dev, false);
+    ret = fs_init(fs, key, dev, super_dev, false, false);
     assert(ret == -1);
 
-    ret = fs_init(fs, key, dev, super_dev, true);
+    ret = fs_init(fs, key, dev, super_dev, true, false);
     assert(ret == -1);
 
     fs->dev = dev;
@@ -1744,10 +1744,62 @@ static void future_fs_version_test(struct transaction* tr) {
     block_cache_clean_transaction(tr);
     transaction_free(tr);
 
-    ret = fs_init(fs, key, dev, super_dev, false);
+    ret = fs_init(fs, key, dev, super_dev, false, false);
     assert(ret == 0);
 
     transaction_init(tr, fs, true);
+}
+
+static void fs_recovery_test(struct transaction* tr) {
+    data_block_t block;
+    struct file_handle file;
+    struct fs* fs = tr->fs;
+    const struct key* key = fs->key;
+    struct block_device* dev = fs->dev;
+    struct block_device* super_dev = fs->super_dev;
+    int ret;
+
+    file_test(tr, "recovery", FILE_OPEN_CREATE_EXCLUSIVE, file_test_block_count,
+              0, 0, false, 1);
+    transaction_complete(tr);
+    assert(!tr->failed);
+    transaction_activate(tr);
+
+    open_test_file_etc(tr, &file, "recovery", FILE_OPEN_NO_CREATE, false);
+    file_close(&file);
+    transaction_complete(tr);
+    assert(!tr->failed);
+    transaction_activate(tr);
+
+    /* Corrupt the files root block */
+    block = block_mac_to_block(tr, &fs->files.root);
+    memset(&blocks[block], 0, sizeof(struct block));
+    block_cache_dev_destroy(dev);
+
+    open_test_file_etc(tr, &file, "recovery", FILE_OPEN_NO_CREATE, true);
+    transaction_complete(tr);
+    assert(tr->failed);
+
+    /* re-initialize the filesystem without recovery enabled */
+    transaction_free(tr);
+    fs_destroy(fs);
+    block_cache_dev_destroy(dev);
+    ret = fs_init(fs, key, dev, super_dev, false, false);
+    transaction_init(tr, fs, true);
+
+    open_test_file_etc(tr, &file, "recovery", FILE_OPEN_CREATE_EXCLUSIVE, true);
+    transaction_complete(tr);
+    assert(tr->failed);
+
+    /* re-initialize the filesystem with recovery enabled */
+    transaction_free(tr);
+    fs_destroy(fs);
+    block_cache_dev_destroy(dev);
+    ret = fs_init(fs, key, dev, super_dev, false, true /* recovery allowed */);
+    transaction_init(tr, fs, true);
+
+    file_test(tr, "recovery", FILE_OPEN_CREATE_EXCLUSIVE, file_test_block_count,
+              0, 0, false, 1);
 }
 
 #if 0
@@ -1865,6 +1917,7 @@ struct {
         //    TEST(file_allocate_leave_10_test2),
         TEST(file_delete1_no_free_test),
         TEST(future_fs_version_test),
+        TEST(fs_recovery_test),
 };
 
 int main(int argc, const char* argv[]) {
@@ -1918,7 +1971,7 @@ int main(int argc, const char* argv[]) {
     crypt_init();
     block_cache_init();
 
-    fs_init(&fs, &key, &dev, &dev, true);
+    fs_init(&fs, &key, &dev, &dev, true, false);
     fs.reserved_count = 18; /* HACK: override default reserved space */
     transaction_init(&tr, &fs, false);
 
@@ -1941,7 +1994,7 @@ int main(int argc, const char* argv[]) {
             transaction_free(&tr);
             fs_destroy(&fs);
             block_cache_dev_destroy(&dev);
-            fs_init(&fs, &key, &dev, &dev, false);
+            fs_init(&fs, &key, &dev, &dev, false, false);
             fs.reserved_count = 18; /* HACK: override default reserved space */
             transaction_init(&tr, &fs, false);
         }

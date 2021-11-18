@@ -45,6 +45,11 @@ ifeq (true,$(call TOBOOL,$(SS_DATA_DEBUG_IO)))
     MODULE_DEFINES += SS_DATA_DEBUG_IO=1
 endif
 
+STORAGE_NS_RECOVERY_ALLOWED ?= false
+ifeq (true,$(call TOBOOL,$(STORAGE_NS_RECOVERY_ALLOWED)))
+    MODULE_DEFINES += STORAGE_NS_RECOVERY_ALLOWED=1
+endif
+
 MODULE_SRCS := \
 	$(LOCAL_DIR)/block_allocator.c \
 	$(LOCAL_DIR)/block_cache.c \

@@ -57,6 +57,12 @@
 #define BLOCK_COUNT_MAIN (0x10000000000 / BLOCK_SIZE_MAIN)
 #endif
 
+#if STORAGE_NS_RECOVERY_ALLOWED
+#define NS_RECOVERY_ALLOWED true
+#else
+#define NS_RECOVERY_ALLOWED false
+#endif
+
 #define BLOCK_SIZE_RPMB_BLOCKS (BLOCK_SIZE_RPMB / RPMB_BUF_SIZE)
 
 STATIC_ASSERT(BLOCK_SIZE_RPMB_BLOCKS == 1 || BLOCK_SIZE_RPMB_BLOCKS == 2);
@@ -472,7 +478,7 @@ int block_device_tipc_init(struct block_device_tipc* state,
 
     /* TODO: allow non-rpmb based tamper proof storage */
     ret = fs_init(&state->tr_state_rpmb, fs_key, &state->dev_rpmb.dev,
-                  &state->dev_rpmb.dev, false);
+                  &state->dev_rpmb.dev, false, false);
     if (ret < 0) {
         goto err_init_tr_state_rpmb;
     }
@@ -519,7 +525,8 @@ int block_device_tipc_init(struct block_device_tipc* state,
                                     rpmb_part_sb_ns_block_count, false);
 
     ret = fs_init(&state->tr_state_ns_tdp, fs_key, &state->dev_ns_tdp.dev,
-                  &state->dev_ns_tdp_rpmb.dev, false /* Don't allow wiping */);
+                  &state->dev_ns_tdp_rpmb.dev, false /* Don't allow wiping */,
+                  false);
     if (ret < 0) {
         goto err_init_fs_ns_tdp_tr_state;
     }
@@ -553,7 +560,7 @@ int block_device_tipc_init(struct block_device_tipc* state,
                                     rpmb_part_sb_ns_block_count, true);
 
     ret = fs_init(&state->tr_state_ns, fs_key, &state->dev_ns.dev,
-                  &state->dev_ns_rpmb.dev, new_ns_fs);
+                  &state->dev_ns_rpmb.dev, new_ns_fs, NS_RECOVERY_ALLOWED);
     if (ret < 0) {
         goto err_init_fs_ns_tr_state;
     }

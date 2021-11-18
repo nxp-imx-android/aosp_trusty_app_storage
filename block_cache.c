@@ -1465,6 +1465,34 @@ void block_put(const void* data, struct obj_ref* ref) {
 }
 
 /**
+ * block_probe - Verify that the given block is loadable and its mac is correct
+ * @fs:          Filesystem containing the block to probe
+ * @block_mac:   Block to probe
+ *
+ * Return: %true if the block is valid and matches the expected mac
+ */
+bool block_probe(struct fs* fs, const struct block_mac* block_mac) {
+    struct transaction probe_tr;
+    struct obj_ref probe_ref = OBJ_REF_INITIAL_VALUE(probe_ref);
+    const void* probe_block;
+    bool valid = false;
+
+    transaction_init(&probe_tr, fs, true);
+    if (block_mac_valid(&probe_tr, block_mac)) {
+        probe_block =
+                block_get_no_tr_fail(&probe_tr, block_mac, NULL, &probe_ref);
+        if (probe_block) {
+            block_put(probe_block, &probe_ref);
+            valid = true;
+        }
+    }
+    transaction_fail(&probe_tr);
+    transaction_free(&probe_tr);
+
+    return valid;
+}
+
+/**
  * data_to_block_num - Get block number from block data pointer
  * @data:       Block data pointer
  *

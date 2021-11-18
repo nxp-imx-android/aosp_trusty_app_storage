@@ -120,6 +120,8 @@ void* block_get_copy(struct transaction* tr,
 
 void block_put(const void* data, struct obj_ref* ref);
 
+bool block_probe(struct fs* fs, const struct block_mac* block_mac);
+
 data_block_t data_to_block_num(const void* data); /* test api, remove ? */
 
 unsigned int block_cache_debug_get_ref_block_count(void);

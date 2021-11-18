@@ -90,7 +90,8 @@ int fs_init(struct fs* fs,
             const struct key* key,
             struct block_device* dev,
             struct block_device* super_dev,
-            bool clear);
+            bool clear,
+            bool recovery_allowed);
 
 void fs_unknown_super_block_state_all(void);
 void write_current_super_block(struct fs* fs, bool reinitialize);

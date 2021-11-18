@@ -31,6 +31,7 @@
 
 #include "array.h"
 #include "block_allocator.h"
+#include "block_cache.h"
 #include "block_set.h"
 #include "debug.h"
 #include "file.h"
@@ -428,13 +429,16 @@ static void fs_init_empty(struct fs* fs) {
  * fs_init_from_super - Initialize file system from super block
  * @fs:         File system state object.
  * @super:      Superblock data, or %NULL.
- * @clear:      If %true, clear fs state if allowed by super block state.
+ * @do_clear:   If %true, clear fs state if allowed by super block state.
+ * @recovery_allowed: If %true, allow fs to be cleared if its superblock does
+ *                    not match the backing store
  *
  * Return: 0 if super block was usable, -1 if not.
  */
 static int fs_init_from_super(struct fs* fs,
                               const struct super_block* super,
-                              bool do_clear) {
+                              bool do_clear,
+                              bool recovery_allowed) {
     size_t block_mac_size;
     bool is_clear = false;
 
@@ -450,6 +454,7 @@ static int fs_init_from_super(struct fs* fs,
         fs->block_num_size = fs->dev->block_num_size;
         fs->mac_size = fs->dev->mac_size;
     }
+
     block_mac_size = fs->block_num_size + fs->mac_size;
     block_set_init(fs, &fs->free);
     fs->free.block_tree.copy_on_write = true;
@@ -465,6 +470,13 @@ static int fs_init_from_super(struct fs* fs,
         fs->super_block_version = super->flags & SUPER_BLOCK_FLAGS_VERSION_MASK;
         if (super->flags & SUPER_BLOCK_FLAGS_EMPTY) {
             is_clear = true;
+        }
+    }
+
+    if (super && !is_clear && !do_clear && recovery_allowed) {
+        if (!block_probe(fs, &super->files)) {
+            pr_init("Backing file probe failed, fs is corrupted. Attempting to clear.\n");
+            do_clear = true;
         }
     }
 
@@ -503,11 +515,13 @@ static int fs_init_from_super(struct fs* fs,
  * load_super_block - Find and load superblock and initialize file system state
  * @fs:         File system state object.
  * @clear:      If %true, clear fs state if allowed by super block state.
+ * @recovery_allowed: If %true, allow fs to be cleared if its superblock does
+ *                    not match the backing store
  *
  * Return: 0 if super block was readable and not from a future file system
  * version (regardless of its other content), -1 if not.
  */
-static int load_super_block(struct fs* fs, bool clear) {
+static int load_super_block(struct fs* fs, bool clear, bool recovery_allowed) {
     unsigned int i;
     int ret;
     const struct super_block* new_super;
@@ -535,7 +549,7 @@ static int load_super_block(struct fs* fs, bool clear) {
         }
     }
 
-    ret = fs_init_from_super(fs, old_super, clear);
+    ret = fs_init_from_super(fs, old_super, clear, recovery_allowed);
 err:
     if (old_super) {
         block_put(old_super, &old_super_ref);
@@ -550,12 +564,15 @@ err:
  * @dev:        Main block device.
  * @super_dev:  Block device for super block.
  * @clear:      If %true, clear fs state if allowed by super block state.
+ * @recovery_allowed: If %true, allow fs to be cleared if its superblock does
+ *                    not match the backing store
  */
 int fs_init(struct fs* fs,
             const struct key* key,
             struct block_device* dev,
             struct block_device* super_dev,
-            bool clear) {
+            bool clear,
+            bool recovery_allowed) {
     int ret;
 
     if (super_dev->block_size < sizeof(struct super_block)) {
@@ -586,7 +603,7 @@ int fs_init(struct fs* fs,
     }
     fs->super_block[0] = 0;
     fs->super_block[1] = 1;
-    ret = load_super_block(fs, clear);
+    ret = load_super_block(fs, clear, recovery_allowed);
     if (ret) {
         fs_destroy(fs);
         fs->dev = NULL;
