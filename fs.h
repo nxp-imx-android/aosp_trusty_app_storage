@@ -36,6 +36,26 @@
 #include "block_tree.h"
 
 /**
+ * struct super_block_backup - Backup of root block for file system state
+ * @flags:          Super-block flags for the backup, with the bits in
+ *                  SUPER_BLOCK_VERSION_MASK set to 0 (i.e. the backup does not
+ *                  contain a version).
+ * @free:           Block and mac of backup free set root node.
+ * @files:          Block and mac of backup files tree root node.
+ *
+ * Block numbers and macs in @free and @files are packed as indicated by
+ * @block_num_size and @mac_size, but unlike other on-disk data, the size of the
+ * whole field is always the full 24 bytes needed for a 8 byte block number and
+ * 16 byte mac so this structure is always a fixed size.
+ */
+struct super_block_backup {
+    uint32_t flags;
+    struct block_mac free;
+    struct block_mac files;
+};
+STATIC_ASSERT(sizeof(struct super_block_backup) == 52);
+
+/**
  * struct fs - File system state
  * @node:                           List node for fs_list.
  * @dev:                            Main block device.
@@ -50,6 +70,17 @@
  *                                  super-block in.
  * @super_block_version:            Last read or written super block version.
  * @written_super_block_version:    Last written super block version.
+ * @alternate_data:                 If true, the current superblock is for a
+ *                                  filesystem with a backing store in an
+ *                                  alternate data location and @backup contains
+ *                                  the superblock of the normal filesystem. If
+ *                                  false, @backup may contain a backup of the
+ *                                  superblock for an alternate filesystem, but
+ *                                  it may be outdated.
+ * @backup:                         Backup superblock of other filesystem state
+ *                                  (alternate if @alternate_data is false, main
+ *                                  otherwise) Should be preserved across all
+ *                                  filesystem operations after initialization.
  * @min_block_num:                  First block number that can store non
  *                                  super blocks.
  * @block_num_size:                 Number of bytes used to store block numbers.
@@ -75,6 +106,8 @@ struct fs {
     data_block_t super_block[2];
     unsigned int super_block_version;
     unsigned int written_super_block_version;
+    bool alternate_data;
+    struct super_block_backup backup;
     data_block_t min_block_num;
     size_t block_num_size;
     size_t mac_size;
@@ -86,12 +119,39 @@ bool update_super_block(struct transaction* tr,
                         const struct block_mac* free,
                         const struct block_mac* files);
 
+/**
+ * typedef fs_init_flags32_t - Flags that control filesystem clearing and
+ * backups. These flags may be ORed together.
+ *
+ * %FS_INIT_FLAGS_NONE
+ *   No flags set
+ *
+ * %FS_INIT_FLAGS_DO_CLEAR
+ *   Unconditionally clear the filesystem, regardless of corruption state.
+ *   %FS_INIT_FLAGS_RECOVERY_* flags are ignored when combined with this flag.
+ *
+ * %FS_INIT_FLAGS_RECOVERY_CLEAR_ALLOWED
+ *   Allows clearing of corrupt filesystem.
+ *
+ * %FS_INIT_FLAGS_ALTERNATE_DATA
+ *   Indicates that the filesystem is temporarily running on top of an alternate
+ *   location for the @dev block device and rollback should be enforced
+ *   separately from the normal mode.
+ */
+typedef uint32_t fs_init_flags32_t;
+#define FS_INIT_FLAGS_NONE 0U
+#define FS_INIT_FLAGS_DO_CLEAR (1U << 0)
+#define FS_INIT_FLAGS_RECOVERY_CLEAR_ALLOWED (1U << 1)
+#define FS_INIT_FLAGS_ALTERNATE_DATA (1U << 2)
+#define FS_INIT_FLAGS_MASK                                           \
+    (FS_INIT_FLAGS_DO_CLEAR | FS_INIT_FLAGS_RECOVERY_CLEAR_ALLOWED | \
+     FS_INIT_FLAGS_ALTERNATE_DATA)
+
 int fs_init(struct fs* fs,
             const struct key* key,
             struct block_device* dev,
             struct block_device* super_dev,
-            bool clear,
-            bool recovery_allowed);
+            fs_init_flags32_t flags);
 
 void fs_unknown_super_block_state_all(void);
 void write_current_super_block(struct fs* fs, bool reinitialize);

@@ -42,8 +42,19 @@
 #define SUPER_BLOCK_FLAGS_VERSION_MASK (0x3U)
 #define SUPER_BLOCK_FLAGS_BLOCK_INDEX_MASK (0x1U)
 #define SUPER_BLOCK_FLAGS_EMPTY (0x4U)
-#define SUPER_BLOCK_FLAGS_SUPPORTED_MASK (0x7U)
+#define SUPER_BLOCK_FLAGS_ALTERNATE (0x8U)
+#define SUPER_BLOCK_FLAGS_SUPPORTED_MASK (0xfU)
 #define SUPER_BLOCK_FS_VERSION (0U)
+
+/**
+ * typedef super_block_opt_flags8_t - Optional flags, can be ORed together
+ *
+ * %SUPER_BLOCK_OPT_FLAGS_HAS_FLAGS3
+ *   Indicates that the superblock has additional data after flags2 and that
+ *   flags3 should be set to the same value as flags
+ */
+typedef uint8_t super_block_opt_flags8_t;
+#define SUPER_BLOCK_OPT_FLAGS_HAS_FLAGS3 (0x1U)
 
 /**
  * struct super_block - On-disk root block for file system state
@@ -56,7 +67,8 @@
  * @block_size:     Block size of file system.
  * @block_num_size: Number of bytes used to store block numbers.
  * @mac_size:       number of bytes used to store mac values.
- * @res1:           Reserved for future use. Write 0, read ignore.
+ * @opt_flags:      Optional flags, any of &typedef super_block_opt_flags8_t
+ *                  ORed together.
  * @res2:           Reserved for future use. Write 0, read ignore.
  * @block_count:    Size of file system.
  * @free:           Block and mac of free set root node.
@@ -66,12 +78,20 @@
  * @flags2:         Copy of @flags. Allows storing the super-block in a device
  *                  that does not support an atomic write of the entire
  *                  super-block.
+ * @backup:         Backup of previous super-block, used to support an alternate
+ *                  backing store. 0 if no backup has ever been written. Once a
+ *                  backup exists, it will only ever be swapped, not cleared.
+ * @res4:           Reserved for future use. Write 0, read ignore.
+ * @flags3:         Copy of @flags. Allows storing the super-block in a device
+ *                  that does not support an atomic write of the entire
+ *                  super-block. If SUPER_BLOCK_OPT_FLAGS_HAS_FLAGS3 is not set,
+ *                  @flags3 is not checked and fields after @flags2 are ignored.
  *
  * Block numbers and macs in @free and @files are packed as indicated by
  * @block_num_size and @mac_size, but unlike other on-disk data, the size of the
  * whole field is always the full 24 bytes needed for a 8 byte block number and
- * 16 byte mac This allows the @flags2 to be validated before knowing
- * @block_num_size and @mac_size.
+ * 16 byte mac This allows the @flags2 and @flags3 to be validated before
+ * knowing @block_num_size and @mac_size.
  */
 struct super_block {
     struct iv iv;
@@ -81,7 +101,7 @@ struct super_block {
     uint32_t block_size;
     uint8_t block_num_size;
     uint8_t mac_size;
-    uint8_t res1;
+    super_block_opt_flags8_t opt_flags;
     uint8_t res2;
     data_block_t block_count;
     struct block_mac free;
@@ -89,10 +109,16 @@ struct super_block {
     struct block_mac files;
     uint32_t res3[5];
     uint32_t flags2;
+    struct super_block_backup backup;
+    uint32_t res4[18];
+    uint32_t flags3;
 };
 STATIC_ASSERT(offsetof(struct super_block, flags2) == 124);
-STATIC_ASSERT(sizeof(struct super_block) <= 128);
-STATIC_ASSERT(sizeof(struct super_block) >= 128);
+STATIC_ASSERT(offsetof(struct super_block, flags3) == 252);
+STATIC_ASSERT(sizeof(struct super_block) == 256);
+
+/* block_device_tipc.c ensures that we have at least 256 bytes in RPMB blocks */
+STATIC_ASSERT(sizeof(struct super_block) <= 256);
 
 static struct list_node fs_list = LIST_INITIAL_VALUE(fs_list);
 
@@ -136,6 +162,9 @@ static bool update_super_block_internal(struct transaction* tr,
         assert(free);
         assert(files);
     }
+    if (tr->fs->alternate_data) {
+        flags |= SUPER_BLOCK_FLAGS_ALTERNATE;
+    }
 
     pr_write("write super block %" PRIu64 ", ver %d\n",
              tr->fs->super_block[index], ver);
@@ -153,6 +182,7 @@ static bool update_super_block_internal(struct transaction* tr,
     super_rw->block_size = tr->fs->dev->block_size;
     super_rw->block_num_size = tr->fs->block_num_size;
     super_rw->mac_size = tr->fs->mac_size;
+    super_rw->opt_flags = SUPER_BLOCK_OPT_FLAGS_HAS_FLAGS3;
     super_rw->block_count = tr->fs->dev->block_count;
     if (free) {
         super_rw->free = *free;
@@ -162,6 +192,8 @@ static bool update_super_block_internal(struct transaction* tr,
         super_rw->files = *files;
     }
     super_rw->flags2 = flags;
+    super_rw->backup = tr->fs->backup;
+    super_rw->flags3 = flags;
     tr->fs->written_super_block_version = ver;
 
     block_put_dirty_no_mac(super_rw, &super_ref);
@@ -314,6 +346,12 @@ static bool super_block_valid(const struct block_device* dev,
                 super->flags2);
         return false;
     }
+    if ((super->opt_flags & SUPER_BLOCK_OPT_FLAGS_HAS_FLAGS3) &&
+        super->flags != super->flags3) {
+        pr_warn("flags, 0x%x, does not match flags3, 0x%x\n", super->flags,
+                super->flags3);
+        return false;
+    }
     if (super->fs_version > SUPER_BLOCK_FS_VERSION) {
         pr_warn("super block is from the future: 0x%x\n", super->fs_version);
         return true;
@@ -327,17 +365,14 @@ static bool super_block_valid(const struct block_device* dev,
                 dev->block_size);
         return false;
     }
-    if (super->block_num_size < dev->block_num_size ||
-        super->block_num_size > sizeof(data_block_t)) {
-        pr_warn("invalid block_num_size %d not in [%zd, %zd]\n",
-                super->block_num_size, dev->block_num_size,
-                sizeof(data_block_t));
+    if (super->block_num_size != dev->block_num_size) {
+        pr_warn("invalid block_num_size %d, expected %zd\n",
+                super->block_num_size, dev->block_num_size);
         return false;
     }
-    if (super->mac_size < dev->mac_size ||
-        super->mac_size > sizeof(struct mac)) {
-        pr_warn("invalid mac_size %d not in [%zd, %zd]\n", super->mac_size,
-                dev->mac_size, sizeof(struct mac));
+    if (super->mac_size != dev->mac_size) {
+        pr_warn("invalid mac_size %d, expected %zd\n", super->mac_size,
+                dev->mac_size);
         return false;
     }
     if (!dev->tamper_detecting && super->mac_size != sizeof(struct mac)) {
@@ -345,6 +380,16 @@ static bool super_block_valid(const struct block_device* dev,
                 sizeof(data_block_t));
         return false;
     }
+    /*
+     * This check only disallows shrinking the block device without clearing the
+     * filesystem as we don't currently check and shrink the backing file on the
+     * block device. However, we don't actually read this value from the
+     * super-block after this check and we instead use the value from the block
+     * device (which may be larger), and save that value to future super-blocks.
+     * Since we don't use this value from the super-block, we don't need a
+     * separate block count for the alternate backup roots as long as the block
+     * device doesn't shrink.
+     */
     if (super->block_count > dev->block_count) {
         pr_warn("bad block count 0x%" PRIx64 ", expected <= 0x%" PRIx64 "\n",
                 super->block_count, dev->block_count);
@@ -429,31 +474,37 @@ static void fs_init_empty(struct fs* fs) {
  * fs_init_from_super - Initialize file system from super block
  * @fs:         File system state object.
  * @super:      Superblock data, or %NULL.
- * @do_clear:   If %true, clear fs state if allowed by super block state.
- * @recovery_allowed: If %true, allow fs to be cleared if its superblock does
- *                    not match the backing store
+ * @flags:      Any of &typedef fs_init_flags32_t, ORed together.
  *
  * Return: 0 if super block was usable, -1 if not.
  */
 static int fs_init_from_super(struct fs* fs,
                               const struct super_block* super,
-                              bool do_clear,
-                              bool recovery_allowed) {
+                              fs_init_flags32_t flags) {
     size_t block_mac_size;
     bool is_clear = false;
+    bool do_clear = flags & FS_INIT_FLAGS_DO_CLEAR;
+    bool do_swap = false; /* Does the active superblock alternate mode match the
+                             current mode? */
+    bool has_backup_field =
+            super && (super->opt_flags & SUPER_BLOCK_OPT_FLAGS_HAS_FLAGS3);
+    bool recovery_allowed = flags & FS_INIT_FLAGS_RECOVERY_CLEAR_ALLOWED;
+    const struct block_mac* new_files_root;
+    const struct block_mac* new_free_root;
 
     if (super && super->fs_version > SUPER_BLOCK_FS_VERSION) {
         pr_err("ERROR: super block is from the future 0x%x\n",
                super->fs_version);
         return -1;
     }
-    if (super && !do_clear) {
-        fs->block_num_size = super->block_num_size;
-        fs->mac_size = super->mac_size;
-    } else {
-        fs->block_num_size = fs->dev->block_num_size;
-        fs->mac_size = fs->dev->mac_size;
-    }
+
+    /*
+     * We check that the super-block matches these block device params in
+     * super_block_valid(). If these params change, the filesystem (and
+     * alternate backup) will be wiped and reset with the new params.
+     */
+    fs->block_num_size = fs->dev->block_num_size;
+    fs->mac_size = fs->dev->mac_size;
 
     block_mac_size = fs->block_num_size + fs->mac_size;
     block_set_init(fs, &fs->free);
@@ -466,23 +517,68 @@ static int fs_init_from_super(struct fs* fs,
     /* Reserve 1/4 for tmp blocks plus half of the remaining space */
     fs->reserved_count = fs->dev->block_count / 8 * 5;
 
+    fs->alternate_data = flags & FS_INIT_FLAGS_ALTERNATE_DATA;
+
     if (super) {
         fs->super_block_version = super->flags & SUPER_BLOCK_FLAGS_VERSION_MASK;
-        if (super->flags & SUPER_BLOCK_FLAGS_EMPTY) {
-            is_clear = true;
+
+        do_swap = !(super->flags & SUPER_BLOCK_FLAGS_ALTERNATE) !=
+                  !(flags & FS_INIT_FLAGS_ALTERNATE_DATA);
+
+        if (do_swap) {
+            pr_init("Swapping super-block with alternate\n");
+
+            fs->backup.flags = super->flags & (SUPER_BLOCK_FLAGS_EMPTY |
+                                               SUPER_BLOCK_FLAGS_ALTERNATE);
+            fs->backup.free = super->free;
+            fs->backup.files = super->files;
+
+            if (!has_backup_field ||
+                super->backup.flags & SUPER_BLOCK_FLAGS_EMPTY) {
+                is_clear = true;
+            } else if (has_backup_field) {
+                new_files_root = &super->backup.files;
+                new_free_root = &super->backup.free;
+            }
+        } else {
+            if (has_backup_field) {
+                fs->backup = super->backup;
+            }
+
+            if (super->flags & SUPER_BLOCK_FLAGS_EMPTY) {
+                is_clear = true;
+            } else {
+                new_files_root = &super->files;
+                new_free_root = &super->free;
+            }
+        }
+
+        if (!is_clear && !do_clear && !block_probe(fs, new_files_root)) {
+            pr_init("Backing file probe failed, fs is corrupted.\n");
+            if (recovery_allowed) {
+                pr_init("Attempting to clear corrupted fs.\n");
+                do_clear = true;
+            }
         }
     }
 
-    if (super && !is_clear && !do_clear && recovery_allowed) {
-        if (!block_probe(fs, &super->files)) {
-            pr_init("Backing file probe failed, fs is corrupted. Attempting to clear.\n");
-            do_clear = true;
-        }
+    /*
+     * If we are initializing a new fs or if we are not swapping but detect an
+     * old superblock without the backup slot, ensure that the backup slot is a
+     * valid empty filesystem in case we later switch filesystems without an
+     * explicit clear flag.
+     */
+    if (!super || (!do_swap && !has_backup_field)) {
+        fs->backup = (struct super_block_backup){
+                .flags = SUPER_BLOCK_FLAGS_EMPTY,
+                .files = {0},
+                .free = {0},
+        };
     }
 
     if (super && !is_clear && !do_clear) {
-        fs->free.block_tree.root = super->free;
-        fs->files.root = super->files;
+        fs->free.block_tree.root = *new_free_root;
+        fs->files.root = *new_files_root;
         pr_init("loaded super block version %d\n", fs->super_block_version);
     } else {
         if (is_clear) {
@@ -514,14 +610,12 @@ static int fs_init_from_super(struct fs* fs,
 /**
  * load_super_block - Find and load superblock and initialize file system state
  * @fs:         File system state object.
- * @clear:      If %true, clear fs state if allowed by super block state.
- * @recovery_allowed: If %true, allow fs to be cleared if its superblock does
- *                    not match the backing store
+ * @flags:      Any of &typedef fs_init_flags32_t, ORed together.
  *
  * Return: 0 if super block was readable and not from a future file system
  * version (regardless of its other content), -1 if not.
  */
-static int load_super_block(struct fs* fs, bool clear, bool recovery_allowed) {
+static int load_super_block(struct fs* fs, fs_init_flags32_t flags) {
     unsigned int i;
     int ret;
     const struct super_block* new_super;
@@ -549,7 +643,7 @@ static int load_super_block(struct fs* fs, bool clear, bool recovery_allowed) {
         }
     }
 
-    ret = fs_init_from_super(fs, old_super, clear, recovery_allowed);
+    ret = fs_init_from_super(fs, old_super, flags);
 err:
     if (old_super) {
         block_put(old_super, &old_super_ref);
@@ -563,16 +657,13 @@ err:
  * @key:        Key pointer. Must not be freed while @fs is in use.
  * @dev:        Main block device.
  * @super_dev:  Block device for super block.
- * @clear:      If %true, clear fs state if allowed by super block state.
- * @recovery_allowed: If %true, allow fs to be cleared if its superblock does
- *                    not match the backing store
+ * @flags:      Any of &typedef fs_init_flags32_t, ORed together.
  */
 int fs_init(struct fs* fs,
             const struct key* key,
             struct block_device* dev,
             struct block_device* super_dev,
-            bool clear,
-            bool recovery_allowed) {
+            fs_init_flags32_t flags) {
     int ret;
 
     if (super_dev->block_size < sizeof(struct super_block)) {
@@ -603,7 +694,7 @@ int fs_init(struct fs* fs,
     }
     fs->super_block[0] = 0;
     fs->super_block[1] = 1;
-    ret = load_super_block(fs, clear, recovery_allowed);
+    ret = load_super_block(fs, flags);
     if (ret) {
         fs_destroy(fs);
         fs->dev = NULL;

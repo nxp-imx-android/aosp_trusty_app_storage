@@ -100,12 +100,65 @@ struct block {
     data_block_t used_by_block;
 };
 static struct block blocks[BLOCK_COUNT];
+static struct block blocks_backup[BLOCK_COUNT];
 static const struct key key;
 
 static bool print_test_verbose = false;
 static bool print_block_tree_test_verbose = false;
 
 data_block_t block_test_fail_write_blocks;
+
+static void block_test_clear_reinit_etc(struct transaction* tr,
+                                        uint32_t flags,
+                                        bool swap,
+                                        bool clear,
+                                        size_t start) {
+    struct fs* fs = tr->fs;
+    const struct key* key = fs->key;
+    struct block_device* dev = tr->fs->dev;
+    struct block_device* super_dev = tr->fs->super_dev;
+    int i;
+    struct block tmp;
+    int ret;
+
+    transaction_free(tr);
+    fs_destroy(fs);
+    block_cache_dev_destroy(dev);
+
+    if (swap) {
+        for (i = start; i < BLOCK_COUNT; ++i) {
+            tmp = blocks[i];
+            blocks[i] = blocks_backup[i];
+            blocks_backup[i] = tmp;
+        }
+    }
+
+    if (clear) {
+        memset(&blocks[start], 0, (BLOCK_COUNT - start) * sizeof(struct block));
+    }
+
+    ret = fs_init(fs, key, dev, super_dev, flags);
+    assert(ret == 0);
+    transaction_init(tr, fs, true);
+}
+
+static void block_test_swap_clear_reinit(struct transaction* tr,
+                                         uint32_t flags) {
+    block_test_clear_reinit_etc(tr, flags, true, true, 2);
+}
+
+static void block_test_swap_reinit(struct transaction* tr, uint32_t flags) {
+    block_test_clear_reinit_etc(tr, flags, true, false, 2);
+}
+
+static void block_test_reinit(struct transaction* tr, uint32_t flags) {
+    block_test_clear_reinit_etc(tr, flags, false, false, 2);
+}
+
+static void block_test_clear_superblock_reinit(struct transaction* tr,
+                                               uint32_t flags) {
+    block_test_clear_reinit_etc(tr, flags, false, true, 0);
+}
 
 static void block_test_start_read(struct block_device* dev,
                                   data_block_t block) {
@@ -1726,10 +1779,10 @@ static void future_fs_version_test(struct transaction* tr) {
     fs_destroy(fs);
     block_cache_dev_destroy(dev);
 
-    ret = fs_init(fs, key, dev, super_dev, false, false);
+    ret = fs_init(fs, key, dev, super_dev, FS_INIT_FLAGS_NONE);
     assert(ret == -1);
 
-    ret = fs_init(fs, key, dev, super_dev, true, false);
+    ret = fs_init(fs, key, dev, super_dev, FS_INIT_FLAGS_DO_CLEAR);
     assert(ret == -1);
 
     fs->dev = dev;
@@ -1744,7 +1797,7 @@ static void future_fs_version_test(struct transaction* tr) {
     block_cache_clean_transaction(tr);
     transaction_free(tr);
 
-    ret = fs_init(fs, key, dev, super_dev, false, false);
+    ret = fs_init(fs, key, dev, super_dev, FS_INIT_FLAGS_NONE);
     assert(ret == 0);
 
     transaction_init(tr, fs, true);
@@ -1754,10 +1807,6 @@ static void fs_recovery_test(struct transaction* tr) {
     data_block_t block;
     struct file_handle file;
     struct fs* fs = tr->fs;
-    const struct key* key = fs->key;
-    struct block_device* dev = fs->dev;
-    struct block_device* super_dev = fs->super_dev;
-    int ret;
 
     file_test(tr, "recovery", FILE_OPEN_CREATE_EXCLUSIVE, file_test_block_count,
               0, 0, false, 1);
@@ -1774,32 +1823,505 @@ static void fs_recovery_test(struct transaction* tr) {
     /* Corrupt the files root block */
     block = block_mac_to_block(tr, &fs->files.root);
     memset(&blocks[block], 0, sizeof(struct block));
-    block_cache_dev_destroy(dev);
+    block_cache_dev_destroy(fs->dev);
 
     open_test_file_etc(tr, &file, "recovery", FILE_OPEN_NO_CREATE, true);
     transaction_complete(tr);
     assert(tr->failed);
 
     /* re-initialize the filesystem without recovery enabled */
-    transaction_free(tr);
-    fs_destroy(fs);
-    block_cache_dev_destroy(dev);
-    ret = fs_init(fs, key, dev, super_dev, false, false);
-    transaction_init(tr, fs, true);
+    block_test_reinit(tr, FS_INIT_FLAGS_NONE);
 
     open_test_file_etc(tr, &file, "recovery", FILE_OPEN_CREATE_EXCLUSIVE, true);
     transaction_complete(tr);
     assert(tr->failed);
 
     /* re-initialize the filesystem with recovery enabled */
-    transaction_free(tr);
-    fs_destroy(fs);
-    block_cache_dev_destroy(dev);
-    ret = fs_init(fs, key, dev, super_dev, false, true /* recovery allowed */);
-    transaction_init(tr, fs, true);
+    block_test_reinit(tr, FS_INIT_FLAGS_RECOVERY_CLEAR_ALLOWED);
 
     file_test(tr, "recovery", FILE_OPEN_CREATE_EXCLUSIVE, file_test_block_count,
               0, 0, false, 1);
+    transaction_complete(tr);
+    assert(!tr->failed);
+
+    /*
+     * Backup, then clear and re-initialize the filesystem with only clear
+     * recovery enabled.
+     */
+    block_test_swap_clear_reinit(tr, FS_INIT_FLAGS_RECOVERY_CLEAR_ALLOWED);
+
+    /* test file should be missing */
+    open_test_file_etc(tr, &file, "recovery", FILE_OPEN_NO_CREATE, true);
+    transaction_complete(tr);
+
+    block_test_swap_reinit(tr, FS_INIT_FLAGS_RECOVERY_CLEAR_ALLOWED);
+
+    /* test file should NOT be back */
+    open_test_file_etc(tr, &file, "recovery", FILE_OPEN_NO_CREATE, true);
+}
+
+/*
+ * Main and Alternate data states:
+ * a) empty superblock, empty backing file
+ * b) empty superblock, uncommitted backing file
+ * c) non-empty superblock, non-empty backing file
+ * d) non-empty superblock, empty backing file
+ *
+ * Transitions:
+ * Main a-d -> Alternate a-c
+ * Alternate a-c -> Alternate a-c
+ * Alternate a-c -> Main a-c
+ *
+ * (d is not listed as a transition target as it should be replaced by an empty
+ * superblock on init)
+ */
+
+static void fs_alternate_negative_test(struct transaction* tr) {
+    struct file_handle file;
+
+    /* Initialize and commit a file to the FS */
+    file_test(tr, "main", FILE_OPEN_CREATE_EXCLUSIVE, file_test_block_count, 0,
+              0, false, 1);
+    transaction_complete(tr);
+    assert(!tr->failed);
+    transaction_activate(tr);
+
+    open_test_file_etc(tr, &file, "main", FILE_OPEN_NO_CREATE, false);
+    file_close(&file);
+    transaction_complete(tr);
+    assert(!tr->failed);
+
+    /* Swap and clear backing file without using alternate superblock */
+    block_test_swap_clear_reinit(tr, FS_INIT_FLAGS_DO_CLEAR);
+
+    /* Ensure that the file is missing */
+    open_test_file_etc(tr, &file, "main", FILE_OPEN_NO_CREATE, true);
+
+    /* Flush the cleared superblock here */
+    transaction_complete(tr);
+
+    block_test_swap_reinit(tr, FS_INIT_FLAGS_NONE);
+
+    /*
+     * Ensure that the file is still missing (i.e. we did not create and restore
+     * a backup)
+     */
+    open_test_file_etc(tr, &file, "main", FILE_OPEN_NO_CREATE, true);
+    transaction_fail(tr);
+
+    block_test_swap_clear_reinit(tr, FS_INIT_FLAGS_DO_CLEAR);
+}
+
+/*
+ * Test that we can correctly alternate between a non-empty FS and an alternate
+ * FS.
+ * Tests the sequence:
+ *     Main c -> Alternate a -> Alternate a -> Alternate b -> Main c ->
+ *     Alternate b -> Alternate c -> Main c -> Alternate c
+ */
+static void fs_alternate_test(struct transaction* tr) {
+    struct file_handle file;
+
+    /* Initialize and commit a file to the FS */
+    file_test(tr, "main", FILE_OPEN_CREATE_EXCLUSIVE, file_test_block_count, 0,
+              0, false, 1);
+    transaction_complete(tr);
+    assert(!tr->failed);
+    transaction_activate(tr);
+
+    open_test_file_etc(tr, &file, "main", FILE_OPEN_NO_CREATE, false);
+    file_close(&file);
+    transaction_complete(tr);
+    assert(!tr->failed);
+
+    /* reboot into alternate and clear */
+    block_test_swap_clear_reinit(
+            tr, FS_INIT_FLAGS_DO_CLEAR | FS_INIT_FLAGS_ALTERNATE_DATA);
+
+    /* test file should be missing */
+    open_test_file_etc(tr, &file, "main", FILE_OPEN_NO_CREATE, true);
+    transaction_fail(tr);
+
+    /*
+     * simulate a reboot with an empty backing file, staying in alternate
+     * mode
+     */
+    block_test_reinit(tr,
+                      FS_INIT_FLAGS_DO_CLEAR | FS_INIT_FLAGS_ALTERNATE_DATA);
+
+    /* test file should still be missing */
+    open_test_file_etc(tr, &file, "main", FILE_OPEN_NO_CREATE, true);
+    transaction_fail(tr);
+    transaction_activate(tr);
+
+    /* flush blocks to disk so the backing store is non-empty */
+    file_test_etc(tr, false, "alternate", FILE_OPEN_CREATE_EXCLUSIVE, "",
+                  FILE_OPEN_NO_CREATE, 80, 0, 0, false, 1);
+    transaction_fail(tr);
+
+    /* simulate a reboot with a cleared superblock but non-empty backing file */
+    block_test_reinit(tr, FS_INIT_FLAGS_ALTERNATE_DATA);
+
+    open_test_file_etc(tr, &file, "alternate", FILE_OPEN_NO_CREATE, true);
+    transaction_fail(tr);
+
+    /* simulate a reboot, switching to main mode */
+    block_test_swap_reinit(tr, FS_INIT_FLAGS_NONE);
+
+    /* test file should be available */
+    open_test_file_etc(tr, &file, "main", FILE_OPEN_NO_CREATE, false);
+    file_close(&file);
+    transaction_complete(tr);
+    assert(!tr->failed);
+
+    /* and alternate test file should not be */
+    open_test_file_etc(tr, &file, "alternate", FILE_OPEN_NO_CREATE, true);
+    transaction_fail(tr);
+
+    /* simulate a reboot, switching to alternate mode */
+    block_test_swap_reinit(tr, FS_INIT_FLAGS_ALTERNATE_DATA);
+
+    /* main test file should not exist */
+    open_test_file_etc(tr, &file, "main", FILE_OPEN_NO_CREATE, true);
+    transaction_fail(tr);
+    transaction_activate(tr);
+
+    /* write a file */
+    file_test(tr, "alternate", FILE_OPEN_CREATE_EXCLUSIVE,
+              file_test_block_count, 0, 0, false, 1);
+    transaction_complete(tr);
+    assert(!tr->failed);
+    transaction_activate(tr);
+
+    open_test_file_etc(tr, &file, "alternate", FILE_OPEN_NO_CREATE, false);
+    file_close(&file);
+    transaction_complete(tr);
+    assert(!tr->failed);
+
+    /* simulate reboot, still in alternate mode */
+    block_test_reinit(tr, FS_INIT_FLAGS_ALTERNATE_DATA);
+
+    open_test_file_etc(tr, &file, "alternate", FILE_OPEN_NO_CREATE, false);
+    file_close(&file);
+    transaction_complete(tr);
+    assert(!tr->failed);
+
+    /* simulate reboot back into main mode */
+    block_test_swap_reinit(tr, FS_INIT_FLAGS_NONE);
+
+    /* test file should be back */
+    open_test_file_etc(tr, &file, "main", FILE_OPEN_NO_CREATE, false);
+    file_close(&file);
+    transaction_complete(tr);
+    assert(!tr->failed);
+    transaction_activate(tr);
+
+    /* and alternate file should be gone */
+    open_test_file_etc(tr, &file, "alternate", FILE_OPEN_NO_CREATE, true);
+    transaction_fail(tr);
+
+    /* simulate reboot back into alternate */
+    block_test_swap_reinit(tr, FS_INIT_FLAGS_ALTERNATE_DATA);
+
+    /* alternate test file should be back */
+    open_test_file_etc(tr, &file, "alternate", FILE_OPEN_NO_CREATE, false);
+    file_close(&file);
+    transaction_complete(tr);
+    assert(!tr->failed);
+    transaction_activate(tr);
+
+    /* and regular file should be gone */
+    open_test_file_etc(tr, &file, "main", FILE_OPEN_NO_CREATE, true);
+    transaction_fail(tr);
+
+    block_test_swap_clear_reinit(tr, FS_INIT_FLAGS_DO_CLEAR);
+}
+
+/*
+ * Test that we can correctly backup from and recover a empty FS state.
+ * Tests the sequence:
+ *     Main a -> Alternate a -> Alternate c -> Main a -> Alternate c -> Main a
+ *     -> Main b -> Alternate a -> Alternate c -> Main b
+ */
+static void fs_alternate_empty_test(struct transaction* tr) {
+    struct file_handle file;
+    transaction_fail(tr);
+
+    /* clear main fs */
+    block_test_swap_clear_reinit(tr, FS_INIT_FLAGS_DO_CLEAR);
+
+    /* Ensure that the file is missing */
+    open_test_file_etc(tr, &file, "main", FILE_OPEN_NO_CREATE, true);
+    transaction_fail(tr);
+
+    /* swap to alternate and clear */
+    block_test_swap_clear_reinit(
+            tr, FS_INIT_FLAGS_DO_CLEAR | FS_INIT_FLAGS_ALTERNATE_DATA);
+
+    /* Ensure that the file is still missing */
+    open_test_file_etc(tr, &file, "main", FILE_OPEN_NO_CREATE, true);
+    transaction_fail(tr);
+    transaction_activate(tr);
+
+    /* write a file */
+    file_test(tr, "alternate", FILE_OPEN_CREATE_EXCLUSIVE,
+              file_test_block_count, 0, 0, false, 1);
+    transaction_complete(tr);
+    assert(!tr->failed);
+    transaction_activate(tr);
+
+    open_test_file_etc(tr, &file, "alternate", FILE_OPEN_NO_CREATE, false);
+    file_close(&file);
+    transaction_complete(tr);
+    assert(!tr->failed);
+
+    /* reboot back to alternate with data */
+    block_test_reinit(tr, FS_INIT_FLAGS_ALTERNATE_DATA);
+
+    open_test_file_etc(tr, &file, "alternate", FILE_OPEN_NO_CREATE, false);
+    file_close(&file);
+    transaction_complete(tr);
+    assert(!tr->failed);
+
+    /* reboot to cleared main */
+    block_test_swap_reinit(tr, FS_INIT_FLAGS_NONE);
+
+    /* Ensure that the file is missing */
+    open_test_file_etc(tr, &file, "alternate", FILE_OPEN_NO_CREATE, true);
+    transaction_fail(tr);
+
+    /* reboot to alternate to check that our data is still there */
+    block_test_swap_reinit(tr, FS_INIT_FLAGS_ALTERNATE_DATA);
+
+    open_test_file_etc(tr, &file, "alternate", FILE_OPEN_NO_CREATE, false);
+    file_close(&file);
+    transaction_complete(tr);
+    assert(!tr->failed);
+
+    /* reboot back to cleared main */
+    block_test_swap_reinit(tr, FS_INIT_FLAGS_DO_CLEAR);
+
+    /* flush blocks to disk so we have a non-empty backing file */
+    file_test_etc(tr, false, "main", FILE_OPEN_CREATE_EXCLUSIVE, "",
+                  FILE_OPEN_NO_CREATE, 80, 0, 0, false, 1);
+    transaction_fail(tr);
+
+    /* reboot with a non-empty backing file and cleared main superblock */
+    block_test_reinit(tr, FS_INIT_FLAGS_NONE);
+
+    /* Ensure that the file is still missing */
+    open_test_file_etc(tr, &file, "main", FILE_OPEN_NO_CREATE, true);
+    transaction_fail(tr);
+
+    /* reboot to alternate, clearing */
+    block_test_swap_reinit(
+            tr, FS_INIT_FLAGS_DO_CLEAR | FS_INIT_FLAGS_ALTERNATE_DATA);
+
+    /* write a file */
+    file_test(tr, "alternate", FILE_OPEN_CREATE_EXCLUSIVE,
+              file_test_block_count, 0, 0, false, 1);
+    transaction_complete(tr);
+    assert(!tr->failed);
+    transaction_activate(tr);
+
+    open_test_file_etc(tr, &file, "alternate", FILE_OPEN_NO_CREATE, false);
+    file_close(&file);
+    transaction_complete(tr);
+    assert(!tr->failed);
+
+    /* reboot to non-empty alternate */
+    block_test_reinit(tr, FS_INIT_FLAGS_ALTERNATE_DATA);
+
+    transaction_fail(tr);
+
+    /* reboot to empty main with non-empty backing file */
+    block_test_swap_reinit(tr, FS_INIT_FLAGS_NONE);
+
+    /* write a file */
+    file_test(tr, "main", FILE_OPEN_CREATE_EXCLUSIVE, file_test_block_count, 0,
+              0, false, 1);
+    transaction_complete(tr);
+    assert(!tr->failed);
+    transaction_activate(tr);
+
+    open_test_file_etc(tr, &file, "main", FILE_OPEN_NO_CREATE, false);
+    file_close(&file);
+    transaction_complete(tr);
+    assert(!tr->failed);
+
+    block_test_swap_clear_reinit(tr, FS_INIT_FLAGS_DO_CLEAR);
+}
+
+/*
+ * Tests the interaction between alternate data and corruption recovery.
+ * Tests the sequence:
+ *     Main c -> Alternate a -> Alternate c -> Recover from corrupt alternate ->
+ *     Main c -> Recover from corrupt main -> Alternate c
+ */
+static void fs_alternate_recovery_test(struct transaction* tr) {
+    data_block_t block;
+    struct file_handle file;
+    struct fs* fs = tr->fs;
+
+    file_test(tr, "recovery_main", FILE_OPEN_CREATE_EXCLUSIVE,
+              file_test_block_count, 0, 0, false, 1);
+    transaction_complete(tr);
+    assert(!tr->failed);
+    transaction_activate(tr);
+
+    open_test_file_etc(tr, &file, "recovery_main", FILE_OPEN_NO_CREATE, false);
+    file_close(&file);
+    transaction_complete(tr);
+    assert(!tr->failed);
+
+    block_test_swap_clear_reinit(
+            tr, FS_INIT_FLAGS_DO_CLEAR | FS_INIT_FLAGS_ALTERNATE_DATA);
+
+    file_test(tr, "recovery_alternate", FILE_OPEN_CREATE_EXCLUSIVE,
+              file_test_block_count, 0, 0, false, 1);
+    transaction_complete(tr);
+    assert(!tr->failed);
+    transaction_activate(tr);
+
+    open_test_file_etc(tr, &file, "recovery_alternate", FILE_OPEN_NO_CREATE,
+                       false);
+    file_close(&file);
+    transaction_complete(tr);
+    assert(!tr->failed);
+
+    /* Corrupt the files root block */
+    block = block_mac_to_block(tr, &fs->files.root);
+    memset(&blocks[block], 0, sizeof(struct block));
+    block_cache_dev_destroy(fs->dev);
+
+    transaction_activate(tr);
+    open_test_file_etc(tr, &file, "recovery_alternate", FILE_OPEN_NO_CREATE,
+                       true);
+    transaction_complete(tr);
+    assert(tr->failed);
+
+    /* re-initialize the filesystem without recovery enabled */
+    block_test_reinit(tr, FS_INIT_FLAGS_ALTERNATE_DATA);
+
+    open_test_file_etc(tr, &file, "recovery_alternate",
+                       FILE_OPEN_CREATE_EXCLUSIVE, true);
+    transaction_complete(tr);
+    assert(tr->failed);
+
+    /* re-initialize the filesystem with recovery enabled */
+    block_test_reinit(tr, FS_INIT_FLAGS_RECOVERY_CLEAR_ALLOWED |
+                                  FS_INIT_FLAGS_ALTERNATE_DATA);
+
+    file_test(tr, "recovery_alternate", FILE_OPEN_CREATE_EXCLUSIVE,
+              file_test_block_count, 0, 0, false, 1);
+    transaction_complete(tr);
+    assert(!tr->failed);
+
+    /* Swap to main and verify that our file still exists */
+    block_test_swap_reinit(tr, FS_INIT_FLAGS_NONE);
+
+    /* alternate test file should be missing */
+    open_test_file_etc(tr, &file, "recovery_alternate", FILE_OPEN_NO_CREATE,
+                       true);
+    transaction_complete(tr);
+    transaction_activate(tr);
+
+    /*
+     * Main test file should exist. We write to it to force the pending
+     * superblock to get written before we do the corruption to avoid tripping a
+     * dirty transaction assert
+     */
+    file_test(tr, "recovery_main", FILE_OPEN_NO_CREATE, file_test_block_count,
+              0, 0, false, 2);
+    transaction_complete(tr);
+    assert(!tr->failed);
+
+    /* Corrupt the files root block */
+    block = block_mac_to_block(tr, &fs->files.root);
+    memset(&blocks[block], 0, sizeof(struct block));
+    block_cache_dev_destroy(fs->dev);
+
+    transaction_activate(tr);
+    open_test_file_etc(tr, &file, "recovery_main", FILE_OPEN_NO_CREATE, true);
+    transaction_complete(tr);
+    assert(tr->failed);
+
+    /* re-initialize the filesystem without recovery enabled */
+    block_test_reinit(tr, FS_INIT_FLAGS_NONE);
+
+    open_test_file_etc(tr, &file, "recovery_main", FILE_OPEN_CREATE_EXCLUSIVE,
+                       true);
+    transaction_complete(tr);
+    assert(tr->failed);
+
+    /* re-initialize the filesystem with recovery enabled */
+    block_test_reinit(tr, FS_INIT_FLAGS_RECOVERY_CLEAR_ALLOWED);
+
+    file_test(tr, "recovery_main", FILE_OPEN_CREATE_EXCLUSIVE,
+              file_test_block_count, 0, 0, false, 1);
+    transaction_complete(tr);
+    assert(!tr->failed);
+
+    /* Swap to alternate and verify that our file still exists */
+    block_test_swap_reinit(tr, FS_INIT_FLAGS_ALTERNATE_DATA);
+
+    /* alternate test file should exist */
+    open_test_file_etc(tr, &file, "recovery_alternate", FILE_OPEN_NO_CREATE,
+                       false);
+    file_close(&file);
+    transaction_complete(tr);
+    assert(!tr->failed);
+
+    /*
+     * Swap data back to main to finish off the test so we don't end up with a
+     * mismatch during cleanup
+     */
+    block_test_swap_reinit(tr, FS_INIT_FLAGS_NONE);
+}
+
+static void fs_alternate_init_test(struct transaction* tr) {
+    struct file_handle file;
+    transaction_fail(tr);
+
+    block_test_clear_superblock_reinit(tr, FS_INIT_FLAGS_NONE);
+
+    /* Initialize and commit a file to the FS */
+    file_test(tr, "main", FILE_OPEN_CREATE_EXCLUSIVE, file_test_block_count, 0,
+              0, false, 1);
+    transaction_complete(tr);
+    assert(!tr->failed);
+    transaction_activate(tr);
+
+    open_test_file_etc(tr, &file, "main", FILE_OPEN_NO_CREATE, false);
+    file_close(&file);
+    transaction_complete(tr);
+    assert(!tr->failed);
+
+    /* reboot into alternate but do not pass clear flag */
+    block_test_swap_clear_reinit(tr, FS_INIT_FLAGS_ALTERNATE_DATA);
+
+    /* test file should be missing */
+    open_test_file_etc(tr, &file, "main", FILE_OPEN_NO_CREATE, true);
+    transaction_fail(tr);
+    transaction_activate(tr);
+
+    /* Initialize and commit a file to the FS */
+    file_test(tr, "alternate", FILE_OPEN_CREATE_EXCLUSIVE,
+              file_test_block_count, 0, 0, false, 1);
+    transaction_complete(tr);
+    assert(!tr->failed);
+    transaction_activate(tr);
+
+    open_test_file_etc(tr, &file, "alternate", FILE_OPEN_NO_CREATE, false);
+    file_close(&file);
+    transaction_complete(tr);
+    assert(!tr->failed);
+
+    /* reboot into main */
+    block_test_swap_reinit(tr, FS_INIT_FLAGS_NONE);
+
+    open_test_file_etc(tr, &file, "main", FILE_OPEN_NO_CREATE, false);
+    file_close(&file);
 }
 
 #if 0
@@ -1918,6 +2440,11 @@ struct {
         TEST(file_delete1_no_free_test),
         TEST(future_fs_version_test),
         TEST(fs_recovery_test),
+        TEST(fs_alternate_negative_test),
+        TEST(fs_alternate_test),
+        TEST(fs_alternate_empty_test),
+        TEST(fs_alternate_recovery_test),
+        TEST(fs_alternate_init_test),
 };
 
 int main(int argc, const char* argv[]) {
@@ -1971,7 +2498,7 @@ int main(int argc, const char* argv[]) {
     crypt_init();
     block_cache_init();
 
-    fs_init(&fs, &key, &dev, &dev, true, false);
+    fs_init(&fs, &key, &dev, &dev, FS_INIT_FLAGS_DO_CLEAR);
     fs.reserved_count = 18; /* HACK: override default reserved space */
     transaction_init(&tr, &fs, false);
 
@@ -1994,7 +2521,7 @@ int main(int argc, const char* argv[]) {
             transaction_free(&tr);
             fs_destroy(&fs);
             block_cache_dev_destroy(&dev);
-            fs_init(&fs, &key, &dev, &dev, false, false);
+            fs_init(&fs, &key, &dev, &dev, FS_INIT_FLAGS_NONE);
             fs.reserved_count = 18; /* HACK: override default reserved space */
             transaction_init(&tr, &fs, false);
         }

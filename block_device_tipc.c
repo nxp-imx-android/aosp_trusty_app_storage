@@ -32,6 +32,7 @@
 
 #include "block_cache.h"
 #include "client_tipc.h"
+#include "fs.h"
 #include "ipc.h"
 #include "rpmb.h"
 #include "tipc_ns.h"
@@ -57,12 +58,6 @@
 #define BLOCK_COUNT_MAIN (0x10000000000 / BLOCK_SIZE_MAIN)
 #endif
 
-#if STORAGE_NS_RECOVERY_ALLOWED
-#define NS_RECOVERY_ALLOWED true
-#else
-#define NS_RECOVERY_ALLOWED false
-#endif
-
 #define BLOCK_SIZE_RPMB_BLOCKS (BLOCK_SIZE_RPMB / RPMB_BUF_SIZE)
 
 STATIC_ASSERT(BLOCK_SIZE_RPMB_BLOCKS == 1 || BLOCK_SIZE_RPMB_BLOCKS == 2);
@@ -73,6 +68,9 @@ STATIC_ASSERT(BLOCK_COUNT_RPMB == 0 || BLOCK_COUNT_RPMB >= 8);
 STATIC_ASSERT(BLOCK_SIZE_MAIN >= 256);
 STATIC_ASSERT(BLOCK_COUNT_MAIN >= 8);
 STATIC_ASSERT(BLOCK_SIZE_MAIN >= BLOCK_SIZE_RPMB);
+
+/* Ensure that we can fit a superblock + backup in an RPMB block */
+STATIC_ASSERT(BLOCK_SIZE_RPMB >= 256);
 
 #define SS_ERR(args...) fprintf(stderr, "ss: " args)
 #define SS_WARN(args...) fprintf(stderr, "ss: " args)
@@ -422,7 +420,8 @@ int block_device_tipc_init(struct block_device_tipc* state,
                            const struct rpmb_key* rpmb_key,
                            hwkey_session_t hwkey_session) {
     int ret;
-    bool new_ns_fs;
+    bool alternate_data_partition = false;
+    uint32_t ns_init_flags = FS_INIT_FLAGS_NONE;
     uint8_t probe;
     uint16_t rpmb_key_part_base = 0;
     uint32_t rpmb_block_count;
@@ -478,7 +477,7 @@ int block_device_tipc_init(struct block_device_tipc* state,
 
     /* TODO: allow non-rpmb based tamper proof storage */
     ret = fs_init(&state->tr_state_rpmb, fs_key, &state->dev_rpmb.dev,
-                  &state->dev_rpmb.dev, false, false);
+                  &state->dev_rpmb.dev, FS_INIT_FLAGS_NONE);
     if (ret < 0) {
         goto err_init_tr_state_rpmb;
     }
@@ -503,9 +502,21 @@ int block_device_tipc_init(struct block_device_tipc* state,
 
     ret = ns_open_file(state->ipc_handle, "0", &state->dev_ns.ns_handle, true);
     if (ret < 0) {
-        /* RPMB fs only */
-        state->dev_ns.dev.block_count = 0;
-        return 0;
+        /*
+         * Only attempt to open the alternate file if allowed, and if not
+         * supported or available fall back to TP only.
+         */
+#if STORAGE_NS_ALTERNATE_SUPERBLOCK_ALLOWED
+        ret = ns_open_file(state->ipc_handle, "alternate/0",
+                           &state->dev_ns.ns_handle, true);
+#endif
+        if (ret >= 0) {
+            alternate_data_partition = true;
+        } else {
+            /* RPMB fs only */
+            state->dev_ns.dev.block_count = 0;
+            return 0;
+        }
     }
 
 #if HAS_FS_TDP
@@ -525,8 +536,7 @@ int block_device_tipc_init(struct block_device_tipc* state,
                                     rpmb_part_sb_ns_block_count, false);
 
     ret = fs_init(&state->tr_state_ns_tdp, fs_key, &state->dev_ns_tdp.dev,
-                  &state->dev_ns_tdp_rpmb.dev, false /* Don't allow wiping */,
-                  false);
+                  &state->dev_ns_tdp_rpmb.dev, FS_INIT_FLAGS_NONE);
     if (ret < 0) {
         goto err_init_fs_ns_tdp_tr_state;
     }
@@ -552,15 +562,29 @@ int block_device_tipc_init(struct block_device_tipc* state,
     /* Request empty file system if file is empty */
     ret = ns_read_pos(state->ipc_handle, state->dev_ns.ns_handle, 0, &probe,
                       sizeof(probe));
-    new_ns_fs = ret < (int)sizeof(probe);
+    if (ret < (int)sizeof(probe)) {
+        ns_init_flags |= FS_INIT_FLAGS_DO_CLEAR;
+    }
 
     state->fs_ns.tr_state = &state->tr_state_ns;
 
     block_device_tipc_init_dev_rpmb(&state->dev_ns_rpmb, state, rpmb_part1_base,
                                     rpmb_part_sb_ns_block_count, true);
 
+#if STORAGE_NS_RECOVERY_CLEAR_ALLOWED
+    ns_init_flags |= FS_INIT_FLAGS_RECOVERY_CLEAR_ALLOWED;
+#endif
+
+    /*
+     * This must be false if STORAGE_NS_ALTERNATE_SUPERBLOCK_ALLOWED is
+     * false.
+     */
+    if (alternate_data_partition) {
+        ns_init_flags |= FS_INIT_FLAGS_ALTERNATE_DATA;
+    }
+
     ret = fs_init(&state->tr_state_ns, fs_key, &state->dev_ns.dev,
-                  &state->dev_ns_rpmb.dev, new_ns_fs, NS_RECOVERY_ALLOWED);
+                  &state->dev_ns_rpmb.dev, ns_init_flags);
     if (ret < 0) {
         goto err_init_fs_ns_tr_state;
     }
