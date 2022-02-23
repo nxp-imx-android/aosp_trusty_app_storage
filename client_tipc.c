@@ -1267,11 +1267,15 @@ static int client_handle_msg(struct ipc_channel_context* ctx,
 int client_create_port(struct ipc_port_context* client_ctx,
                        const char* port_name) {
     int ret;
+    uint32_t flags = IPC_PORT_ALLOW_TA_CONNECT;
+#if TEST_BUILD
+    flags |= IPC_PORT_ALLOW_NS_CONNECT;
+#endif
 
     /* start accepting client connections */
     client_ctx->ops.on_connect = client_connect;
     ret = ipc_port_create(client_ctx, port_name, 1, STORAGE_MAX_BUFFER_SIZE,
-                          IPC_PORT_ALLOW_TA_CONNECT);
+                          flags);
     if (ret < 0) {
         SS_ERR("%s: failure initializing client port (%d)\n", __func__, ret);
         return ret;
