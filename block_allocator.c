@@ -266,7 +266,9 @@ static data_block_t find_free_block(struct transaction* tr,
                 block_set_print(tr, &tr->fs->free);
                 list_for_every_entry(&tr->fs->allocated, set, struct block_set,
                                      node) {
+#if TLOG_LVL >= TLOG_LVL_DEBUG
                     printf("%s: allocated %p\n", __func__, set);
+#endif
                     block_set_print(tr, set);
                 }
                 if (tr->new_free_set) {

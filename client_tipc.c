@@ -786,9 +786,10 @@ static enum storage_err storage_file_write(
         file_block_put_dirty(&session->tr, file, block_num, block_data,
                              &block_data_ref);
 
+#if TLOG_LVL >= TLOG_LVL_DEBUG
         SS_INFO("%s: bufp %p offset 0x%" PRIx64 " len 0x%x\n", __func__, bufp,
                 offset, len);
-
+#endif
         bytes_left -= len;
         offset += len;
         bufp += len;

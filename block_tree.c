@@ -264,9 +264,15 @@ static void block_tree_node_shift(const struct block_tree* tree,
             dest = i == 0 ? overflow_key : overflow_data;
             if (dest) {
                 if (print_node_changes) {
+#if TLOG_LVL >= TLOG_LVL_DEBUG
                     printf("%s: copy %p, index %d/%d, to overflow, %p, size %zd, is_zero %d\n",
                            __func__, src, max_count - (dest_index - src_index),
                            max_count, dest, size, is_zero(src, size));
+#else
+                    printf("%s: copy src index %d/%d, to overflow dest, size %zd, is_zero %d\n",
+                           __func__, max_count - (dest_index - src_index),
+                           max_count, size, is_zero(src, size));
+#endif
                 }
                 memcpy(dest, src, size);
             } else {
@@ -280,9 +286,15 @@ static void block_tree_node_shift(const struct block_tree* tree,
             dest = base + dest_index * entry_size;
             size = (max_count - MAX(src_index, dest_index)) * entry_size;
             if (print_node_changes) {
+#if TLOG_LVL >= TLOG_LVL_DEBUG
                 printf("%s: move %p, index %d, to %p, index %d, size %zd, is_zero %d\n",
                        __func__, src, src_index, dest, dest_index, size,
                        is_zero(src, size));
+#else
+                printf("%s: move src index %d, to dest index %d, size %zd, is_zero %d\n",
+                       __func__, src_index, dest_index, size,
+                       is_zero(src, size));
+#endif
             }
             memmove(dest, src, size);
             if (src_index >= dest_index) {
@@ -304,9 +316,15 @@ static void block_tree_node_shift(const struct block_tree* tree,
             } else {
                 assert(src);
                 if (print_node_changes) {
+#if TLOG_LVL >= TLOG_LVL_DEBUG
                     printf("%s: copy new data %p, to %p, index %d, size %zd, is_zero %d\n",
                            __func__, src, dest, src_index, size,
                            is_zero(src, size));
+#else
+                    printf("%s: copy new data, index %d, size %zd, is_zero %d\n",
+                           __func__, src_index, size,
+                           is_zero(src, size));
+#endif
                 }
                 memcpy(dest, src, size);
             }
@@ -316,8 +334,13 @@ static void block_tree_node_shift(const struct block_tree* tree,
             dest = base + clear_index * entry_size;
             size = (max_count - clear_index) * entry_size;
             if (print_node_changes) {
+#if TLOG_LVL >= TLOG_LVL_DEBUG
                 printf("%s: clear %p, index %d/%d, size %zd\n", __func__, dest,
                        clear_index, max_count, size);
+#else
+                printf("%s: clear dest, index %d/%d, size %zd\n", __func__,
+                       clear_index, max_count, size);
+#endif
             }
             memset(dest, 0, size);
         }

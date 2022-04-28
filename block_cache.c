@@ -887,8 +887,13 @@ void block_cache_clean_transaction(struct transaction* tr) {
         assert(entry->dev == dev);
 
         if (print_clean_transaction) {
+#if TLOG_LVL >= TLOG_LVL_DEBUG
             printf("%s: tr %p, block %" PRIu64 "\n", __func__, tr,
                    entry->block);
+#else
+            printf("%s: transaction block %" PRIu64 "\n", __func__,
+                   entry->block);
+#endif
         }
 
         assert(!block_cache_entry_has_refs(entry));
@@ -952,13 +957,23 @@ void block_cache_discard_transaction(struct transaction* tr, bool discard_all) {
         assert(entry->dirty);
 
         if (print_clean_transaction) {
+#if TLOG_LVL >= TLOG_LVL_DEBUG
             printf("%s: tr %p, block %" PRIu64 ", tmp %d\n", __func__, tr,
                    entry->block, entry->dirty_tmp);
+#else
+            printf("%s: transaction block %" PRIu64 ", tmp %d\n", __func__,
+                   entry->block, entry->dirty_tmp);
+#endif
         }
 
         if (block_cache_entry_has_refs(entry)) {
+#if TLOG_LVL >= TLOG_LVL_DEBUG
             pr_warn("tr %p, block %" PRIu64 " has ref (dirty_ref %d)\n", tr,
                     entry->block, entry->dirty_ref);
+#else
+            pr_warn("transaction block %" PRIu64 " has ref (dirty_ref %d)\n",
+                    entry->block, entry->dirty_ref);
+#endif
         } else {
             assert(!entry->dirty_ref);
         }
@@ -1216,11 +1231,13 @@ static void block_put_dirty_etc(struct transaction* tr,
         assert(block_mac_to_block(tr, block_mac) == entry->block);
         block_mac_set_mac(tr, block_mac, &entry->mac);
     }
+#if TLOG_LVL >= TLOG_LVL_DEBUG
     if (print_mac_update) {
         printf("%s: block %" PRIu64 ", update parent mac, %p, block %" PRIu64
                "\n",
                __func__, entry->block, block_mac, parent ? parent->block : 0);
     }
+#endif
 }
 
 /**
@@ -1524,9 +1541,14 @@ unsigned int block_cache_debug_get_ref_block_count(void) {
         assert(entry->guard2 == BLOCK_CACHE_GUARD_2);
         if (block_cache_entry_has_refs(entry)) {
             if (print_cache_get_ref_block_count) {
+#if TLOG_LVL >= TLOG_LVL_DEBUG
                 printf("%s: cache entry %zd in use for %" PRIu64 ", dev %p\n",
                        __func__, entry - block_cache_entries, entry->block,
                        entry->dev);
+#else
+                printf("%s: cache entry %zd in use for %" PRIu64 "\n",
+                       __func__, entry - block_cache_entries, entry->block);
+#endif
             }
             count++;
         }
