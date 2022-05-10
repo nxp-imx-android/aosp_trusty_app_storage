@@ -34,7 +34,8 @@ HOST_FLAGS := -DBUILD_STORAGE_TEST=1
 
 HOST_LIBS := \
 	m \
-	crypto \
-	ssl \
+
+HOST_DEPS := \
+	trusty/user/base/host/boringssl
 
 include make/host_test.mk
