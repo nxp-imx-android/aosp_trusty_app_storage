@@ -196,7 +196,7 @@ static bool update_super_block_internal(struct transaction* tr,
     super_rw->flags3 = flags;
     tr->fs->written_super_block_version = ver;
 
-    block_put_dirty_no_mac(super_rw, &super_ref);
+    block_put_dirty_no_mac(super_rw, &super_ref, tr->fs->allow_tampering);
 
     return true;
 }
@@ -628,6 +628,13 @@ static int load_super_block(struct fs* fs, fs_init_flags32_t flags) {
     for (i = 0; i < countof(fs->super_block); i++) {
         new_super = block_get_super(fs, fs->super_block[i], &new_super_ref);
         if (!new_super) {
+            if (fs->allow_tampering) {
+                /*
+                 * Superblock may not exist yet in non-secure storage, proceed
+                 * anyway
+                 */
+                continue;
+            }
             pr_err("failed to read super-block\n");
             ret = -1;  // -EIO ? ERR_IO?;
             goto err;
@@ -681,6 +688,7 @@ int fs_init(struct fs* fs,
     fs->key = key;
     fs->dev = dev;
     fs->super_dev = super_dev;
+    fs->allow_tampering = flags & FS_INIT_FLAGS_ALLOW_TAMPERING;
     list_initialize(&fs->transactions);
     list_initialize(&fs->allocated);
     fs->initial_super_block_tr = NULL;

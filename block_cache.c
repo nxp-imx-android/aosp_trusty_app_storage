@@ -1019,15 +1019,14 @@ const void* block_get_no_read(struct transaction* tr,
  * @ref:        Pointer to store reference in.
  *
  * Return: Const block data pointer.
- *
- * Should only be used if block device performs tamper detection.
  */
 const void* block_get_super(struct fs* fs,
                             data_block_t block,
                             struct obj_ref* ref) {
     assert(fs);
     assert(fs->super_dev);
-    assert(fs->super_dev->tamper_detecting);
+    assert((fs->allow_tampering && !fs->super_dev->tamper_detecting) ||
+           (!fs->allow_tampering && fs->super_dev->tamper_detecting));
 
     return block_cache_get_data(fs, fs->super_dev, block, true, NULL, 0, ref);
 }
@@ -1266,14 +1265,20 @@ void block_put_dirty(struct transaction* tr,
  * block_put_dirty_no_mac - Release reference to dirty super block.
  * @data:           Block data pointer
  * @data_ref:       Reference pointer to release
+ * @allow_tampering: %true if this file system does not require tamper-proof
+ *                   super block storage, %false if tamper detection must be
+ *                   required.
  *
  * Similar to block_put_dirty except no transaction or block_mac is needed.
  */
-void block_put_dirty_no_mac(void* data, struct obj_ref* data_ref) {
+void block_put_dirty_no_mac(void* data,
+                            struct obj_ref* data_ref,
+                            bool allow_tampering) {
     struct block_cache_entry* entry = data_to_block_cache_entry(data);
 
     assert(entry->dev);
-    assert(entry->dev->tamper_detecting);
+    assert((allow_tampering && !entry->dev->tamper_detecting) ||
+           (!allow_tampering && entry->dev->tamper_detecting));
     block_put_dirty_etc(NULL, data, data_ref, NULL, NULL);
 }
 

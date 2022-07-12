@@ -65,6 +65,12 @@ STATIC_ASSERT(sizeof(struct super_block_backup) == 52);
  * @free:                           Block set of free blocks.
  * @files:                          B+ tree of all files.
  * @super_dev:                      Block device used to store super blocks.
+ * @allow_tampering:                %false if the filesystem must detect
+ *                                  tampering of read and write operations.
+ *                                  %true otherwise. If %false, when a write
+ *                                  operation is reported as successfully
+ *                                  completed it should not be possible for
+ *                                  non-secure code to modify the stored data.
  * @key:                            Key to use for encrypt, decrypt and mac.
  * @super_block:                    Block numbers in @super_dev to store
  *                                  super-block in.
@@ -102,6 +108,7 @@ struct fs {
     struct block_set free;
     struct block_tree files;
     struct block_device* super_dev;
+    bool allow_tampering;
     const struct key* key;
     data_block_t super_block[2];
     unsigned int super_block_version;
@@ -137,15 +144,22 @@ bool update_super_block(struct transaction* tr,
  *   Indicates that the filesystem is temporarily running on top of an alternate
  *   location for the @dev block device and rollback should be enforced
  *   separately from the normal mode.
+ *
+ * %FS_INIT_FLAGS_ALLOW_TAMPERING
+ *   Allow this filesystem to be initialized with the super block not stored on
+ *   a tamper-detecting block device. This filesystem WILL NOT detect any
+ *   tampering and a malicious actor may arbitrarily roll it back to any
+ *   previous state.
  */
 typedef uint32_t fs_init_flags32_t;
 #define FS_INIT_FLAGS_NONE 0U
 #define FS_INIT_FLAGS_DO_CLEAR (1U << 0)
 #define FS_INIT_FLAGS_RECOVERY_CLEAR_ALLOWED (1U << 1)
 #define FS_INIT_FLAGS_ALTERNATE_DATA (1U << 2)
+#define FS_INIT_FLAGS_ALLOW_TAMPERING (1U << 3)
 #define FS_INIT_FLAGS_MASK                                           \
     (FS_INIT_FLAGS_DO_CLEAR | FS_INIT_FLAGS_RECOVERY_CLEAR_ALLOWED | \
-     FS_INIT_FLAGS_ALTERNATE_DATA)
+     FS_INIT_FLAGS_ALTERNATE_DATA | FS_INIT_FLAGS_ALLOW_TAMPERING)
 
 int fs_init(struct fs* fs,
             const struct key* key,

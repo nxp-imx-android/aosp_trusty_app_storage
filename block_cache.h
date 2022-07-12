@@ -82,7 +82,9 @@ void block_put_dirty(struct transaction* tr,
                      struct block_mac* block_mac,
                      void* block_mac_ref);
 
-void block_put_dirty_no_mac(void* data, struct obj_ref* data_ref);
+void block_put_dirty_no_mac(void* data,
+                            struct obj_ref* data_ref,
+                            bool allow_tampering);
 
 void block_put_dirty_discard(void* data, struct obj_ref* data_ref);
 

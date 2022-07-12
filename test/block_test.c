@@ -1773,7 +1773,7 @@ static void future_fs_version_test(struct transaction* tr) {
     super_rw = block_dirty(tr, super_ro, false);
     assert(super_rw);
     super_rw[7]++;
-    block_put_dirty_no_mac(super_rw, &super_ref);
+    block_put_dirty_no_mac(super_rw, &super_ref, false);
     block_cache_clean_transaction(tr);
 
     transaction_free(tr);
@@ -1794,7 +1794,7 @@ static void future_fs_version_test(struct transaction* tr) {
     super_rw = block_dirty(tr, super_ro, false);
     assert(super_rw);
     super_rw[7]--;
-    block_put_dirty_no_mac(super_rw, &super_ref);
+    block_put_dirty_no_mac(super_rw, &super_ref, false);
     block_cache_clean_transaction(tr);
     transaction_free(tr);
 

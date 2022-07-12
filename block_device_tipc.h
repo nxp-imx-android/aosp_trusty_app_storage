@@ -82,6 +82,13 @@ struct block_device_tipc {
 #endif
     struct client_port_context fs_tdp;
 
+#if HAS_FS_NSP
+    struct block_device_ns dev_ns_nsp;
+    struct block_device_ns dev_ns_nsp_superblock;
+    struct fs tr_state_ns_nsp;
+#endif
+    struct client_port_context fs_nsp;
+
     struct block_device_ns dev_ns;
     struct block_device_rpmb dev_ns_rpmb;
     struct fs tr_state_ns;

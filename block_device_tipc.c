@@ -599,8 +599,52 @@ int block_device_tipc_init(struct block_device_tipc* state,
         goto err_fs_ns_create_port;
     }
 
+#if HAS_FS_NSP
+    block_device_tipc_init_dev_ns(&state->dev_ns_nsp, state, false);
+
+    ret = ns_open_file(state->ipc_handle, "persist/nsp",
+                       &state->dev_ns_nsp.ns_handle, true);
+    if (ret < 0) {
+        SS_ERR("%s: failed to open NSP file (%d)\n", __func__, ret);
+        goto err_open_nsp;
+    }
+
+    state->fs_nsp.tr_state = &state->tr_state_ns_nsp;
+
+    ret = fs_init(&state->tr_state_ns_nsp, fs_key, &state->dev_ns_nsp.dev,
+                  &state->dev_ns_nsp.dev,
+                  FS_INIT_FLAGS_RECOVERY_CLEAR_ALLOWED |
+                          FS_INIT_FLAGS_ALLOW_TAMPERING);
+    if (ret < 0) {
+        goto err_init_fs_ns_nsp_tr_state;
+    }
+
+#else
+    /*
+     * Create STORAGE_CLIENT_NSP_PORT alias to TDP if we don't support NSP on
+     * this build. TDP has stronger security properties than NSP, and NSP may be
+     * reset at any point, so this should be acceptable for clients.
+     */
+    state->fs_nsp.tr_state = state->fs_tdp.tr_state;
+#endif
+
+    ret = client_create_port(&state->fs_nsp.client_ctx,
+                             STORAGE_CLIENT_NSP_PORT);
+    if (ret < 0) {
+        goto err_fs_nsp_create_port;
+    }
+
     return 0;
 
+err_fs_nsp_create_port:
+#if HAS_FS_NSP
+    fs_destroy(&state->tr_state_ns_nsp);
+err_init_fs_ns_nsp_tr_state:
+    block_cache_dev_destroy(&state->dev_ns_nsp.dev);
+    ns_close_file(state->ipc_handle, state->dev_ns_nsp.ns_handle);
+err_open_nsp:
+#endif
+    ipc_port_destroy(&state->fs_ns.client_ctx);
 err_fs_ns_create_port:
     fs_destroy(&state->tr_state_ns);
 err_init_fs_ns_tr_state:
@@ -641,6 +685,13 @@ void block_device_tipc_uninit(struct block_device_tipc* state) {
         fs_destroy(&state->tr_state_ns_tdp);
         block_cache_dev_destroy(&state->dev_ns_tdp.dev);
         ns_close_file(state->ipc_handle, state->dev_ns_tdp.ns_handle);
+#endif
+
+        ipc_port_destroy(&state->fs_nsp.client_ctx);
+#if HAS_FS_NSP
+        fs_destroy(&state->tr_state_ns_nsp);
+        block_cache_dev_destroy(&state->dev_ns_nsp.dev);
+        ns_close_file(state->ipc_handle, state->dev_ns_nsp.ns_handle);
 #endif
     }
     ipc_port_destroy(&state->fs_rpmb_boot.client_ctx);

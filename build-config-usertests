@@ -37,6 +37,7 @@
     # in testrunner is insufficient.
     needs(
         [
+            porttest("com.android.storage-unittest.nsp"),
             porttest("com.android.storage-unittest.td"),
             porttest("com.android.storage-unittest.tdp", timeout=(60 * 15)),
         ],
