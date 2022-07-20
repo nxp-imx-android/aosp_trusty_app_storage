@@ -28,6 +28,8 @@
 #include "debug.h"
 #include "transaction.h"
 
+static bool print_check_errors;
+
 /**
  * block_range_init_from_path
  * @range:      range object to initialize.
@@ -223,7 +225,7 @@ bool block_set_check(struct transaction* tr, struct block_set* set) {
         return false;
     }
     valid = block_set_check_ranges(tr, set);
-    if (!valid) {
+    if (!valid && print_check_errors) {
         printf("%s: invalid block_set:\n", __func__);
         block_set_print(tr, set);
     }

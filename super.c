@@ -553,7 +553,9 @@ static int fs_init_from_super(struct fs* fs,
             }
         }
 
-        if (!is_clear && !do_clear && !block_probe(fs, new_files_root)) {
+        if (!is_clear && !do_clear &&
+            (!block_probe(fs, new_files_root) ||
+             !block_probe(fs, new_free_root))) {
             pr_init("Backing file probe failed, fs is corrupted.\n");
             if (recovery_allowed) {
                 pr_init("Attempting to clear corrupted fs.\n");
@@ -656,6 +658,141 @@ err:
         block_put(old_super, &old_super_ref);
     }
     return ret;
+}
+
+struct fs_check_state {
+    struct file_iterate_state iter;
+    bool check_all_data_blocks;
+    bool delete_invalid_files;
+
+    bool internal_state_valid;
+};
+
+static bool fs_check_delete_file(struct fs* fs, char* path) {
+    struct transaction tr;
+    bool ret;
+
+    pr_err("deleting invalid file %s\n", path);
+    transaction_init(&tr, fs, true);
+    if (!file_delete(&tr, path)) {
+        if (!tr.failed) {
+            transaction_fail(&tr);
+        }
+        goto err_delete;
+    }
+    transaction_complete(&tr);
+
+err_delete:
+    ret = !tr.failed;
+    transaction_free(&tr);
+    return ret;
+}
+
+static bool fs_check_file(struct file_iterate_state* iter,
+                          struct transaction* tr,
+                          const struct block_mac* block_mac,
+                          bool added,
+                          bool removed) {
+    struct fs_check_state* fs_check_state =
+            containerof(iter, struct fs_check_state, iter);
+    struct obj_ref info_ref = OBJ_REF_INITIAL_VALUE(info_ref);
+    struct obj_ref data_ref = OBJ_REF_INITIAL_VALUE(data_ref);
+    struct file_handle file;
+    const void* data = NULL;
+    char path[FS_PATH_MAX];
+    bool needs_delete = false;
+
+    const struct file_info* info = file_get_info(tr, block_mac, &info_ref);
+    if (!info) {
+        pr_err("could not get file info at block %" PRIu64 "\n",
+               block_mac_to_block(tr, block_mac));
+        fs_check_state->internal_state_valid = false;
+        goto err_file_info;
+    }
+    strncpy(path, info->path, sizeof(path));
+    path[sizeof(path) - 1] = '\0';
+    file_info_put(info, &info_ref);
+
+    bool opened = file_open(tr, path, &file, FILE_OPEN_NO_CREATE);
+    if (!opened) {
+        /* TODO: is it ok to leak the filename here? we do it elsewhere */
+        pr_err("could not open file %s\n", path);
+        needs_delete = true;
+        goto err_file_open;
+    }
+
+    data_block_t data_check_count = fs_check_state->check_all_data_blocks
+                                            ? file.size
+                                            : MIN(1, file.size);
+
+    for (data_block_t i = 0; i < data_check_count; ++i) {
+        data = file_get_block(tr, &file, i, &data_ref);
+        if (data) {
+            file_block_put(data, &data_ref);
+            data = NULL;
+        } else {
+            /* TODO: is it ok to leak the filename here? we do it elsewhere */
+            pr_err("invalid file data at block %" PRIu64 " of file %s\n", i,
+                   path);
+            assert(tr->failed);
+            needs_delete = true;
+            break;
+        }
+    }
+
+    file_close(&file);
+
+err_file_open:
+    if (needs_delete) {
+        if (fs_check_state->delete_invalid_files) {
+            if (!fs_check_delete_file(tr->fs, path)) {
+                pr_err("delete failed, internal state is corrupted\n");
+                fs_check_state->internal_state_valid = false;
+            }
+        } else {
+            fs_check_state->internal_state_valid = false;
+        }
+    }
+err_file_info:
+    if (tr->failed) {
+        transaction_activate(tr);
+    }
+
+    /* Continue iterating unconditionally */
+    return false;
+}
+
+bool fs_check(struct fs* fs,
+              bool delete_invalid_files,
+              bool check_all_data_blocks) {
+    struct transaction iterate_tr;
+    struct fs_check_state state = {
+            .iter.file = fs_check_file,
+            .check_all_data_blocks = check_all_data_blocks,
+            .delete_invalid_files = delete_invalid_files,
+            .internal_state_valid = true,
+    };
+
+    transaction_init(&iterate_tr, fs, true);
+    file_iterate(&iterate_tr, NULL, false, &state.iter);
+    if (iterate_tr.failed) {
+        state.internal_state_valid = false;
+        goto finished;
+    }
+
+    /* Check the free list for consistency */
+    if (!block_set_check(&iterate_tr, &fs->free) || iterate_tr.failed) {
+        pr_err("free block set is corrupted\n");
+        state.internal_state_valid = false;
+    }
+
+finished:
+    if (!iterate_tr.failed) {
+        transaction_fail(&iterate_tr);
+    }
+    transaction_free(&iterate_tr);
+
+    return state.internal_state_valid;
 }
 
 /**

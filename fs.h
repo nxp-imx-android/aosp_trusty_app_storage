@@ -167,6 +167,26 @@ int fs_init(struct fs* fs,
             struct block_device* super_dev,
             fs_init_flags32_t flags);
 
+/**
+ * fs_check - Check (and optionally repair) the file system tree
+ * @fs:                    File system state object.
+ * @delete_invalid_files:  If %true, attempt to repair invalid files by deleting
+ *                         them.
+ * @check_all_data_blocks: If %true, read every data block in every file to
+ *                         ensure they are valid. If %false, only check the
+ *                         first block (of non-empty files) in a file.
+ *
+ * Walk the filesystem tree and visit each file, reading the first block (or all
+ * blocks if @check_all_data_blocks is %true) to ensure that there is no
+ * corruption of the tree below the root nodes. Returns %true if no corruption
+ * was encountered, or, when @delete_invalid_files is %true, if all corrupt
+ * files were successfully deleted. Returns %false if the filesystem remains
+ * corrupted after this operation.
+ */
+bool fs_check(struct fs* fs,
+              bool delete_invalid_files,
+              bool check_all_data_blocks);
+
 void fs_unknown_super_block_state_all(void);
 void write_current_super_block(struct fs* fs, bool reinitialize);
 

@@ -619,6 +619,26 @@ int block_device_tipc_init(struct block_device_tipc* state,
         goto err_init_fs_ns_nsp_tr_state;
     }
 
+    /*
+     * Check that all files are accessible and attempt to clear the FS if files
+     * cannot be accessed. This check only reads the first block of each file to
+     * not take too much time. As long as the file is readable at all, a client
+     * can delete or rewrite the data blocks.
+     */
+    if (!fs_check(&state->tr_state_ns_nsp, true, false)) {
+        SS_ERR("%s: NSP filesystem check failed, attempting to clear\n",
+               __func__);
+        fs_destroy(&state->tr_state_ns_nsp);
+        block_cache_dev_destroy(&state->dev_ns_nsp.dev);
+
+        ret = fs_init(&state->tr_state_ns_nsp, fs_key, &state->dev_ns_nsp.dev,
+                      &state->dev_ns_nsp.dev,
+                      FS_INIT_FLAGS_DO_CLEAR | FS_INIT_FLAGS_ALLOW_TAMPERING);
+        if (ret < 0) {
+            goto err_init_fs_ns_nsp_tr_state;
+        }
+    }
+
 #else
     /*
      * Create STORAGE_CLIENT_NSP_PORT alias to TDP if we don't support NSP on

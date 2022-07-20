@@ -44,6 +44,7 @@ static bool print_node_changes;
 static bool print_internal_changes;
 static bool print_changes;
 static bool print_changes_full_tree;
+static bool print_check_errors;
 
 /**
  * struct block_tree_node - On-disk B+ tree node header and payload start
@@ -834,7 +835,9 @@ static bool block_tree_node_check(const struct transaction* tr,
     return true;
 
 err:
-    block_tree_node_print(tr, tree, node_block, node_ro);
+    if (print_check_errors) {
+        block_tree_node_print(tr, tree, node_block, node_ro);
+    }
     return false;
 }
 
@@ -1070,8 +1073,10 @@ bool block_tree_check(struct transaction* tr, const struct block_tree* tree) {
             }
             return true;
         }
-        printf("%s: invalid block_tree:\n", __func__);
-        block_tree_print(tr, tree);
+        pr_err("%s: invalid block_tree:\n", __func__);
+        if (print_check_errors) {
+            block_tree_print(tr, tree);
+        }
         return false;
     }
     return true;
