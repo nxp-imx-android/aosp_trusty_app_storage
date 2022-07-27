@@ -1804,8 +1804,13 @@ static void future_fs_version_test(struct transaction* tr) {
     transaction_init(tr, fs, true);
 }
 
-static void fs_recovery_test(struct transaction* tr) {
-    data_block_t block;
+typedef data_block_t (*block_selector)(struct transaction* tr,
+                                       unsigned int arg);
+
+static void fs_corruption_helper(struct transaction* tr,
+                                 block_selector callback,
+                                 unsigned int arg,
+                                 bool expect_missing_file) {
     struct file_handle file;
     struct fs* fs = tr->fs;
 
@@ -1821,25 +1826,184 @@ static void fs_recovery_test(struct transaction* tr) {
     assert(!tr->failed);
     transaction_activate(tr);
 
-    /* Corrupt the files root block */
-    block = block_mac_to_block(tr, &fs->files.root);
-    memset(&blocks[block], 0, sizeof(struct block));
+    /* Corrupt the provided block */
+    memset(&blocks[callback(tr, arg)], 0, sizeof(struct block));
     block_cache_dev_destroy(fs->dev);
 
-    open_test_file_etc(tr, &file, "recovery", FILE_OPEN_NO_CREATE, true);
+    open_test_file_etc(tr, &file, "recovery", FILE_OPEN_NO_CREATE,
+                       expect_missing_file);
+    if (!expect_missing_file) {
+        file_close(&file);
+    }
     transaction_complete(tr);
-    assert(tr->failed);
+    assert(!expect_missing_file || tr->failed);
 
     /* re-initialize the filesystem without recovery enabled */
     block_test_reinit(tr, FS_INIT_FLAGS_NONE);
 
     open_test_file_etc(tr, &file, "recovery", FILE_OPEN_CREATE_EXCLUSIVE, true);
     transaction_complete(tr);
+}
+
+static data_block_t select_files_block(struct transaction* tr,
+                                       unsigned int depth) {
+    struct block_tree_path path;
+    block_tree_walk(tr, &tr->fs->files, 0, true, &path);
+    assert(path.count > depth);
+    return block_mac_to_block(tr, &path.entry[depth].block_mac);
+}
+
+static data_block_t select_free_block(struct transaction* tr,
+                                      unsigned int depth) {
+    struct block_tree_path path;
+    block_tree_walk(tr, &tr->fs->free.block_tree, 0, true, &path);
+    assert(path.count > depth);
+    return block_mac_to_block(tr, &path.entry[depth].block_mac);
+}
+
+static data_block_t select_data_block(struct transaction* tr,
+                                      unsigned int block) {
+    struct file_handle file;
+    const void* block_data_ro = NULL;
+    struct obj_ref ref = OBJ_REF_INITIAL_VALUE(ref);
+    data_block_t data_block_num;
+
+    open_test_file_etc(tr, &file, "recovery", FILE_OPEN_NO_CREATE, false);
+
+    block_data_ro = file_get_block(tr, &file, block, &ref);
+    assert(block_data_ro);
+    data_block_num = data_to_block_num(block_data_ro - sizeof(struct iv));
+    file_block_put(block_data_ro, &ref);
+    file_close(&file);
+    return data_block_num;
+}
+
+static void create_and_delete(struct transaction* tr, const char* filename) {
+    struct file_handle file;
+    open_test_file_etc(tr, &file, filename, FILE_OPEN_CREATE_EXCLUSIVE, false);
+    transaction_complete(tr);
+    assert(!tr->failed);
+    file_close(&file);
+    transaction_activate(tr);
+    file_delete(tr, filename);
+    transaction_complete(tr);
+    assert(!tr->failed);
+    transaction_activate(tr);
+}
+
+static void fs_recovery_roots_test(struct transaction* tr) {
+    /* Corrupt the root files block */
+    assert(select_files_block(tr, 0) ==
+           block_mac_to_block(tr, &tr->fs->files.root));
+    fs_corruption_helper(tr, select_files_block, 0, true);
     assert(tr->failed);
+
+    assert(!fs_check(tr->fs, false, false));
 
     /* re-initialize the filesystem with recovery enabled */
     block_test_reinit(tr, FS_INIT_FLAGS_RECOVERY_CLEAR_ALLOWED);
 
+    /* Did we recover correctly? */
+    create_and_delete(tr, "recovery");
+
+    /* Corrupt the root of the free list */
+    assert(select_free_block(tr, 0) ==
+           block_mac_to_block(tr, &tr->fs->free.block_tree.root));
+    fs_corruption_helper(tr, select_free_block, 0, false);
+    assert(tr->failed);
+
+    assert(!fs_check(tr->fs, false, false));
+
+    /* re-initialize the filesystem with recovery enabled */
+    block_test_reinit(tr, FS_INIT_FLAGS_RECOVERY_CLEAR_ALLOWED);
+
+    /* Did we recover correctly? */
+    create_and_delete(tr, "recovery");
+}
+
+static void fs_check_file_child_test(struct transaction* tr) {
+    /* Create lots of files */
+    file_create_many_test(tr);
+    transaction_complete(tr);
+    assert(!tr->failed);
+    transaction_activate(tr);
+
+    /* Corrupt a child in the files list */
+    fs_corruption_helper(tr, select_files_block, 1, false);
+    assert(tr->failed);
+
+    /* Ensure that we detect this corruption */
+    assert(!fs_check(tr->fs, true, false));
+
+    /* re-initialize the filesystem with recovery enabled */
+    block_test_reinit(tr, FS_INIT_FLAGS_RECOVERY_CLEAR_ALLOWED);
+
+    /* recovery doesn't fix this error */
+    assert(!fs_check(tr->fs, true, false));
+
+    transaction_fail(tr);
+    block_test_reinit(tr, FS_INIT_FLAGS_DO_CLEAR);
+
+    assert(fs_check(tr->fs, false, false));
+}
+
+static void fs_check_free_child_test(struct transaction* tr) {
+    /* Fragment the free list */
+    allocate_frag_test(tr);
+    transaction_complete(tr);
+    assert(!tr->failed);
+    transaction_activate(tr);
+
+    /* Corrupt a child in the free list */
+    fs_corruption_helper(tr, select_free_block, 1, false);
+    assert(tr->failed);
+
+    /* Ensure that we detect this corruption */
+    assert(!fs_check(tr->fs, true, false));
+
+    /* re-initialize the filesystem with recovery enabled */
+    block_test_reinit(tr, FS_INIT_FLAGS_RECOVERY_CLEAR_ALLOWED);
+
+    /* recovery doesn't fix this error */
+    assert(!fs_check(tr->fs, true, false));
+
+    transaction_fail(tr);
+    block_test_reinit(tr, FS_INIT_FLAGS_DO_CLEAR);
+
+    assert(fs_check(tr->fs, false, false));
+}
+
+static void fs_recovery_data_blocks_test(struct transaction* tr) {
+    fs_corruption_helper(tr, select_data_block, 0, false);
+    assert(!tr->failed);
+    transaction_activate(tr);
+
+    assert(fs_check(tr->fs, true, false));
+
+    /* file should have been deleted as corrupted */
+    create_and_delete(tr, "recovery");
+
+    fs_corruption_helper(tr, select_data_block, 1, false);
+    assert(!tr->failed);
+    transaction_activate(tr);
+
+    assert(fs_check(tr->fs, true, false));
+
+    /* file should still exist because we didn't do a full scan */
+    file_test(tr, "recovery", FILE_OPEN_NO_CREATE, 0, 0, 0, true, 1);
+    transaction_complete(tr);
+    assert(!tr->failed);
+    transaction_activate(tr);
+
+    /* scan all data blocks */
+    assert(fs_check(tr->fs, true, true));
+
+    /* file should have been deleted as corrupted */
+    create_and_delete(tr, "recovery");
+}
+
+static void fs_recovery_clear_test(struct transaction* tr) {
+    struct file_handle file;
     file_test(tr, "recovery", FILE_OPEN_CREATE_EXCLUSIVE, file_test_block_count,
               0, 0, false, 1);
     transaction_complete(tr);
@@ -2440,7 +2604,11 @@ struct {
         //    TEST(file_allocate_leave_10_test2),
         TEST(file_delete1_no_free_test),
         TEST(future_fs_version_test),
-        TEST(fs_recovery_test),
+        TEST(fs_recovery_roots_test),
+        TEST(fs_check_file_child_test),
+        TEST(fs_check_free_child_test),
+        TEST(fs_recovery_data_blocks_test),
+        TEST(fs_recovery_clear_test),
         TEST(fs_alternate_negative_test),
         TEST(fs_alternate_test),
         TEST(fs_alternate_empty_test),
