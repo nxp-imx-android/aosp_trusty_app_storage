@@ -91,7 +91,7 @@ static void block_cache_queue_write(struct block_cache_entry* entry,
     block_cache_queue_io_op(entry, BLOCK_CACHE_IO_OP_WRITE);
     stats_timer_start(STATS_CACHE_START_WRITE);
     entry->dev->start_write(entry->dev, entry->block, encrypted_data,
-                            entry->block_size);
+                            entry->block_size, entry->is_superblock);
     stats_timer_stop(STATS_CACHE_START_WRITE);
 }
 
@@ -450,6 +450,7 @@ static void block_cache_entry_discard_dirty(struct block_cache_entry* entry) {
     entry->dirty_tr = NULL;
     /* We have to unpin here because we're clearing the block number */
     entry->pinned = false;
+    entry->is_superblock = false;
 
     entry->dirty_mac = false;
 }
@@ -629,6 +630,7 @@ static struct block_cache_entry* block_cache_lookup(struct fs* fs,
     entry->key = fs->key;
     entry->loaded = false;
     entry->encrypted = false;
+    entry->is_superblock = false;
 
 done:
     stats_timer_stop(STATS_CACHE_LOOKUP);
@@ -830,6 +832,7 @@ void block_cache_init(void) {
         block_cache_entries[i].dirty_ref = false;
         block_cache_entries[i].dirty_mac = false;
         block_cache_entries[i].pinned = false;
+        block_cache_entries[i].is_superblock = false;
         block_cache_entries[i].dirty_tr = NULL;
         block_cache_entries[i].io_op = BLOCK_CACHE_IO_OP_NONE;
         obj_init(&block_cache_entries[i].obj, &ref);
@@ -1381,6 +1384,7 @@ void* block_get_cleared_super(struct transaction* tr,
     struct block_cache_entry* entry = data_to_block_cache_entry(data_ro);
     assert(!entry->dirty);
     entry->pinned = pinned;
+    entry->is_superblock = true;
 
     data_rw = block_dirty(tr, data_ro, false);
     assert(tr->fs->super_dev->block_size <= MAX_BLOCK_SIZE);

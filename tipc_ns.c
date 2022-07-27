@@ -248,9 +248,19 @@ int ns_write_pos(handle_t ipc_handle,
                  ns_off_t pos,
                  const void* data,
                  int data_size,
-                 bool is_userdata) {
+                 bool is_userdata,
+                 bool sync) {
+    uint32_t flags = 0;
     SS_DBG_IO("%s: handle %llu, pos %llu, size %d\n", __func__, handle, pos,
               data_size);
+
+    if (is_userdata) {
+        flags |= STORAGE_MSG_FLAG_PRE_COMMIT_CHECKPOINT;
+    }
+
+    if (sync) {
+        flags |= STORAGE_MSG_FLAG_PRE_COMMIT | STORAGE_MSG_FLAG_POST_COMMIT;
+    }
 
     struct storage_file_write_req req = {
             .handle = handle,
@@ -259,7 +269,7 @@ int ns_write_pos(handle_t ipc_handle,
 
     struct storage_msg msg = {
             .cmd = STORAGE_FILE_WRITE,
-            .flags = is_userdata ? STORAGE_MSG_FLAG_PRE_COMMIT_CHECKPOINT : 0,
+            .flags = flags,
             .size = sizeof(msg) + sizeof(req) + data_size,
     };
 

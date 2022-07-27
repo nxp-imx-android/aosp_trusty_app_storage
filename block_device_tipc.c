@@ -170,10 +170,14 @@ static inline enum block_write_error translate_write_error(int rc) {
 static void block_device_tipc_rpmb_start_write(struct block_device* dev,
                                                data_block_t block,
                                                const void* data,
-                                               size_t data_size) {
+                                               size_t data_size,
+                                               bool sync) {
     int ret;
     uint16_t rpmb_block;
     struct block_device_rpmb* dev_rpmb = dev_rpmb_to_state(dev);
+
+    /* We currently sync every rpmb write. TODO: can we avoid this? */
+    (void)sync;
 
     assert(data_size == BLOCK_SIZE_RPMB);
     assert(block < dev->block_count);
@@ -215,7 +219,8 @@ static void block_device_tipc_ns_start_read(struct block_device* dev,
 static void block_device_tipc_ns_start_write(struct block_device* dev,
                                              data_block_t block,
                                              const void* data,
-                                             size_t data_size) {
+                                             size_t data_size,
+                                             bool sync) {
     int ret;
     struct block_device_ns* dev_ns = to_block_device_ns(dev);
 
@@ -223,7 +228,7 @@ static void block_device_tipc_ns_start_write(struct block_device* dev,
 
     ret = ns_write_pos(dev_ns->state->ipc_handle, dev_ns->ns_handle,
                        block * BLOCK_SIZE_MAIN, data, data_size,
-                       dev_ns->is_userdata);
+                       dev_ns->is_userdata, sync);
     SS_DBG_IO("%s: block %" PRIu64 ", ret %d\n", __func__, block, ret);
     block_cache_complete_write(
             dev, block,

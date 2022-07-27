@@ -171,7 +171,8 @@ static void block_test_start_read(struct block_device* dev,
 static void block_test_start_write(struct block_device* dev,
                                    data_block_t block,
                                    const void* data,
-                                   size_t data_size) {
+                                   size_t data_size,
+                                   bool sync) {
     assert(block < countof(blocks));
     assert(data_size <= sizeof(blocks[block].data));
     memcpy(blocks[block].data, data, data_size);

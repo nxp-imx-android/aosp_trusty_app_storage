@@ -50,7 +50,8 @@ struct block_device {
     void (*start_write)(struct block_device* dev,
                         data_block_t block,
                         const void* data,
-                        size_t data_size);
+                        size_t data_size,
+                        bool sync);
     void (*wait_for_io)(struct block_device* dev);
 
     data_block_t block_count;

@@ -37,4 +37,5 @@ int ns_write_pos(handle_t ipc_handle,
                  ns_off_t pos,
                  const void* data,
                  int data_size,
-                 bool is_userdata);
+                 bool is_userdata,
+                 bool sync);
