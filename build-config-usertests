@@ -23,11 +23,11 @@
             porttest("com.android.storage-unittest.tp.init"),
             porttest("com.android.storage-unittest.tp.check"),
             porttest("com.android.storage-unittest.tp.clean"),
-            porttest("com.android.storage-unittest.tp"),
+            porttest("com.android.storage-unittest.tp", timeout=(60 * 15)),
             porttest("com.android.storage-unittest.tdea.init"),
             porttest("com.android.storage-unittest.tdea.check"),
             porttest("com.android.storage-unittest.tdea.clean"),
-            porttest("com.android.storage-unittest.tdea"),
+            porttest("com.android.storage-unittest.tdea", timeout=(60 * 15)),
         ],
         storage_boot=True,
     ),
@@ -38,7 +38,7 @@
     needs(
         [
             porttest("com.android.storage-unittest.td"),
-            porttest("com.android.storage-unittest.tdp"),
+            porttest("com.android.storage-unittest.tdp", timeout=(60 * 15)),
         ],
         storage_full=True,
     ),
