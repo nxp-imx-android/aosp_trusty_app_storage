@@ -896,3 +896,17 @@ void fs_unknown_super_block_state_all(void) {
         write_current_super_block(fs, false /* reinitialize */);
     }
 }
+
+void fs_fail_all_transactions(void) {
+    struct transaction* tmp_tr;
+    struct transaction* tr;
+    struct fs* fs;
+    list_for_every_entry(&fs_list, fs, struct fs, node) {
+        list_for_every_entry_safe(&fs->transactions, tr, tmp_tr,
+                                  struct transaction, node) {
+            if (transaction_is_active(tr) && !tr->failed) {
+                transaction_fail(tr);
+            }
+        }
+    }
+}

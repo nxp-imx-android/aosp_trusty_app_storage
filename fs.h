@@ -191,3 +191,10 @@ void fs_unknown_super_block_state_all(void);
 void write_current_super_block(struct fs* fs, bool reinitialize);
 
 void fs_destroy(struct fs* fs);
+
+/**
+ * fs_fail_all_transactions - Fail all pending transactions in all filesystems
+ *
+ * This functions fails any pending transactions that have not already failed.
+ */
+void fs_fail_all_transactions(void);

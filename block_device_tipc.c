@@ -162,6 +162,8 @@ static inline enum block_write_error translate_write_error(int rc) {
         return BLOCK_WRITE_SUCCESS;
     case -EUCLEAN:
         return BLOCK_WRITE_FAILED_UNKNOWN_STATE;
+    case ERR_IO:
+        return BLOCK_WRITE_SYNC_FAILED;
     default:
         return BLOCK_WRITE_FAILED;
     }
@@ -222,6 +224,7 @@ static void block_device_tipc_ns_start_write(struct block_device* dev,
                                              size_t data_size,
                                              bool sync) {
     int ret;
+    enum block_write_error res = BLOCK_WRITE_FAILED;
     struct block_device_ns* dev_ns = to_block_device_ns(dev);
 
     assert(data_size == BLOCK_SIZE_MAIN);
@@ -230,9 +233,12 @@ static void block_device_tipc_ns_start_write(struct block_device* dev,
                        block * BLOCK_SIZE_MAIN, data, data_size,
                        dev_ns->is_userdata, sync);
     SS_DBG_IO("%s: block %" PRIu64 ", ret %d\n", __func__, block, ret);
-    block_cache_complete_write(
-            dev, block,
-            ret == BLOCK_SIZE_MAIN ? BLOCK_WRITE_SUCCESS : BLOCK_WRITE_FAILED);
+    if (ret == BLOCK_SIZE_MAIN) {
+        res = BLOCK_WRITE_SUCCESS;
+    } else if (ret < 0) {
+        res = translate_write_error(ret);
+    }
+    block_cache_complete_write(dev, block, res);
 }
 
 static void block_device_tipc_ns_wait_for_io(struct block_device* dev) {

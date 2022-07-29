@@ -217,6 +217,22 @@ void block_cache_complete_write(struct block_device* dev,
                entry->block);
         transaction_fail(entry->dirty_tr);
 
+        if (res == BLOCK_WRITE_SYNC_FAILED) {
+            /*
+             * We have to fail ALL pending transactions here because an fsync
+             * failed and we don't know which write caused that failure.
+             *
+             * TODO: Should we fail only transactions that write to non-secure
+             * devices? I.e. not fail TP transactions?
+             *
+             * TODO: storageproxy could track which file failed to sync and
+             * communicate this back so we only have to fail transactions that
+             * touched that backing file.
+             */
+            pr_err("An fsync failed, fail all pending transactions\n");
+            fs_fail_all_transactions();
+        }
+
         /*
          * Failing the transaction must not clear the block number, as we rely
          * on the block number + pinned flag to reserve and reuse the block

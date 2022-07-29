@@ -36,6 +36,7 @@ enum block_write_error {
     BLOCK_WRITE_SUCCESS = 0,
     BLOCK_WRITE_FAILED,
     BLOCK_WRITE_FAILED_UNKNOWN_STATE,
+    BLOCK_WRITE_SYNC_FAILED,
 };
 
 void block_cache_complete_write(struct block_device* dev,
