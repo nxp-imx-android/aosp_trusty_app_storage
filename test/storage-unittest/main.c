@@ -489,7 +489,7 @@ TEST_F(StorageTest, FileList) {
     snprintf(file_name, sizeof(file_name), fname_pat, 0);
     rc = storage_read_dir(ss, dir, &read_dir_flags, file_name_dir,
                           sizeof(file_name_dir));
-    ASSERT_EQ(0, rc, "read_dir");
+    ASSERT_EQ(strlen(file_name) + 1, rc, "read_dir");
     ASSERT_EQ(STORAGE_FILE_LIST_COMMITTED,
               read_dir_flags & STORAGE_FILE_LIST_STATE_MASK, "dir flags");
     ASSERT_EQ(0, strcmp(file_name, file_name_dir), "file name");
@@ -497,7 +497,7 @@ TEST_F(StorageTest, FileList) {
     for (i = 1; i < file_count; i++) {
         rc = storage_read_dir(ss, dir, &read_dir_flags, file_name_dir,
                               sizeof(file_name_dir));
-        ASSERT_EQ(0, rc, "read_dir");
+        ASSERT_EQ(strlen(file_name_dir) + 1, rc, "read_dir");
         ASSERT_EQ(STORAGE_FILE_LIST_ADDED,
                   read_dir_flags & STORAGE_FILE_LIST_STATE_MASK, "dir flags");
         ASSERT_NE(0, strcmp(file_name, file_name_dir), "file name");
