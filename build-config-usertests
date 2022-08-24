@@ -19,14 +19,27 @@
     needs(
         [
             # init->check->clean is a side-effectful test chain
-            # must preserve order
-            porttest("com.android.storage-unittest.tp.init"),
-            porttest("com.android.storage-unittest.tp.check"),
-            porttest("com.android.storage-unittest.tp.clean"),
+            # so we use a composite test to preserve order
+            compositetest(
+                name="com.android.storage-unittest.tp-init-check-clean",
+                sequence=[
+                    porttest("com.android.storage-unittest.tp.init"),
+                    reboot(),
+                    porttest("com.android.storage-unittest.tp.check"),
+                    porttest("com.android.storage-unittest.tp.clean"),
+
+                ]
+            ),
             porttest("com.android.storage-unittest.tp", timeout=(60 * 15)),
-            porttest("com.android.storage-unittest.tdea.init"),
-            porttest("com.android.storage-unittest.tdea.check"),
-            porttest("com.android.storage-unittest.tdea.clean"),
+            compositetest(
+                name="com.android.storage-unittest.tdea-init-check-clean",
+                sequence=[
+                    porttest("com.android.storage-unittest.tdea.init"),
+                    reboot(),
+                    porttest("com.android.storage-unittest.tdea.check"),
+                    porttest("com.android.storage-unittest.tdea.clean"),
+                ]
+            ),
             porttest("com.android.storage-unittest.tdea", timeout=(60 * 15)),
         ],
         storage_boot=True,
