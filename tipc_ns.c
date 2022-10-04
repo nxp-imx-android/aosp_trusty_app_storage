@@ -197,6 +197,50 @@ void ns_close_file(handle_t ipc_handle, ns_handle_t handle) {
     }
 }
 
+long ns_get_max_size(handle_t ipc_handle, ns_handle_t handle) {
+    SS_DBG_IO("get max size: %llu\n", handle);
+    struct storage_file_get_max_size_req req = {
+            .handle = handle,
+    };
+
+    struct storage_file_get_max_size_resp resp = {0};
+
+    struct storage_msg msg = {
+            .cmd = STORAGE_FILE_GET_MAX_SIZE,
+            .size = sizeof(msg) + sizeof(req),
+    };
+
+    struct iovec tx_iov[] = {
+            {.iov_base = &msg, .iov_len = sizeof(msg)},
+            {.iov_base = &req, .iov_len = sizeof(req)},
+    };
+
+    struct iovec rx_iov[] = {{.iov_base = &msg, .iov_len = sizeof(msg)},
+                             {.iov_base = &resp, .iov_len = sizeof(resp)}};
+
+    int rc = sync_ipc_send_msg(ipc_handle, tx_iov, countof(tx_iov), rx_iov,
+                               countof(rx_iov));
+    if (rc < 0) {
+        SS_ERR("%s: read failed, %d\n", __func__, rc);
+        return rc;
+    }
+
+    size_t bytes_read = (size_t)rc;
+
+    rc = check_response(STORAGE_FILE_GET_MAX_SIZE, &msg, bytes_read);
+    if (rc != NO_ERROR) {
+        return rc;
+    }
+
+    if (bytes_read != sizeof(msg) + sizeof(resp)) {
+        SS_ERR("%s: get_max_size failed, invalid response size (%zu != %zu)\n",
+               __func__, bytes_read, sizeof(msg) + sizeof(resp));
+        return ERR_NOT_VALID;
+    }
+
+    return resp.max_size;
+}
+
 int ns_read_pos(handle_t ipc_handle,
                 ns_handle_t handle,
                 ns_off_t pos,

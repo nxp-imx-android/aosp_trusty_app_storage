@@ -27,6 +27,7 @@ int ns_open_file(handle_t ipc_handle,
                  ns_handle_t* handlep,
                  bool create);
 void ns_close_file(handle_t ipc_handle, ns_handle_t handle);
+long ns_get_max_size(handle_t ipc_handle, ns_handle_t handle);
 int ns_read_pos(handle_t ipc_handle,
                 ns_handle_t handle,
                 ns_off_t pos,
