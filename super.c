@@ -52,9 +52,12 @@
  * %SUPER_BLOCK_OPT_FLAGS_HAS_FLAGS3
  *   Indicates that the superblock has additional data after flags2 and that
  *   flags3 should be set to the same value as flags
+ * %SUPER_BLOCK_OPT_FLAGS_HAS_CHECKPOINT
+ *   Indicates that the superblock contains the @checkpoint field
  */
 typedef uint8_t super_block_opt_flags8_t;
 #define SUPER_BLOCK_OPT_FLAGS_HAS_FLAGS3 (0x1U)
+#define SUPER_BLOCK_OPT_FLAGS_HAS_CHECKPOINT (0x2U)
 
 /**
  * struct super_block - On-disk root block for file system state
@@ -81,6 +84,8 @@ typedef uint8_t super_block_opt_flags8_t;
  * @backup:         Backup of previous super-block, used to support an alternate
  *                  backing store. 0 if no backup has ever been written. Once a
  *                  backup exists, it will only ever be swapped, not cleared.
+ * @checkpoint:     Block and mac of checkpoint metadata block. 0 if a
+ *                  checkpoint does not exist.
  * @res4:           Reserved for future use. Write 0, read ignore.
  * @flags3:         Copy of @flags. Allows storing the super-block in a device
  *                  that does not support an atomic write of the entire
@@ -110,7 +115,8 @@ struct super_block {
     uint32_t res3[5];
     uint32_t flags2;
     struct super_block_backup backup;
-    uint32_t res4[18];
+    struct block_mac checkpoint;
+    uint32_t res4[6];
     uint32_t flags3;
 };
 STATIC_ASSERT(offsetof(struct super_block, flags2) == 124);
@@ -127,6 +133,7 @@ static struct list_node fs_list = LIST_INITIAL_VALUE(fs_list);
  * @tr:         Transaction object.
  * @free:       New free root.
  * @files:      New files root.
+ * @checkpoint: New checkpoint metadata block.
  * @pinned:     New block should not be reused in the block cache until
  *              it is successfully written.
  *
@@ -136,6 +143,7 @@ static struct list_node fs_list = LIST_INITIAL_VALUE(fs_list);
 static bool update_super_block_internal(struct transaction* tr,
                                         const struct block_mac* free,
                                         const struct block_mac* files,
+                                        const struct block_mac* checkpoint,
                                         bool pinned) {
     struct super_block* super_rw;
     struct obj_ref super_ref = OBJ_REF_INITIAL_VALUE(super_ref);
@@ -143,6 +151,8 @@ static bool update_super_block_internal(struct transaction* tr,
     unsigned int index;
     uint32_t flags;
     uint32_t block_size = tr->fs->super_dev->block_size;
+    super_block_opt_flags8_t opt_flags = SUPER_BLOCK_OPT_FLAGS_HAS_FLAGS3 |
+                                         SUPER_BLOCK_OPT_FLAGS_HAS_CHECKPOINT;
 
     assert(block_size >= sizeof(struct super_block));
     assert(tr->fs->initial_super_block_tr == NULL ||
@@ -182,7 +192,7 @@ static bool update_super_block_internal(struct transaction* tr,
     super_rw->block_size = tr->fs->dev->block_size;
     super_rw->block_num_size = tr->fs->block_num_size;
     super_rw->mac_size = tr->fs->mac_size;
-    super_rw->opt_flags = SUPER_BLOCK_OPT_FLAGS_HAS_FLAGS3;
+    super_rw->opt_flags = opt_flags;
     super_rw->block_count = tr->fs->dev->block_count;
     if (free) {
         super_rw->free = *free;
@@ -190,6 +200,13 @@ static bool update_super_block_internal(struct transaction* tr,
     super_rw->free_count = 0; /* TODO: remove or update */
     if (files) {
         super_rw->files = *files;
+    }
+    if (checkpoint) {
+        /*
+         * TODO: uncomment to set checkpoint here with change that correctly
+         * creates and uses the checkpoint
+         */
+        /* super_rw->checkpoint = *checkpoint; */
     }
     super_rw->flags2 = flags;
     super_rw->backup = tr->fs->backup;
@@ -206,14 +223,16 @@ static bool update_super_block_internal(struct transaction* tr,
  * @tr:         Transaction object.
  * @free:       New free root.
  * @files:      New files root.
+ * @checkpoint: New checkpoint metadata block.
  *
  * Return: %true if super block was updated (in cache), %false if transaction
  * failed before super block was updated.
  */
 bool update_super_block(struct transaction* tr,
                         const struct block_mac* free,
-                        const struct block_mac* files) {
-    return update_super_block_internal(tr, free, files, false);
+                        const struct block_mac* files,
+                        const struct block_mac* checkpoint) {
+    return update_super_block_internal(tr, free, files, checkpoint, false);
 }
 
 /**
@@ -236,7 +255,7 @@ static bool write_initial_super_block(struct fs* fs) {
     fs->initial_super_block_tr = tr;
 
     transaction_init(tr, fs, true);
-    return update_super_block_internal(tr, NULL, NULL, true);
+    return update_super_block_internal(tr, NULL, NULL, NULL, true);
 }
 
 /**
@@ -314,10 +333,12 @@ void write_current_super_block(struct fs* fs, bool reinitialize) {
     bool fs_is_cleared = !block_mac_valid(tr, &fs->free.block_tree.root);
     if (fs_is_cleared) {
         assert(!block_mac_valid(tr, &fs->files.root));
-        super_block_updated = update_super_block_internal(tr, NULL, NULL, true);
+        super_block_updated =
+                update_super_block_internal(tr, NULL, NULL, NULL, true);
     } else {
         super_block_updated = update_super_block_internal(
-                tr, &fs->free.block_tree.root, &fs->files.root, true);
+                tr, &fs->free.block_tree.root, &fs->files.root, &fs->checkpoint,
+                true);
     }
     if (!super_block_updated) {
         /* Not safe to proceed. TODO: add flag to try again? */
@@ -459,6 +480,26 @@ static bool use_new_super(const struct block_device* dev,
 }
 
 /**
+ * fs_set_roots - Initialize fs state from super block roots
+ * @fs:                File system state object
+ * @free:              Free set root node
+ * @files:             Files tree root node
+ * @checkpoint:        Checkpoint metadata block. May be NULL.
+ */
+static void fs_set_roots(struct fs* fs,
+                         const struct block_mac* free,
+                         const struct block_mac* files,
+                         const struct block_mac* checkpoint) {
+    fs->free.block_tree.root = *free;
+    fs->files.root = *files;
+
+    if (checkpoint) {
+        fs->checkpoint = *checkpoint;
+        /* TODO: Initialize the checkpoint files and blocks structures */
+    }
+}
+
+/**
  * fs_init_empty - Initialize free set for empty file system
  * @fs:         File system state object.
  */
@@ -488,9 +529,13 @@ static int fs_init_from_super(struct fs* fs,
                              current mode? */
     bool has_backup_field =
             super && (super->opt_flags & SUPER_BLOCK_OPT_FLAGS_HAS_FLAGS3);
+    bool has_checkpoint_field =
+            has_backup_field && super &&
+            (super->opt_flags & SUPER_BLOCK_OPT_FLAGS_HAS_CHECKPOINT);
     bool recovery_allowed = flags & FS_INIT_FLAGS_RECOVERY_CLEAR_ALLOWED;
     const struct block_mac* new_files_root;
     const struct block_mac* new_free_root;
+    const struct block_mac* new_checkpoint = NULL;
 
     if (super && super->fs_version > SUPER_BLOCK_FS_VERSION) {
         pr_err("ERROR: super block is from the future 0x%x\n",
@@ -514,6 +559,9 @@ static int fs_init_from_super(struct fs* fs,
     fs->files.copy_on_write = true;
     fs->files.allow_copy_on_write = true;
 
+    memset(&fs->checkpoint, 0, sizeof(fs->checkpoint));
+    block_set_init(fs, &fs->checkpoint_free);
+
     /* Reserve 1/4 for tmp blocks plus half of the remaining space */
     fs->reserved_count = fs->dev->block_count / 8 * 5;
 
@@ -532,6 +580,7 @@ static int fs_init_from_super(struct fs* fs,
                                                SUPER_BLOCK_FLAGS_ALTERNATE);
             fs->backup.free = super->free;
             fs->backup.files = super->files;
+            fs->backup.checkpoint = super->checkpoint;
 
             if (!has_backup_field ||
                 super->backup.flags & SUPER_BLOCK_FLAGS_EMPTY) {
@@ -539,6 +588,9 @@ static int fs_init_from_super(struct fs* fs,
             } else if (has_backup_field) {
                 new_files_root = &super->backup.files;
                 new_free_root = &super->backup.free;
+                if (has_checkpoint_field) {
+                    new_checkpoint = &super->backup.checkpoint;
+                }
             }
         } else {
             if (has_backup_field) {
@@ -550,6 +602,9 @@ static int fs_init_from_super(struct fs* fs,
             } else {
                 new_files_root = &super->files;
                 new_free_root = &super->free;
+                if (has_checkpoint_field) {
+                    new_checkpoint = &super->checkpoint;
+                }
             }
         }
 
@@ -575,12 +630,12 @@ static int fs_init_from_super(struct fs* fs,
                 .flags = SUPER_BLOCK_FLAGS_EMPTY,
                 .files = {0},
                 .free = {0},
+                .checkpoint = {0},
         };
     }
 
     if (super && !is_clear && !do_clear) {
-        fs->free.block_tree.root = *new_free_root;
-        fs->files.root = *new_files_root;
+        fs_set_roots(fs, new_free_root, new_files_root, new_checkpoint);
         pr_init("loaded super block version %d\n", fs->super_block_version);
     } else {
         if (is_clear) {

@@ -316,8 +316,8 @@ void transaction_complete(struct transaction* tr) {
         goto complete_nop_transaction;
     }
 
-    super_block_updated =
-            update_super_block(tr, &new_free_set.block_tree.root, &new_files);
+    super_block_updated = update_super_block(tr, &new_free_set.block_tree.root,
+                                             &new_files, &tr->fs->checkpoint);
     if (!super_block_updated) {
         assert(tr->failed);
         pr_warn("failed to update super block, abort\n");

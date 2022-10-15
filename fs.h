@@ -42,6 +42,8 @@
  *                  contain a version).
  * @free:           Block and mac of backup free set root node.
  * @files:          Block and mac of backup files tree root node.
+ * @checkpoint:     Block and mac of the backup checkpoint metadata block, if
+ *                  any.
  *
  * Block numbers and macs in @free and @files are packed as indicated by
  * @block_num_size and @mac_size, but unlike other on-disk data, the size of the
@@ -52,8 +54,9 @@ struct super_block_backup {
     uint32_t flags;
     struct block_mac free;
     struct block_mac files;
+    struct block_mac checkpoint;
 };
-STATIC_ASSERT(sizeof(struct super_block_backup) == 52);
+STATIC_ASSERT(sizeof(struct super_block_backup) == 76);
 
 /**
  * struct fs - File system state
@@ -64,6 +67,13 @@ STATIC_ASSERT(sizeof(struct super_block_backup) == 52);
  *                                  allocated by active transactions.
  * @free:                           Block set of free blocks.
  * @files:                          B+ tree of all files.
+ * @checkpoint:                     Block and mac of the on-disk checkpoint
+ *                                  metadata. Points to a block that holds the
+ *                                  files root and free set at the time of the
+ *                                  most recent checkpoint.
+ * @checkpoint_free:                Block set of free blocks at the time of the
+ *                                  last checkpoint. A block is only free if it
+ *                                  is in both @free and @checkpoint_free.
  * @super_dev:                      Block device used to store super blocks.
  * @allow_tampering:                %false if the filesystem must detect
  *                                  tampering of read and write operations.
@@ -107,6 +117,8 @@ struct fs {
     struct list_node allocated;
     struct block_set free;
     struct block_tree files;
+    struct block_mac checkpoint;
+    struct block_set checkpoint_free;
     struct block_device* super_dev;
     bool allow_tampering;
     const struct key* key;
@@ -124,7 +136,8 @@ struct fs {
 
 bool update_super_block(struct transaction* tr,
                         const struct block_mac* free,
-                        const struct block_mac* files);
+                        const struct block_mac* files,
+                        const struct block_mac* checkpoint);
 
 /**
  * typedef fs_init_flags32_t - Flags that control filesystem clearing and
