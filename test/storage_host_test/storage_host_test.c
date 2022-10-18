@@ -39,6 +39,10 @@ static struct block_device_tipc test_block_device;
 
 static bool print_test_verbose = false;
 
+static inline void transaction_complete(struct transaction* tr) {
+    return transaction_complete_etc(tr, false);
+}
+
 static void open_test_file_etc(struct transaction* tr,
                                struct file_handle* file,
                                const char* path,

@@ -111,6 +111,10 @@ static bool print_block_tree_test_verbose = false;
 
 data_block_t block_test_fail_write_blocks;
 
+static inline void transaction_complete(struct transaction* tr) {
+    return transaction_complete_etc(tr, false);
+}
+
 static inline void transaction_complete_update_checkpoint(
         struct transaction* tr) {
     return transaction_complete_etc(tr, true);

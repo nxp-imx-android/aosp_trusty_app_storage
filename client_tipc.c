@@ -29,6 +29,7 @@
 #include <openssl/mem.h>
 
 #include <interface/storage/storage.h>
+#include <lib/system_state/system_state.h>
 
 #include "client_session_tipc.h"
 #include "file.h"
@@ -285,7 +286,9 @@ static enum storage_err storage_file_delete(
     }
 
     if (msg->flags & STORAGE_MSG_FLAG_TRANSACT_COMPLETE) {
-        transaction_complete(&session->tr);
+        transaction_complete_etc(
+                &session->tr,
+                msg->flags & STORAGE_MSG_FLAG_TRANSACT_CHECKPOINT);
         if (session->tr.failed) {
             SS_ERR("%s: transaction commit failed\n", __func__);
             return STORAGE_ERR_GENERIC;
@@ -432,7 +435,9 @@ static enum storage_err storage_file_move(
     }
 
     if (msg->flags & STORAGE_MSG_FLAG_TRANSACT_COMPLETE) {
-        transaction_complete(&session->tr);
+        transaction_complete_etc(
+                &session->tr,
+                msg->flags & STORAGE_MSG_FLAG_TRANSACT_CHECKPOINT);
         if (session->tr.failed) {
             SS_ERR("%s: transaction commit failed\n", __func__);
             return STORAGE_ERR_GENERIC;
@@ -530,7 +535,9 @@ static int storage_file_open(struct storage_msg* msg,
     }
 
     if (msg->flags & STORAGE_MSG_FLAG_TRANSACT_COMPLETE) {
-        transaction_complete(&session->tr);
+        transaction_complete_etc(
+                &session->tr,
+                msg->flags & STORAGE_MSG_FLAG_TRANSACT_CHECKPOINT);
         if (session->tr.failed) {
             SS_ERR("%s: transaction commit failed\n", __func__);
             result = STORAGE_ERR_GENERIC;
@@ -580,7 +587,9 @@ static enum storage_err storage_file_close(
     free_file_handle(session, req->handle);
 
     if (msg->flags & STORAGE_MSG_FLAG_TRANSACT_COMPLETE) {
-        transaction_complete(&session->tr);
+        transaction_complete_etc(
+                &session->tr,
+                msg->flags & STORAGE_MSG_FLAG_TRANSACT_CHECKPOINT);
         if (session->tr.failed) {
             SS_ERR("%s: transaction commit failed\n", __func__);
             return STORAGE_ERR_GENERIC;
@@ -805,7 +814,9 @@ static enum storage_err storage_file_write(
     }
 
     if (msg->flags & STORAGE_MSG_FLAG_TRANSACT_COMPLETE) {
-        transaction_complete(&session->tr);
+        transaction_complete_etc(
+                &session->tr,
+                msg->flags & STORAGE_MSG_FLAG_TRANSACT_CHECKPOINT);
         if (session->tr.failed) {
             SS_ERR("%s: transaction commit failed\n", __func__);
             return STORAGE_ERR_GENERIC;
@@ -873,9 +884,9 @@ static bool storage_file_list_iter(struct file_iterate_state* iter,
 
     if (strncmp(file_info->path, miter->prefix, miter->prefix_len) == 0) {
         storage_file_list_add(miter,
-                              added ? STORAGE_FILE_LIST_ADDED
-                                    : removed ? STORAGE_FILE_LIST_REMOVED
-                                              : STORAGE_FILE_LIST_COMMITTED,
+                              added     ? STORAGE_FILE_LIST_ADDED
+                              : removed ? STORAGE_FILE_LIST_REMOVED
+                                        : STORAGE_FILE_LIST_COMMITTED,
                               file_info->path + miter->prefix_len);
     }
 
@@ -1056,7 +1067,9 @@ static enum storage_err storage_file_set_size(
 
     /* try to commit */
     if (msg->flags & STORAGE_MSG_FLAG_TRANSACT_COMPLETE) {
-        transaction_complete(&session->tr);
+        transaction_complete_etc(
+                &session->tr,
+                msg->flags & STORAGE_MSG_FLAG_TRANSACT_CHECKPOINT);
     }
 
     if (session->tr.failed) {
@@ -1193,12 +1206,29 @@ static int client_handle_msg(struct ipc_channel_context* ctx,
     payload_len = msg_size - sizeof(struct storage_msg);
     payload = msg->payload;
 
+    if (msg->flags & STORAGE_MSG_FLAG_TRANSACT_CHECKPOINT) {
+        if (!(msg->flags & STORAGE_MSG_FLAG_TRANSACT_COMPLETE)) {
+            SS_ERR("%s: STORAGE_MSG_FLAG_TRANSACT_CHECKPOINT cannot "
+                   "be used without STORAGE_MSG_FLAG_TRANSACT_COMPLETE\n",
+                   __func__);
+            return send_result(session, msg, STORAGE_ERR_NOT_VALID);
+        }
+
+        if (!system_state_provisioning_allowed()) {
+            SS_ERR("%s: Checkpoint requested but provisioning is not allowed.\n",
+                   __func__);
+            return send_result(session, msg, STORAGE_ERR_NOT_ALLOWED);
+        }
+    }
+
     /* abort transaction and clear sticky transaction error */
     if (msg->cmd == STORAGE_END_TRANSACTION) {
         if (msg->flags & STORAGE_MSG_FLAG_TRANSACT_COMPLETE) {
             /* try to complete current transaction */
             if (transaction_is_active(&session->tr)) {
-                transaction_complete(&session->tr);
+                transaction_complete_etc(
+                        &session->tr,
+                        msg->flags & STORAGE_MSG_FLAG_TRANSACT_CHECKPOINT);
             }
             if (session->tr.failed) {
                 SS_ERR("%s: failed to complete transaction\n", __func__);

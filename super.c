@@ -764,7 +764,7 @@ static bool fs_check_delete_file(struct fs* fs, char* path) {
         }
         goto err_delete;
     }
-    transaction_complete(&tr);
+    transaction_complete_etc(&tr, false);
 
 err_delete:
     ret = !tr.failed;
