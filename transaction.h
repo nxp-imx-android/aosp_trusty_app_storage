@@ -70,8 +70,13 @@ void transaction_init(struct transaction* tr, struct fs* fs, bool activate);
 void transaction_free(struct transaction* tr);
 void transaction_activate(struct transaction* tr);
 void transaction_fail(struct transaction* tr);
-void transaction_complete(struct transaction* tr);
+void transaction_complete_etc(struct transaction* tr, bool update_checkpoint);
 void transaction_initial_super_block_complete(struct transaction* tr);
+
+/* TODO: move to tests after we update all internal usage */
+static inline void transaction_complete(struct transaction* tr) {
+    return transaction_complete_etc(tr, false);
+}
 
 static inline bool transaction_is_active(struct transaction* tr) {
     return list_in_list(&tr->allocated.node);

@@ -29,6 +29,7 @@
 #include "block_cache.h"
 #include "block_map.h"
 #include "block_set.h"
+#include "checkpoint.h"
 #include "crypt.h"
 #include "debug_stats.h"
 #include "file.h"
@@ -98,6 +99,8 @@ struct block {
     struct block_mac* block_mac_in_parent;
     const char* used_by_str;
     data_block_t used_by_block;
+    const char* checkpoint_used_by_str;
+    data_block_t checkpoint_used_by_block;
 };
 static struct block blocks[BLOCK_COUNT];
 static struct block blocks_backup[BLOCK_COUNT];
@@ -107,6 +110,11 @@ static bool print_test_verbose = false;
 static bool print_block_tree_test_verbose = false;
 
 data_block_t block_test_fail_write_blocks;
+
+static inline void transaction_complete_update_checkpoint(
+        struct transaction* tr) {
+    return transaction_complete_etc(tr, true);
+}
 
 static void block_test_clear_reinit_etc(struct transaction* tr,
                                         uint32_t flags,
@@ -188,44 +196,64 @@ static void block_clear_used_by(void) {
     for (block = 0; block < countof(blocks); block++) {
         blocks[block].used_by_str = NULL;
         blocks[block].used_by_block = 0;
+        blocks[block].checkpoint_used_by_str = NULL;
+        blocks[block].checkpoint_used_by_block = 0;
+    }
+}
+
+static void block_set_used_by_etc(data_block_t block,
+                                  const char* used_by_str,
+                                  data_block_t used_by_block,
+                                  bool checkpoint) {
+    assert(block < countof(blocks));
+
+    if (checkpoint) {
+        if (!blocks[block].checkpoint_used_by_str) {
+            blocks[block].checkpoint_used_by_str = used_by_str;
+            blocks[block].checkpoint_used_by_block = used_by_block;
+        }
+        assert(blocks[block].checkpoint_used_by_str == used_by_str);
+        assert(blocks[block].checkpoint_used_by_block == used_by_block);
+    } else {
+        if (!blocks[block].used_by_str) {
+            blocks[block].used_by_str = used_by_str;
+            blocks[block].used_by_block = used_by_block;
+        }
+        assert(blocks[block].used_by_str == used_by_str);
+        assert(blocks[block].used_by_block == used_by_block);
     }
 }
 
 static void block_set_used_by(data_block_t block,
                               const char* used_by_str,
                               data_block_t used_by_block) {
-    assert(block < countof(blocks));
-
-    if (!blocks[block].used_by_str) {
-        blocks[block].used_by_str = used_by_str;
-        blocks[block].used_by_block = used_by_block;
-    }
-    assert(blocks[block].used_by_str == used_by_str);
-    assert(blocks[block].used_by_block == used_by_block);
+    block_set_used_by_etc(block, used_by_str, used_by_block, false);
 }
 
 static void mark_block_tree_in_use(struct transaction* tr,
                                    struct block_tree* block_tree,
                                    bool mark_data_used,
                                    const char* used_by_str,
-                                   data_block_t used_by_block) {
+                                   data_block_t used_by_block,
+                                   bool checkpoint) {
     struct block_tree_path path;
     unsigned int i;
 
     block_tree_walk(tr, block_tree, 0, true, &path);
     if (path.count) {
         /* mark root in use in case it is empty */
-        block_set_used_by(block_mac_to_block(tr, &path.entry[0].block_mac),
-                          used_by_str, used_by_block);
+        block_set_used_by_etc(block_mac_to_block(tr, &path.entry[0].block_mac),
+                              used_by_str, used_by_block, checkpoint);
     }
     while (block_tree_path_get_key(&path)) {
         for (i = 0; i < path.count; i++) {
-            block_set_used_by(block_mac_to_block(tr, &path.entry[i].block_mac),
-                              used_by_str, used_by_block);
+            block_set_used_by_etc(
+                    block_mac_to_block(tr, &path.entry[i].block_mac),
+                    used_by_str, used_by_block, checkpoint);
         }
         if (mark_data_used) {
-            block_set_used_by(block_tree_path_get_data(&path), used_by_str,
-                              used_by_block);
+            block_set_used_by_etc(block_tree_path_get_data(&path), used_by_str,
+                                  used_by_block, checkpoint);
         }
         block_tree_path_next(&path);
     }
@@ -244,13 +272,18 @@ static void mark_files_in_use(struct transaction* tr) {
         struct block_mac block_mac = block_tree_path_get_data_block_mac(&path);
         file_block_map_init(tr, &block_map, &block_mac);
         mark_block_tree_in_use(tr, &block_map.tree, true, "file",
-                               block_mac_to_block(tr, &block_mac));
+                               block_mac_to_block(tr, &block_mac), false);
         block_tree_path_next(&path);
     }
 }
 
 static void check_fs_prepare(struct transaction* tr) {
     data_block_t block;
+    struct block_tree checkpoint_files =
+            BLOCK_TREE_INITIAL_VALUE(checkpoint_files);
+    size_t block_mac_size = tr->fs->block_num_size + tr->fs->mac_size;
+    block_tree_init(&checkpoint_files, tr->fs->dev->block_size,
+                    tr->fs->block_num_size, block_mac_size, block_mac_size);
 
     block_clear_used_by();
 
@@ -272,10 +305,21 @@ static void check_fs_prepare(struct transaction* tr) {
     }
 
     mark_block_tree_in_use(tr, &tr->fs->free.block_tree, false,
-                           "free_tree_node", 0);
+                           "free_tree_node", 0, false);
 
-    mark_block_tree_in_use(tr, &tr->fs->files, true, "files", 0);
+    mark_block_tree_in_use(tr, &tr->fs->files, true, "files", 0, false);
     mark_files_in_use(tr);
+
+    if (block_mac_valid(tr, &tr->fs->checkpoint)) {
+        assert(checkpoint_read(tr, &tr->fs->checkpoint, &checkpoint_files,
+                               NULL));
+        block_set_used_by_etc(block_mac_to_block(tr, &tr->fs->checkpoint),
+                              "checkpoint", 0, true);
+        mark_block_tree_in_use(tr, &checkpoint_files, true, "checkpoint_files",
+                               0, true);
+        mark_block_tree_in_use(tr, &tr->fs->checkpoint_free.block_tree, false,
+                               "checkpoint_free", 0, true);
+    }
 }
 
 static bool check_fs_finish(struct transaction* tr) {
@@ -283,7 +327,8 @@ static bool check_fs_finish(struct transaction* tr) {
     data_block_t block;
 
     for (block = 0; block < countof(blocks); block++) {
-        if (!blocks[block].used_by_str) {
+        if (!blocks[block].used_by_str &&
+            !blocks[block].checkpoint_used_by_str) {
             printf("block %" PRIu64 ", lost\n", block);
             valid = false;
         }
@@ -293,9 +338,26 @@ static bool check_fs_finish(struct transaction* tr) {
         printf("free:\n");
         block_set_print(tr, &tr->fs->free);
         files_print(tr);
+        printf("checkpoint free:\n");
+        block_set_print(tr, &tr->fs->checkpoint_free);
     }
 
     return valid;
+}
+
+static size_t get_fs_checkpoint_count(struct transaction* tr) {
+    data_block_t block;
+    size_t checkpoint_count = 0;
+    check_fs_prepare(tr);
+    for (block = 0; block < countof(blocks); block++) {
+        if (blocks[block].checkpoint_used_by_str &&
+            strncmp("checkpoint", blocks[block].checkpoint_used_by_str,
+                    strlen("checkpoint")) == 0) {
+            checkpoint_count++;
+        }
+    }
+    assert(check_fs_finish(tr));
+    return checkpoint_count;
 }
 
 static bool check_fs_allocated(struct transaction* tr,
@@ -1756,6 +1818,61 @@ static void file_allocate_leave_10_test(struct transaction* tr) {
     file_allocate_all_test(tr, 1, 1, 10, "test1", FILE_OPEN_CREATE);
 }
 
+static void fs_create_checkpoint(struct transaction* tr) {
+    file_test(tr, "test_checkpoint", FILE_OPEN_CREATE_EXCLUSIVE,
+              file_test_block_count, 0, 0, false, 1);
+    transaction_complete_update_checkpoint(tr);
+    assert(!tr->failed);
+
+    transaction_activate(tr);
+    assert(get_fs_checkpoint_count(tr) > 3);
+    file_delete(tr, "test_checkpoint");
+    transaction_complete(tr);
+    assert(!tr->failed);
+
+    transaction_activate(tr);
+    assert(get_fs_checkpoint_count(tr) > 3);
+}
+
+static void fs_modify_with_checkpoint(struct transaction* tr) {
+    file_test(tr, "test_checkpoint", FILE_OPEN_CREATE_EXCLUSIVE,
+              file_test_block_count, 0, 0, false, 1);
+    transaction_complete_update_checkpoint(tr);
+    assert(!tr->failed);
+
+    /* modify the active filesystem with an active checkpoint */
+    transaction_activate(tr);
+    file_test(tr, "test_checkpoint", FILE_OPEN_NO_CREATE, file_test_block_count,
+              0, 0, false, 2);
+    transaction_complete(tr);
+    assert(!tr->failed);
+
+    transaction_activate(tr);
+    assert(get_fs_checkpoint_count(tr) > 3);
+    file_delete(tr, "test_checkpoint");
+    transaction_complete(tr);
+    assert(!tr->failed);
+
+    transaction_activate(tr);
+    assert(get_fs_checkpoint_count(tr) > 3);
+}
+
+static void fs_clear_checkpoint(struct transaction* tr) {
+    assert(get_fs_checkpoint_count(tr) > 3);
+
+    file_delete(tr, "test_checkpoint");
+    /* at this point the file-system should be empty, all files are deleted */
+    transaction_complete_update_checkpoint(tr);
+
+    /*
+     * one block each for the checkpoint metadata block, checkpoint file tree
+     * root, and checkpoint free set, no file blocks should exist now
+     */
+    assert(get_fs_checkpoint_count(tr) == 3);
+
+    transaction_activate(tr);
+}
+
 static void future_fs_version_test(struct transaction* tr) {
     struct obj_ref super_ref = OBJ_REF_INITIAL_VALUE(super_ref);
     struct fs* fs = tr->fs;
@@ -2605,6 +2722,9 @@ struct {
         //    TEST(file_write1_test),
         //    TEST(file_allocate_leave_10_test2),
         TEST(file_delete1_no_free_test),
+        TEST(fs_create_checkpoint),
+        TEST(fs_modify_with_checkpoint),
+        TEST(fs_clear_checkpoint),
         TEST(future_fs_version_test),
         TEST(fs_recovery_roots_test),
         TEST(fs_check_file_child_test),

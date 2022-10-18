@@ -232,8 +232,9 @@ static struct block_allocator_queue block_allocator_queue;
  * @tr:             Transaction object.
  * @min_block_in:   Block number to start search at.
  *
- * Return: Block number that is in commited free set and not already allocated
- * by any transaction.
+ * Return: Block number that is in all committed free sets and not already
+ * allocated by any transaction. To be considered free, a block must be in the
+ * current file-system free set AND any checkpointed free sets, if available.
  */
 static data_block_t find_free_block(struct transaction* tr,
                                     data_block_t min_block_in) {
@@ -263,12 +264,23 @@ static data_block_t find_free_block(struct transaction* tr,
 
         /*
          * set min_block to a candidate for an available free block. If no
-         * pending allocation contains this block, block will still equal
-         * min_block and we will exit the loop
+         * checkpoint or pending allocation contains this block, block will
+         * still equal min_block and we will exit the loop
          */
         min_block = block;
 
         pr_read("check free block %" PRIu64 "\n", block);
+
+        /* check if the block is also free in the checkpoint */
+        block = block_set_find_next_block(tr, &tr->fs->checkpoint_free, block,
+                                          true);
+        if (tr->failed) {
+            return 0;
+        }
+        if (!block) {
+            break;
+        }
+        assert(block >= min_block);
 
         assert(!list_is_empty(&tr->fs->allocated));
         list_for_every_entry(&tr->fs->allocated, set, struct block_set, node) {
@@ -294,6 +306,8 @@ static data_block_t find_free_block(struct transaction* tr,
 
             printf("%s: free\n", __func__);
             block_set_print(tr, &tr->fs->free);
+            printf("%s: checkpoint free\n", __func__);
+            block_set_print(tr, &tr->fs->checkpoint_free);
             list_for_every_entry(&tr->fs->allocated, set, struct block_set,
                                  node) {
 #if TLOG_LVL >= TLOG_LVL_DEBUG

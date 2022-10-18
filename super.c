@@ -33,6 +33,7 @@
 #include "block_allocator.h"
 #include "block_cache.h"
 #include "block_set.h"
+#include "checkpoint.h"
 #include "debug.h"
 #include "file.h"
 #include "fs.h"
@@ -202,11 +203,7 @@ static bool update_super_block_internal(struct transaction* tr,
         super_rw->files = *files;
     }
     if (checkpoint) {
-        /*
-         * TODO: uncomment to set checkpoint here with change that correctly
-         * creates and uses the checkpoint
-         */
-        /* super_rw->checkpoint = *checkpoint; */
+        super_rw->checkpoint = *checkpoint;
     }
     super_rw->flags2 = flags;
     super_rw->backup = tr->fs->backup;
@@ -485,30 +482,54 @@ static bool use_new_super(const struct block_device* dev,
  * @free:              Free set root node
  * @files:             Files tree root node
  * @checkpoint:        Checkpoint metadata block. May be NULL.
+ *
+ * Returns %true if fs roots were correctly initialized, %false otherwise.
  */
-static void fs_set_roots(struct fs* fs,
+static bool fs_set_roots(struct fs* fs,
                          const struct block_mac* free,
                          const struct block_mac* files,
                          const struct block_mac* checkpoint) {
+    bool success = true;
+    struct transaction tr;
+
     fs->free.block_tree.root = *free;
     fs->files.root = *files;
 
     if (checkpoint) {
         fs->checkpoint = *checkpoint;
-        /* TODO: Initialize the checkpoint files and blocks structures */
+        transaction_init(&tr, fs, true);
+        assert(!block_range_empty(fs->checkpoint_free.initial_range));
+        /*
+         * fs->checkpoint_free is initialized to contain all blocks, so we don't
+         * have to initialize it if there is no checkpoint on disk
+         */
+        if (block_mac_valid(&tr, &fs->checkpoint)) {
+            success = checkpoint_read(&tr, &fs->checkpoint, NULL,
+                                      &fs->checkpoint_free);
+        }
+        if (!tr.failed) {
+            /* temporary transaction is only for reading, drop it */
+            transaction_fail(&tr);
+        }
+        transaction_free(&tr);
     }
+
+    return success;
 }
 
 /**
- * fs_init_empty - Initialize free set for empty file system
+ * fs_init_free_set - Initialize an initial free set for a file system
  * @fs:         File system state object.
+ * @set:        Block set to initialize
+ *
+ * Initializes @set to the entire range of @fs, i.e. all blocks are free.
  */
-static void fs_init_empty(struct fs* fs) {
+static void fs_init_free_set(struct fs* fs, struct block_set* set) {
     struct block_range range = {
             .start = fs->min_block_num,
             .end = fs->dev->block_count,
     };
-    block_set_add_initial_range(&fs->free, range);
+    block_set_add_initial_range(set, range);
 }
 
 /**
@@ -561,6 +582,11 @@ static int fs_init_from_super(struct fs* fs,
 
     memset(&fs->checkpoint, 0, sizeof(fs->checkpoint));
     block_set_init(fs, &fs->checkpoint_free);
+    /*
+     * checkpoint_init() will clear the checkpoint initial range if a valid
+     * checkpoint exists.
+     */
+    fs_init_free_set(fs, &fs->checkpoint_free);
 
     /* Reserve 1/4 for tmp blocks plus half of the remaining space */
     fs->reserved_count = fs->dev->block_count / 8 * 5;
@@ -635,7 +661,10 @@ static int fs_init_from_super(struct fs* fs,
     }
 
     if (super && !is_clear && !do_clear) {
-        fs_set_roots(fs, new_free_root, new_files_root, new_checkpoint);
+        if (!fs_set_roots(fs, new_free_root, new_files_root, new_checkpoint)) {
+            pr_err("failed to initialize filesystem roots\n");
+            return -1;
+        }
         pr_init("loaded super block version %d\n", fs->super_block_version);
     } else {
         if (is_clear) {
@@ -647,7 +676,7 @@ static int fs_init_from_super(struct fs* fs,
         } else {
             pr_init("no valid super-block found, create empty\n");
         }
-        fs_init_empty(fs);
+        fs_init_free_set(fs, &fs->free);
     }
     assert(fs->block_num_size >= fs->dev->block_num_size);
     assert(fs->block_num_size <= sizeof(data_block_t));

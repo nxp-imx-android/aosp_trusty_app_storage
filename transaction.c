@@ -25,6 +25,7 @@
 #include "array.h"
 #include "block_allocator.h"
 #include "block_set.h"
+#include "checkpoint.h"
 #include "debug.h"
 #include "file.h"
 #include "transaction.h"
@@ -220,14 +221,20 @@ static void check_free_tree(struct transaction* tr, struct block_set* free) {
 }
 
 /**
- * transaction_complete - Complete transaction
- * @tr:         Transaction object.
+ * transaction_complete - Complete transaction, optionally updating checkpoint
+ * @tr:                Transaction object.
+ * @update_checkpoint: If true, update checkpoint with the new file-system
+ *                     state.
  */
-void transaction_complete(struct transaction* tr) {
+void transaction_complete_etc(struct transaction* tr, bool update_checkpoint) {
     struct block_mac new_files;
     struct transaction* tmp_tr;
     struct transaction* other_tr;
     struct block_set new_free_set = BLOCK_SET_INITIAL_VALUE(new_free_set);
+    struct checkpoint* new_checkpoint = NULL;
+    struct block_mac new_checkpoint_mac;
+    struct obj_ref new_checkpoint_ref =
+            OBJ_REF_INITIAL_VALUE(new_checkpoint_ref);
     bool super_block_updated;
 
     assert(tr->fs);
@@ -236,6 +243,7 @@ void transaction_complete(struct transaction* tr) {
     // printf("%s: %" PRIu64 "\n", __func__, tr->version);
 
     block_set_copy(tr, &new_free_set, &tr->fs->free);
+    block_mac_copy(tr, &new_checkpoint_mac, &tr->fs->checkpoint);
 
     if (tr->failed) {
         pr_warn("transaction failed, abort\n");
@@ -248,6 +256,16 @@ void transaction_complete(struct transaction* tr) {
     if (tr->failed) {
         pr_warn("transaction failed, abort\n");
         goto err_transaction_failed;
+    }
+
+    if (update_checkpoint) {
+        new_checkpoint = checkpoint_get_new_block(tr, &new_checkpoint_ref,
+                                                  &new_checkpoint_mac);
+        if (tr->failed) {
+            pr_warn("transaction failed, abort\n");
+            goto err_transaction_failed;
+        }
+        assert(new_checkpoint);
     }
 
     tr->new_free_set = &new_free_set;
@@ -284,6 +302,18 @@ void transaction_complete(struct transaction* tr) {
         goto err_transaction_failed;
     }
 
+    if (update_checkpoint) {
+        checkpoint_update_roots(tr, new_checkpoint, &new_files,
+                                &new_free_set.block_tree.root);
+        block_put_dirty(tr, new_checkpoint, &new_checkpoint_ref,
+                        &new_checkpoint_mac, NULL);
+        /*
+         * We have now released the block reference new_checkpoint_ref, so make
+         * sure we don't release it again in err_transaction_failed
+         */
+        new_checkpoint = NULL;
+    }
+
     block_cache_clean_transaction(tr);
 
     if (tr->failed) {
@@ -317,7 +347,7 @@ void transaction_complete(struct transaction* tr) {
     }
 
     super_block_updated = update_super_block(tr, &new_free_set.block_tree.root,
-                                             &new_files, &tr->fs->checkpoint);
+                                             &new_files, &new_checkpoint_mac);
     if (!super_block_updated) {
         assert(tr->failed);
         pr_warn("failed to update super block, abort\n");
@@ -355,6 +385,11 @@ void transaction_complete(struct transaction* tr) {
                      .initial_range); /* clear for initial file-system state */
     tr->fs->files.root = new_files;
     tr->fs->super_block_version = tr->fs->written_super_block_version;
+    tr->fs->checkpoint = new_checkpoint_mac;
+    if (update_checkpoint) {
+        tr->fs->checkpoint_free.block_tree.root = new_free_set.block_tree.root;
+        block_range_clear(&tr->fs->checkpoint_free.initial_range);
+    }
 
 complete_nop_transaction:
     transaction_delete_active(tr);
@@ -394,6 +429,9 @@ complete_nop_transaction:
     block_cache_discard_transaction(tr, false);
 
 err_transaction_failed:
+    if (new_checkpoint) {
+        block_put_dirty_discard(new_checkpoint, &new_checkpoint_ref);
+    }
     if (tr->failed) {
         file_transaction_complete_failed(tr);
     }
