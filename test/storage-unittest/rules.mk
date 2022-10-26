@@ -25,6 +25,7 @@ MODULE_SRCS += \
 MODULE_LIBRARY_DEPS += \
 	trusty/user/base/lib/libc-trusty \
 	trusty/user/base/lib/storage \
+	trusty/user/base/lib/system_state \
 	trusty/user/base/lib/unittest \
 
 # This test was written using variable-length arrays. We shouldn't be using

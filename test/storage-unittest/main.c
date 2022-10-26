@@ -25,6 +25,7 @@
 #include <lib/storage/storage.h>
 
 #ifndef STORAGE_FAKE
+#include <lib/system_state/system_state.h>
 #include <lib/unittest/unittest.h>
 #include <trusty/time.h>
 #endif
@@ -137,7 +138,7 @@ static bool check_value32(const uint32_t* buf, size_t len, uint32_t val) {
 static int WriteZeroChunk(file_handle_t handle,
                           storage_off_t off,
                           size_t chunk_len,
-                          bool complete) {
+                          uint32_t opflags) {
     uint32_t data_buf[chunk_len / sizeof(uint32_t)];
 
     assert(is_valid_size(chunk_len));
@@ -145,14 +146,13 @@ static int WriteZeroChunk(file_handle_t handle,
 
     memset(data_buf, 0, chunk_len);
 
-    return storage_write(handle, off, data_buf, sizeof(data_buf),
-                         complete ? STORAGE_OP_COMPLETE : 0);
+    return storage_write(handle, off, data_buf, sizeof(data_buf), opflags);
 }
 
 static int WritePatternChunk(file_handle_t handle,
                              storage_off_t off,
                              size_t chunk_len,
-                             bool complete) {
+                             uint32_t opflags) {
     uint32_t data_buf[chunk_len / sizeof(uint32_t)];
 
     assert(is_valid_size(chunk_len));
@@ -160,15 +160,14 @@ static int WritePatternChunk(file_handle_t handle,
 
     fill_pattern32(data_buf, chunk_len, off);
 
-    return storage_write(handle, off, data_buf, sizeof(data_buf),
-                         complete ? STORAGE_OP_COMPLETE : 0);
+    return storage_write(handle, off, data_buf, sizeof(data_buf), opflags);
 }
 
-static int WritePattern(file_handle_t handle,
-                        storage_off_t off,
-                        size_t data_len,
-                        size_t chunk_len,
-                        bool complete) {
+static int WritePatternExt(file_handle_t handle,
+                           storage_off_t off,
+                           size_t data_len,
+                           size_t chunk_len,
+                           uint32_t extra_opflags) {
     size_t written = 0;
 
     assert(is_valid_size(data_len));
@@ -178,7 +177,7 @@ static int WritePattern(file_handle_t handle,
         if (data_len < chunk_len)
             chunk_len = data_len;
         int rc = WritePatternChunk(handle, off, chunk_len,
-                                   (chunk_len == data_len) && complete);
+                                   (chunk_len == data_len) ? extra_opflags : 0);
         if (rc < 0)
             return rc;
         if ((size_t)rc != chunk_len)
@@ -188,6 +187,15 @@ static int WritePattern(file_handle_t handle,
         written += chunk_len;
     }
     return (int)written;
+}
+
+static int WritePattern(file_handle_t handle,
+                        storage_off_t off,
+                        size_t data_len,
+                        size_t chunk_len,
+                        bool complete) {
+    return WritePatternExt(handle, off, data_len, chunk_len,
+                           complete ? STORAGE_OP_COMPLETE : 0);
 }
 
 static int ReadChunk(file_handle_t handle,
@@ -2855,6 +2863,110 @@ TEST_F(StorageTest, TransactResumeAfterNonFatalError) {
     // cleanup
     storage_close_file(handle);
     storage_delete_file(ss, fname, STORAGE_OP_COMPLETE);
+
+test_abort:;
+}
+
+/*
+ * Test that every API that should allow checkpointing does (when provisioning
+ * is enabled)
+ */
+TEST_F(StorageTest, CheckpointApis) {
+    int rc;
+    file_handle_t handle;
+    size_t blk = 2048;
+    size_t len = 32 * blk;
+    const char* fname = "test_checkpoint_create";
+    const char* new_fname = "test_checkpoint_move";
+
+    if (!system_state_provisioning_allowed()) {
+        trusty_unittest_printf(
+                "[  SKIPPED ] CheckpointApis - Provisioning is not allowed\n");
+        return;
+    }
+
+    /* We don't allow OP_CHECKPOINT without STORAGE_OP_COMPLETE */
+    rc = storage_open_file(
+            ss, &handle, fname,
+            STORAGE_FILE_OPEN_CREATE | STORAGE_FILE_OPEN_TRUNCATE,
+            STORAGE_OP_CHECKPOINT);
+    ASSERT_EQ(ERR_NOT_VALID, rc);
+
+    /* open create truncate file (with checkpoint) */
+    rc = storage_open_file(
+            ss, &handle, fname,
+            STORAGE_FILE_OPEN_CREATE | STORAGE_FILE_OPEN_TRUNCATE,
+            STORAGE_OP_COMPLETE | STORAGE_OP_CHECKPOINT);
+    ASSERT_EQ(0, rc);
+
+    /* move the file and checkpoint */
+    rc = storage_move_file(
+            ss, handle, fname, new_fname,
+            STORAGE_FILE_MOVE_CREATE | STORAGE_FILE_MOVE_OPEN_FILE,
+            STORAGE_OP_COMPLETE | STORAGE_OP_CHECKPOINT);
+    ASSERT_EQ(0, rc);
+
+    /* write to the file and checkpoint */
+    rc = WritePatternExt(handle, 0, len, blk,
+                         STORAGE_OP_COMPLETE | STORAGE_OP_CHECKPOINT);
+    ASSERT_EQ((int)len, rc);
+
+    rc = ReadPattern(handle, 0, len, blk);
+    ASSERT_EQ((int)len, rc);
+
+    /* cleanup */
+    storage_close_file(handle);
+
+    rc = storage_delete_file(ss, fname, STORAGE_OP_COMPLETE);
+    ASSERT_EQ(ERR_NOT_FOUND, rc);
+
+    rc = storage_delete_file(ss, new_fname,
+                             STORAGE_OP_COMPLETE | STORAGE_OP_CHECKPOINT);
+    ASSERT_EQ(0, rc);
+
+test_abort:;
+}
+
+TEST_F(StorageTest, CheckpointRequiresProvisioningAllowed) {
+    int rc;
+    file_handle_t handle;
+    const char* fname = "test_checkpoint_create";
+    const char* new_fname = "test_checkpoint_move";
+
+    if (system_state_provisioning_allowed()) {
+        trusty_unittest_printf(
+                "[  SKIPPED ] CheckpointRequiresProvisioningAllowed - "
+                "Provisioning is allowed\n");
+        return;
+    }
+
+    /* We don't allow OP_CHECKPOINT without STORAGE_OP_COMPLETE */
+    rc = storage_open_file(
+            ss, &handle, fname,
+            STORAGE_FILE_OPEN_CREATE | STORAGE_FILE_OPEN_TRUNCATE,
+            STORAGE_OP_CHECKPOINT);
+    ASSERT_EQ(ERR_NOT_VALID, rc);
+
+    /* open create truncate file (with checkpoint) */
+    rc = storage_open_file(
+            ss, &handle, fname,
+            STORAGE_FILE_OPEN_CREATE | STORAGE_FILE_OPEN_TRUNCATE,
+            STORAGE_OP_COMPLETE | STORAGE_OP_CHECKPOINT);
+    ASSERT_EQ(ERR_NOT_ALLOWED, rc);
+
+    /* move the file and checkpoint */
+    rc = storage_move_file(
+            ss, handle, fname, new_fname,
+            STORAGE_FILE_MOVE_CREATE | STORAGE_FILE_MOVE_OPEN_FILE,
+            STORAGE_OP_COMPLETE | STORAGE_OP_CHECKPOINT);
+    ASSERT_EQ(ERR_NOT_ALLOWED, rc);
+
+    rc = storage_delete_file(ss, fname, STORAGE_OP_COMPLETE);
+    ASSERT_EQ(ERR_NOT_FOUND, rc);
+
+    rc = storage_delete_file(ss, new_fname,
+                             STORAGE_OP_COMPLETE | STORAGE_OP_CHECKPOINT);
+    ASSERT_EQ(ERR_NOT_ALLOWED, rc);
 
 test_abort:;
 }
