@@ -251,35 +251,21 @@ static data_block_t find_free_block(struct transaction* tr,
         if (tr->failed) {
             return 0;
         }
-        if (block < min_block) {
-            assert(!block);
 
-            if (LOCAL_TRACE >= TRACE_LEVEL_READ) {
-                if (min_block_in) {
-                    block = find_free_block(tr, 0);
-                }
-                printf("%s: no space, min_block %" PRIu64
-                       ", free block ignoring_min_block %" PRIu64 "\n",
-                       __func__, min_block_in, block);
-
-                printf("%s: free\n", __func__);
-                block_set_print(tr, &tr->fs->free);
-                list_for_every_entry(&tr->fs->allocated, set, struct block_set,
-                                     node) {
-#if TLOG_LVL >= TLOG_LVL_DEBUG
-                    printf("%s: allocated %p\n", __func__, set);
-#endif
-                    block_set_print(tr, set);
-                }
-                if (tr->new_free_set) {
-                    printf("%s: new free\n", __func__);
-                    block_set_print(tr, tr->new_free_set);
-                }
-            }
-
-            return 0;
+        /*
+         * if block_set_find_next_block() returns 0, there was no available free
+         * block after min_block
+         */
+        if (!block) {
+            break;
         }
+        assert(block >= min_block);
 
+        /*
+         * set min_block to a candidate for an available free block. If no
+         * pending allocation contains this block, block will still equal
+         * min_block and we will exit the loop
+         */
         min_block = block;
 
         pr_read("check free block %" PRIu64 "\n", block);
@@ -294,7 +280,35 @@ static data_block_t find_free_block(struct transaction* tr,
         };
         block = block_allocator_queue_find_free_block(&block_allocator_queue,
                                                       block);
+        assert(block >= min_block);
     } while (block != min_block);
+
+    if (!block) {
+        if (LOCAL_TRACE >= TRACE_LEVEL_READ) {
+            if (min_block_in) {
+                block = find_free_block(tr, 0);
+            }
+            printf("%s: no space, min_block %" PRIu64
+                   ", free block ignoring_min_block %" PRIu64 "\n",
+                   __func__, min_block_in, block);
+
+            printf("%s: free\n", __func__);
+            block_set_print(tr, &tr->fs->free);
+            list_for_every_entry(&tr->fs->allocated, set, struct block_set,
+                                 node) {
+#if TLOG_LVL >= TLOG_LVL_DEBUG
+                printf("%s: allocated %p\n", __func__, set);
+#endif
+                block_set_print(tr, set);
+            }
+            if (tr->new_free_set) {
+                printf("%s: new free\n", __func__);
+                block_set_print(tr, tr->new_free_set);
+            }
+        }
+
+        return 0;
+    }
 
     pr_read("found free block %" PRIu64 "\n", block);
 
