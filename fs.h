@@ -200,6 +200,8 @@ bool fs_check(struct fs* fs,
               bool delete_invalid_files,
               bool check_all_data_blocks);
 
+void fs_file_tree_init(const struct fs* fs, struct block_tree* tree);
+
 void fs_unknown_super_block_state_all(void);
 void write_current_super_block(struct fs* fs, bool reinitialize);
 

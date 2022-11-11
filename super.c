@@ -543,7 +543,6 @@ static void fs_init_free_set(struct fs* fs, struct block_set* set) {
 static int fs_init_from_super(struct fs* fs,
                               const struct super_block* super,
                               fs_init_flags32_t flags) {
-    size_t block_mac_size;
     bool is_clear = false;
     bool do_clear = flags & FS_INIT_FLAGS_DO_CLEAR;
     bool do_swap = false; /* Does the active superblock alternate mode match the
@@ -572,11 +571,9 @@ static int fs_init_from_super(struct fs* fs,
     fs->block_num_size = fs->dev->block_num_size;
     fs->mac_size = fs->dev->mac_size;
 
-    block_mac_size = fs->block_num_size + fs->mac_size;
     block_set_init(fs, &fs->free);
     fs->free.block_tree.copy_on_write = true;
-    block_tree_init(&fs->files, fs->dev->block_size, fs->block_num_size,
-                    block_mac_size, block_mac_size);
+    fs_file_tree_init(fs, &fs->files);
     fs->files.copy_on_write = true;
     fs->files.allow_copy_on_write = true;
 
@@ -877,6 +874,21 @@ finished:
     transaction_free(&iterate_tr);
 
     return state.internal_state_valid;
+}
+
+/**
+ * fs_file_tree_init - Initialize an empty file tree for a file system
+ * @fs:        File system state object.
+ * @tree:      Block tree to initialize as a file tree.
+ */
+void fs_file_tree_init(const struct fs* fs, struct block_tree* tree) {
+    size_t block_num_size;
+    size_t block_mac_size;
+
+    block_num_size = fs->block_num_size;
+    block_mac_size = block_num_size + fs->mac_size;
+    block_tree_init(tree, fs->dev->block_size, block_num_size, block_mac_size,
+                    block_mac_size);
 }
 
 /**

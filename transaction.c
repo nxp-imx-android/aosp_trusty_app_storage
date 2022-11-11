@@ -483,14 +483,8 @@ void transaction_initial_super_block_complete(struct transaction* tr) {
  * @tr:         Transaction object.
  */
 void transaction_activate(struct transaction* tr) {
-    size_t block_num_size;
-    size_t block_mac_size;
-
     assert(tr->fs);
     assert(!transaction_is_active(tr));
-
-    block_num_size = tr->fs->block_num_size;
-    block_mac_size = block_num_size + tr->fs->mac_size;
 
     tr->failed = false;
     tr->complete = false;
@@ -503,12 +497,9 @@ void transaction_activate(struct transaction* tr) {
     block_set_init(tr->fs, &tr->allocated);
     block_set_init(tr->fs, &tr->freed);
 
-    block_tree_init(&tr->files_added, tr->fs->dev->block_size, block_num_size,
-                    block_mac_size, block_mac_size);
-    block_tree_init(&tr->files_updated, tr->fs->dev->block_size, block_num_size,
-                    block_mac_size, block_mac_size);
-    block_tree_init(&tr->files_removed, tr->fs->dev->block_size, block_num_size,
-                    block_mac_size, block_mac_size);
+    fs_file_tree_init(tr->fs, &tr->files_added);
+    fs_file_tree_init(tr->fs, &tr->files_updated);
+    fs_file_tree_init(tr->fs, &tr->files_removed);
 
     list_add_tail(&tr->fs->allocated, &tr->allocated.node);
     list_add_tail(&tr->fs->allocated, &tr->tmp_allocated.node);
