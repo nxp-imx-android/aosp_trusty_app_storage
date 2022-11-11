@@ -20,6 +20,7 @@
 #include "block_cache.h"
 #include "block_mac.h"
 
+struct block_set;
 struct fs;
 struct transaction;
 
@@ -104,6 +105,9 @@ void file_transaction_complete_failed(struct transaction* tr);
 
 void file_transaction_success(struct transaction* tr);
 void file_transaction_failed(struct transaction* tr);
+void files_rebuild_free_set(struct transaction* tr,
+                            struct block_set* new_free_set,
+                            struct block_mac* files_root);
 
 /* TODO: move to dir? */
 enum file_create_mode {

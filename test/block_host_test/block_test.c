@@ -208,18 +208,19 @@ static void block_clear_used_by(void) {
 static void block_set_used_by_etc(data_block_t block,
                                   const char* used_by_str,
                                   data_block_t used_by_block,
-                                  bool checkpoint) {
+                                  bool checkpoint,
+                                  bool force) {
     assert(block < countof(blocks));
 
     if (checkpoint) {
-        if (!blocks[block].checkpoint_used_by_str) {
+        if (force || !blocks[block].checkpoint_used_by_str) {
             blocks[block].checkpoint_used_by_str = used_by_str;
             blocks[block].checkpoint_used_by_block = used_by_block;
         }
         assert(blocks[block].checkpoint_used_by_str == used_by_str);
         assert(blocks[block].checkpoint_used_by_block == used_by_block);
     } else {
-        if (!blocks[block].used_by_str) {
+        if (force || !blocks[block].used_by_str) {
             blocks[block].used_by_str = used_by_str;
             blocks[block].used_by_block = used_by_block;
         }
@@ -228,10 +229,25 @@ static void block_set_used_by_etc(data_block_t block,
     }
 }
 
+static bool block_set_replace_used_by(data_block_t block,
+                                      const char* old_used_by_str,
+                                      const char* new_used_by_str,
+                                      data_block_t new_used_by_block,
+                                      bool checkpoint) {
+    if (!blocks[block].used_by_str ||
+        strcmp(blocks[block].used_by_str, old_used_by_str) != 0) {
+        return false;
+    }
+
+    block_set_used_by_etc(block, new_used_by_str, new_used_by_block, checkpoint,
+                          true);
+    return true;
+}
+
 static void block_set_used_by(data_block_t block,
                               const char* used_by_str,
                               data_block_t used_by_block) {
-    block_set_used_by_etc(block, used_by_str, used_by_block, false);
+    block_set_used_by_etc(block, used_by_str, used_by_block, false, false);
 }
 
 static void mark_block_tree_in_use(struct transaction* tr,
@@ -247,17 +263,17 @@ static void mark_block_tree_in_use(struct transaction* tr,
     if (path.count) {
         /* mark root in use in case it is empty */
         block_set_used_by_etc(block_mac_to_block(tr, &path.entry[0].block_mac),
-                              used_by_str, used_by_block, checkpoint);
+                              used_by_str, used_by_block, checkpoint, false);
     }
     while (block_tree_path_get_key(&path)) {
         for (i = 0; i < path.count; i++) {
             block_set_used_by_etc(
                     block_mac_to_block(tr, &path.entry[i].block_mac),
-                    used_by_str, used_by_block, checkpoint);
+                    used_by_str, used_by_block, checkpoint, false);
         }
         if (mark_data_used) {
             block_set_used_by_etc(block_tree_path_get_data(&path), used_by_str,
-                                  used_by_block, checkpoint);
+                                  used_by_block, checkpoint, false);
         }
         block_tree_path_next(&path);
     }
@@ -318,7 +334,7 @@ static void check_fs_prepare(struct transaction* tr) {
         assert(checkpoint_read(tr, &tr->fs->checkpoint, &checkpoint_files,
                                NULL));
         block_set_used_by_etc(block_mac_to_block(tr, &tr->fs->checkpoint),
-                              "checkpoint", 0, true);
+                              "checkpoint", 0, true, false);
         mark_block_tree_in_use(tr, &checkpoint_files, true, "checkpoint_files",
                                0, true);
         mark_block_tree_in_use(tr, &tr->fs->checkpoint_free.block_tree, false,
@@ -1877,6 +1893,119 @@ static void fs_clear_checkpoint(struct transaction* tr) {
     transaction_activate(tr);
 }
 
+static void fs_rebuild_free_set(struct transaction* tr) {
+    data_block_t block;
+    ssize_t initial_free_count, free_count;
+    bool pending_modifications = false;
+
+    check_fs_prepare(tr);
+
+    initial_free_count = 0;
+    block = block_set_find_next_block(tr, &tr->fs->free, 1, true);
+    while (block) {
+        initial_free_count++;
+        block = block_set_find_next_block(tr, &tr->fs->free, block + 1, true);
+    }
+    block = block_set_find_next_block(tr, &tr->allocated, 1, true);
+    while (block) {
+        /* we allocated blocks already in this transaction */
+        pending_modifications = true;
+        initial_free_count--;
+        block = block_set_find_next_block(tr, &tr->allocated, block + 1, true);
+    }
+    assert(initial_free_count > 0);
+
+    if (print_test_verbose) {
+        printf("files before rebuild:\n");
+        block_tree_print(tr, &tr->fs->files);
+        printf("free set before rebuild:\n");
+        block_set_print(tr, &tr->fs->free);
+    }
+
+    tr->rebuild_free_set = true;
+    transaction_complete(tr);
+    assert(!tr->failed);
+    transaction_activate(tr);
+
+    if (print_test_verbose) {
+        printf("files after rebuild:\n");
+        block_tree_print(tr, &tr->fs->files);
+        printf("free set after rebuild:\n");
+        block_set_print(tr, &tr->fs->free);
+    }
+
+    free_count = 0;
+    block = block_set_find_next_block(tr, &tr->fs->free, 1, true);
+    while (block) {
+        free_count++;
+        /*
+         * free the old free set nodes, because we should have replaced them
+         * with the rebuilt free set tree
+         */
+        if (!block_set_replace_used_by(block, "free_tree_node", "free", 0,
+                                       false)) {
+            /*
+             * Ensure that all blocks in the new free set were in the old free
+             * set. We can only do this if there were no pending modifications
+             * in the transaction; if there were the files tree has been
+             * re-written and some blocks in the new free set will have been in
+             * the previous file tree.
+             */
+            if (!pending_modifications) {
+                block_set_used_by(block, "free", 0);
+            }
+        }
+        block = block_set_find_next_block(tr, &tr->fs->free, block + 1, true);
+    }
+
+    assert(free_count == initial_free_count);
+}
+
+static void fs_rebuild_fragmented_free_set(struct transaction* tr) {
+    char path[10];
+    int i;
+    for (i = 0; i < file_test_many_file_count; i++) {
+        snprintf(path, sizeof(path), "test%d", i);
+        file_test(tr, path, FILE_OPEN_CREATE_EXCLUSIVE, 1, 0, 0, false, 7 + i);
+    }
+
+    /*
+     * Delete half the files, leaving the free set fragmented so we have a free
+     * set tree with depth > 1.
+     */
+    for (i = 0; i < file_test_many_file_count; i += 2) {
+        snprintf(path, sizeof(path), "test%d", i);
+        file_test(tr, path, false, 0, 1, 1, true, 7 + i);
+    }
+
+    transaction_complete(tr);
+    assert(!tr->failed);
+    transaction_activate(tr);
+
+    fs_rebuild_free_set(tr);
+
+    /* clean up */
+    for (i = 0; i < file_test_many_file_count; i++) {
+        snprintf(path, sizeof(path), "test%d", i);
+        file_delete(tr, path);
+    }
+}
+
+static void fs_rebuild_with_pending_file(struct transaction* tr) {
+    file_test(tr, "test_rebuild", FILE_OPEN_CREATE_EXCLUSIVE,
+              file_test_block_count, 0, 0, false, 1);
+    fs_rebuild_free_set(tr);
+    file_delete(tr, "test_rebuild");
+}
+
+static void fs_rebuild_with_pending_transaction(struct transaction* tr) {
+    struct transaction other_tr;
+    transaction_init(&other_tr, tr->fs, true);
+    fs_rebuild_free_set(tr);
+    assert(other_tr.failed);
+    transaction_free(&other_tr);
+}
+
 static void future_fs_version_test(struct transaction* tr) {
     struct obj_ref super_ref = OBJ_REF_INITIAL_VALUE(super_ref);
     struct fs* fs = tr->fs;
@@ -2729,6 +2858,10 @@ struct {
         TEST(fs_create_checkpoint),
         TEST(fs_modify_with_checkpoint),
         TEST(fs_clear_checkpoint),
+        TEST(fs_rebuild_free_set),
+        TEST(fs_rebuild_fragmented_free_set),
+        TEST(fs_rebuild_with_pending_file),
+        TEST(fs_rebuild_with_pending_transaction),
         TEST(future_fs_version_test),
         TEST(fs_recovery_roots_test),
         TEST(fs_check_file_child_test),

@@ -117,3 +117,7 @@ void block_set_add_initial_range(struct block_set* set,
 void block_set_copy(struct transaction* tr,
                     struct block_set* dest,
                     const struct block_set* src);
+
+void block_set_copy_ro(struct transaction* tr,
+                       struct block_set* dest,
+                       const struct block_set* src);

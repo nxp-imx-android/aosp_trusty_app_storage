@@ -72,7 +72,8 @@ static bool transaction_check_free(struct transaction* tr,
  *
  * Helper function to update the free_set when committing a transaction.
  * @new_set = @set_i - @set_d - @new_set-blocks + @set_a + set_[ida]-blocks
- * The start state of @new_set must be a copy-on-write verison of @set_i.
+ * @new_set must start empty and will be initialized and filled in this
+ * function.
  */
 static void transaction_merge_free_sets(struct transaction* tr,
                                         struct block_set* new_set,
@@ -82,6 +83,10 @@ static void transaction_merge_free_sets(struct transaction* tr,
     data_block_t next_block;
     struct block_range delete_range = BLOCK_RANGE_INITIAL_VALUE(delete_range);
     struct block_range add_range = BLOCK_RANGE_INITIAL_VALUE(add_range);
+
+    /* new_set should start empty. */
+    assert(block_set_find_next_block(tr, new_set, 1, true) == 0);
+    block_set_copy(tr, new_set, set_i);
 
     full_assert(block_set_check(tr, set_i));
     full_assert(block_set_check(tr, set_d));
@@ -132,6 +137,102 @@ static void transaction_merge_free_sets(struct transaction* tr,
         }
     }
     full_assert(block_set_check(tr, new_set));
+}
+
+/** transaction_rebuild_free_set - Rebuild free set from referenced file blocks
+ * @tr:             Transaction object.
+ * @new_free_set:   Output free set.
+ * @files:          Root block and mac of the files tree.
+ * @checkpoint:     Checkpoint metadata block and mac
+ *
+ * Rebuilds the file system free set by walking the current files tree and
+ * ensuring that all referenced blocks are marked as not free. @new_free_set
+ * will be initialized to contain all blocks not referenced from the files root.
+ * The @checkpoint metadata block will also be removed from the free set, but
+ * its children (checkpoint files tree and free set) will not be checked. The
+ * blocks in the checkpoint (beside the metadata block) are tracked as
+ * free/allocated by the checkpoint free set rather than the active file system
+ * free set.
+ *
+ * We ignore tr->freed and tr->fs->free here because we are reconstructing the
+ * entire free set. All blocks that were freed in this transaction will not be
+ * referenced by @new_files.
+ */
+static void transaction_rebuild_free_set(struct transaction* tr,
+                                         struct block_set* new_free_set,
+                                         struct block_mac* new_files,
+                                         struct block_mac* new_checkpoint) {
+    struct block_range init_range = {
+            .start = tr->fs->min_block_num,
+            .end = tr->fs->dev->block_count,
+    };
+    struct block_range range;
+    struct block_set previously_allocated =
+            BLOCK_SET_INITIAL_VALUE(previously_allocated);
+
+    /*
+     * Copy and save tr->allocated so that we can keep track of the blocks
+     * already allocated for the current transaction when performing allocations
+     * for the new free set tree nodes. We then reset tr->allocated so that it
+     * will only hold new blocks allocated for new_free_set. All blocks
+     * allocated for files will already be referenced in new_files, so we'll
+     * already be removing them from new_free_set.
+     */
+    assert(list_in_list(&tr->allocated.node));
+    list_delete(&tr->allocated.node);
+    block_set_copy_ro(tr, &previously_allocated, &tr->allocated);
+    list_add_tail(&tr->fs->allocated, &previously_allocated.node);
+
+    block_set_init(tr->fs, &tr->allocated);
+    list_add_tail(&tr->fs->allocated, &tr->allocated.node);
+
+    block_set_init(tr->fs, new_free_set);
+    new_free_set->block_tree.copy_on_write = true;
+    new_free_set->block_tree.allow_copy_on_write = true;
+
+    block_set_add_range(tr, new_free_set, init_range);
+
+    if (block_mac_valid(tr, new_checkpoint)) {
+        block_set_remove_block(tr, new_free_set,
+                               block_mac_to_block(tr, new_checkpoint));
+    }
+    if (tr->failed) {
+        pr_warn("transaction failed, abort\n");
+        return;
+    }
+
+    if (block_mac_valid(tr, new_files)) {
+        files_rebuild_free_set(tr, new_free_set, new_files);
+        if (tr->failed) {
+            pr_warn("transaction failed, abort\n");
+            return;
+        }
+    }
+
+    for (range = block_set_find_next_range(tr, &tr->allocated, 1);
+         !block_range_empty(range);
+         range = block_set_find_next_range(tr, &tr->allocated, range.end)) {
+        tr->min_free_block = range.end;
+        block_allocator_suspend_set_updates(tr);
+        block_set_remove_range(tr, new_free_set, range);
+        block_allocator_process_queue(tr);
+    }
+
+    /*
+     * Copy the rest of the allocated blocks back to tr->allocated to maintain a
+     * consistent state. We don't actually need to do this with the current code
+     * calling this function, but this restores the transaction state to what
+     * would be expected if it were to be used in the future.
+     */
+    for (range = block_set_find_next_range(tr, &previously_allocated, 1);
+         !block_range_empty(range);
+         range = block_set_find_next_range(tr, &previously_allocated,
+                                           range.end)) {
+        block_set_add_range(tr, &tr->allocated, range);
+    }
+    list_delete(&previously_allocated.node);
+
+    full_assert(block_set_check(tr, new_free_set));
 }
 
 /**
@@ -242,7 +343,6 @@ void transaction_complete_etc(struct transaction* tr, bool update_checkpoint) {
 
     // printf("%s: %" PRIu64 "\n", __func__, tr->version);
 
-    block_set_copy(tr, &new_free_set, &tr->fs->free);
     block_mac_copy(tr, &new_checkpoint_mac, &tr->fs->checkpoint);
 
     if (tr->failed) {
@@ -269,8 +369,13 @@ void transaction_complete_etc(struct transaction* tr, bool update_checkpoint) {
     }
 
     tr->new_free_set = &new_free_set;
-    transaction_merge_free_sets(tr, &new_free_set, &tr->fs->free,
-                                &tr->allocated, &tr->freed);
+    if (tr->rebuild_free_set) {
+        transaction_rebuild_free_set(tr, &new_free_set, &new_files,
+                                     &new_checkpoint_mac);
+    } else {
+        transaction_merge_free_sets(tr, &new_free_set, &tr->fs->free,
+                                    &tr->allocated, &tr->freed);
+    }
     if (tr->failed) {
         pr_warn("transaction failed, abort\n");
         goto err_transaction_failed;
@@ -408,7 +513,17 @@ complete_nop_transaction:
         if (!transaction_is_active(other_tr)) {
             continue;
         }
-        if (block_set_overlap(tr, &tr->freed, &other_tr->freed)) {
+        if (tr->rebuild_free_set) {
+            /*
+             * TODO: only fail actually conflicting transactions when rebuilding
+             * the free set. When rebuilding, tr->freed does not contain all
+             * freed blocks if tree nodes were dropped. We could rebuild a free
+             * set delta by subtracting the new free set from the old one and
+             * then compare this delta against other transactions.
+             */
+            pr_warn("Rebuilding free set requires failing all pending transactions\n");
+            transaction_fail(other_tr);
+        } else if (block_set_overlap(tr, &tr->freed, &other_tr->freed)) {
             pr_warn("fail conflicting transaction\n");
             transaction_fail(other_tr);
         }
@@ -488,6 +603,7 @@ void transaction_activate(struct transaction* tr) {
 
     tr->failed = false;
     tr->complete = false;
+    tr->rebuild_free_set = false;
     tr->min_free_block = 0;
     tr->last_free_block = 0;
     tr->last_tmp_free_block = 0;

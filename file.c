@@ -1537,3 +1537,92 @@ void file_transaction_failed(struct transaction* tr) {
         }
     }
 }
+
+/**
+ * file_rebuild_free_set - Remove a file's blocks from the input set
+ * @tr:             Transaction object
+ * @new_free_set:   Free set to modify
+ * @file:           File handle whose blocks should be removed from
+ *                  @new_free_set
+ *
+ * Update @new_free_set by removing from it all blocks referenced by @file, i.e.
+ * the file metadata block, file block map nodes, and file data blocks. Caller
+ * must ensure that @new_free_set contained all these referenced blocks before
+ * calling this function.
+ */
+static void file_rebuild_free_set(struct transaction* tr,
+                                  struct block_set* new_free_set,
+                                  struct file_handle* file) {
+    struct block_map block_map;
+    data_block_t block;
+    struct block_tree_path path;
+    int i;
+
+    block_set_remove_block(tr, new_free_set,
+                           block_mac_to_block(tr, &file->block_mac));
+
+    file_block_map_init(tr, &block_map, &file->block_mac);
+    block_tree_walk(tr, &block_map.tree, 0, true, &path);
+    while (block_tree_path_get_key(&path)) {
+        /*
+         * We only remove a tree node the first time we see it. Because we walk
+         * the tree in order, the first time we see a node we will visit its
+         * lowest child i.e. path.entry[i].index == 0. When index > 0 we have
+         * already visited and removed all parent nodes.
+         */
+        for (i = path.count - 1; i >= 0 && path.entry[i].index == 0; i--) {
+            block = block_mac_to_block(tr, &path.entry[i].block_mac);
+            block_set_remove_block(tr, new_free_set, block);
+        }
+        block_set_remove_block(tr, new_free_set,
+                               block_tree_path_get_data(&path));
+        block_tree_path_next(&path);
+    }
+}
+
+/**
+ * files_rebuild_free_set - Rebuild a free set from the files tree
+ * @tr:             Transaction object
+ * @new_free_set:   Free set to modify
+ * @files_root:     Root block and mac of the files tree
+ *
+ * Update @new_free_set by removing from it all blocks referenced in the file
+ * tree rooted at @files_root, i.e. all files tree nodes, file metadata blocks,
+ * file block map nodes, and file data blocks. Caller must ensure that
+ * @new_free_set contained all these referenced blocks before calling this
+ * function.
+ */
+void files_rebuild_free_set(struct transaction* tr,
+                            struct block_set* new_free_set,
+                            struct block_mac* files_root) {
+    struct block_tree files;
+    data_block_t block;
+    struct block_tree_path path;
+    int i;
+    struct file_handle file;
+
+    fs_file_tree_init(tr->fs, &files);
+    block_mac_copy(tr, &files.root, files_root);
+    block_tree_walk(tr, &files, 0, true, &path);
+    if (!block_tree_path_get_key(&path)) {
+        /* No files, so we just need to track the tree root. */
+        block_set_remove_block(tr, new_free_set,
+                               block_mac_to_block(tr, files_root));
+        return;
+    }
+    while (block_tree_path_get_key(&path)) {
+        /*
+         * We only remove a tree node the first time we see it. Because we walk
+         * the tree in order, the first time we see a node we will visit its
+         * lowest child i.e. path.entry[i].index == 0. When index > 0 we have
+         * already visited and removed all parent nodes.
+         */
+        for (i = path.count - 1; i >= 0 && path.entry[i].index == 0; i--) {
+            block = block_mac_to_block(tr, &path.entry[i].block_mac);
+            block_set_remove_block(tr, new_free_set, block);
+        }
+        file.block_mac = block_tree_path_get_data_block_mac(&path);
+        file_rebuild_free_set(tr, new_free_set, &file);
+        block_tree_path_next(&path);
+    }
+}
