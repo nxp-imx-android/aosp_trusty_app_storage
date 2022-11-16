@@ -52,6 +52,11 @@
 #else
 #define BLOCK_SIZE_MAIN (2048)
 #endif
+
+/*
+ * This is here in case we're using an old storageproxyd that does not have
+ * support for STORAGE_FILE_GET_MAX_SIZE
+ */
 #ifdef APP_STORAGE_MAIN_BLOCK_COUNT
 #define BLOCK_COUNT_MAIN (APP_STORAGE_MAIN_BLOCK_COUNT)
 #else
@@ -270,7 +275,6 @@ static void block_device_tipc_init_dev_ns(struct block_device_ns* dev_ns,
     dev_ns->dev.start_read = block_device_tipc_ns_start_read;
     dev_ns->dev.start_write = block_device_tipc_ns_start_write;
     dev_ns->dev.wait_for_io = block_device_tipc_ns_wait_for_io;
-    dev_ns->dev.block_count = BLOCK_COUNT_MAIN;
     dev_ns->dev.block_size = BLOCK_SIZE_MAIN;
     dev_ns->dev.block_num_size = sizeof(data_block_t);
     dev_ns->dev.mac_size = sizeof(struct mac);
@@ -425,6 +429,25 @@ static int block_device_tipc_init_rpmb_key(struct rpmb_state* state,
     return ret;
 }
 
+static int check_storage_size(handle_t handle,
+                              struct block_device_ns* dev_ns,
+                              data_block_t* sz) {
+    int ret;
+
+    assert(sz != NULL);
+
+    ret = ns_get_max_size(handle, dev_ns->ns_handle, sz);
+    if (ret < 0) {
+        /* In case we have an old storageproxyd, use default */
+        if (*sz == STORAGE_ERR_UNIMPLEMENTED) {
+            *sz = BLOCK_COUNT_MAIN * dev_ns->dev.block_size;
+        }
+    } else if (*sz < (dev_ns->dev.block_size * 8)) {
+        ret = -1;
+    }
+    return ret;
+}
+
 int block_device_tipc_init(struct block_device_tipc* state,
                            handle_t ipc_handle,
                            const struct key* fs_key,
@@ -443,6 +466,8 @@ int block_device_tipc_init(struct block_device_tipc* state,
      */
     uint16_t rpmb_part1_base = 1;
     uint16_t rpmb_part2_base = rpmb_part1_base + rpmb_part_sb_ns_block_count;
+
+    data_block_t sz;
 #if HAS_FS_TDP
     uint16_t rpmb_part_sb_tdp_base = rpmb_part2_base;
     rpmb_part2_base += rpmb_part_sb_ns_block_count;
@@ -530,6 +555,12 @@ int block_device_tipc_init(struct block_device_tipc* state,
         }
     }
 
+    ret = check_storage_size(state->ipc_handle, &state->dev_ns, &sz);
+    if (ret < 0) {
+        goto err_get_td_max_size;
+    }
+    state->dev_ns.dev.block_count = sz / state->dev_ns.dev.block_size;
+
 #if HAS_FS_TDP
     block_device_tipc_init_dev_ns(&state->dev_ns_tdp, state, false);
 
@@ -539,6 +570,12 @@ int block_device_tipc_init(struct block_device_tipc* state,
         SS_ERR("%s: failed to open tdp file (%d)\n", __func__, ret);
         goto err_open_tdp;
     }
+
+    ret = check_storage_size(state->ipc_handle, &state->dev_ns_tdp, &sz);
+    if (ret < 0) {
+        goto err_get_tdp_max_size;
+    }
+    state->dev_ns_tdp.dev.block_count = sz / state->dev_ns_tdp.dev.block_size;
 
     state->fs_tdp.tr_state = &state->tr_state_ns_tdp;
 
@@ -615,6 +652,12 @@ int block_device_tipc_init(struct block_device_tipc* state,
         goto err_open_nsp;
     }
 
+    ret = check_storage_size(state->ipc_handle, &state->dev_ns_nsp, &sz);
+    if (ret < 0) {
+        goto err_get_nsp_max_size;
+    }
+    state->dev_ns_nsp.dev.block_count = sz / state->dev_ns_nsp.dev.block_size;
+
     state->fs_nsp.tr_state = &state->tr_state_ns_nsp;
 
     ret = fs_init(&state->tr_state_ns_nsp, fs_key, &state->dev_ns_nsp.dev,
@@ -667,6 +710,7 @@ err_fs_nsp_create_port:
     fs_destroy(&state->tr_state_ns_nsp);
 err_init_fs_ns_nsp_tr_state:
     block_cache_dev_destroy(&state->dev_ns_nsp.dev);
+err_get_nsp_max_size:
     ns_close_file(state->ipc_handle, state->dev_ns_nsp.ns_handle);
 err_open_nsp:
 #endif
@@ -681,9 +725,11 @@ err_fs_rpmb_tdp_create_port:
     fs_destroy(&state->tr_state_ns_tdp);
 err_init_fs_ns_tdp_tr_state:
     block_cache_dev_destroy(&state->dev_ns_tdp.dev);
+err_get_tdp_max_size:
     ns_close_file(state->ipc_handle, state->dev_ns_tdp.ns_handle);
 err_open_tdp:
 #endif
+err_get_td_max_size:
     ns_close_file(state->ipc_handle, state->dev_ns.ns_handle);
     ipc_port_destroy(&state->fs_rpmb_boot.client_ctx);
 err_fs_rpmb_boot_create_port:

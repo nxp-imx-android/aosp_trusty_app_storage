@@ -248,8 +248,12 @@ static enum storage_err translate_errno(int error) {
     return result;
 }
 
-long ns_get_max_size(handle_t ipc_handle, ns_handle_t handle) {
-    return 0x10000000000;
+int ns_get_max_size(handle_t ipc_handle,
+                    ns_handle_t handle,
+                    data_block_t* size) {
+    assert(size != NULL);
+    *size = 0x10000000000;
+    return 0;
 }
 
 int ns_read_pos(handle_t ipc_handle,

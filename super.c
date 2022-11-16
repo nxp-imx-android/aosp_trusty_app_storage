@@ -461,21 +461,7 @@ static bool super_block_valid(const struct block_device* dev,
                 sizeof(data_block_t));
         return false;
     }
-    /*
-     * This check only disallows shrinking the block device without clearing the
-     * filesystem as we don't currently check and shrink the backing file on the
-     * block device. However, we don't actually read this value from the
-     * super-block after this check and we instead use the value from the block
-     * device (which may be larger), and save that value to future super-blocks.
-     * Since we don't use this value from the super-block, we don't need a
-     * separate block count for the alternate backup roots as long as the block
-     * device doesn't shrink.
-     */
-    if (super->block_count > dev->block_count) {
-        pr_warn("bad block count 0x%" PRIx64 ", expected <= 0x%" PRIx64 "\n",
-                super->block_count, dev->block_count);
-        return false;
-    }
+
     return true;
 }
 
@@ -610,6 +596,7 @@ static int fs_init_from_super(struct fs* fs,
     bool do_clear = flags & FS_INIT_FLAGS_DO_CLEAR;
     bool do_swap = false; /* Does the active superblock alternate mode match the
                              current mode? */
+    bool do_clear_backup = false;
     bool has_backup_field =
             super && (super->opt_flags & SUPER_BLOCK_OPT_FLAGS_HAS_FLAGS3);
     bool has_checkpoint_field =
@@ -712,15 +699,49 @@ static int fs_init_from_super(struct fs* fs,
                 do_clear = true;
             }
         }
+
+        /*
+         * Check that the block device has not shrunk. Shrinking is only allowed
+         * in limited circumstances if we are also clearing the filesystem.
+         */
+        if (super->block_count > fs->dev->block_count) {
+            if ((!do_clear) && (!is_clear)) {
+                /*
+                 * If block device is smaller than super and we're not clearing
+                 * the fs, error
+                 */
+                pr_err("bad block count 0x%" PRIx64 ", expected <= 0x%" PRIx64
+                       "\n",
+                       super->block_count, fs->dev->block_count);
+                return -1;
+            } else if (flags & FS_INIT_FLAGS_ALTERNATE_DATA) {
+                /*
+                 * Either we are on main filesystem and switching to
+                 * alternate or we are on alternate. Either case is an
+                 * error.
+                 */
+                pr_init("Can't clear fs if FS_INIT_FLAGS_ALTERNATE_DATA is"
+                        " set .\n");
+                return -1;
+            } else {
+                /*
+                 * If we are are on main filesystem and the backup is an
+                 * alternate, clear the backup also.
+                 */
+                do_clear_backup = true;
+            }
+        }
     }
 
     /*
-     * If we are initializing a new fs or if we are not swapping but detect an
-     * old superblock without the backup slot, ensure that the backup slot is a
-     * valid empty filesystem in case we later switch filesystems without an
-     * explicit clear flag.
+     * If any of the following are true:
+     * - we are initializing a new fs
+     * - we are not swapping but detect an old superblock without the backup
+     * - filesystem device has shrunk and FS_INIT_FLAGS_DO_CLEAR is set
+     * then ensure that the backup slot is a valid empty filesystem in case we
+     * later switch filesystems without an explicit clear flag.
      */
-    if (!super || (!do_swap && !has_backup_field)) {
+    if (!super || (!do_swap && !has_backup_field) || do_clear_backup) {
         fs->backup = (struct super_block_backup){
                 .flags = SUPER_BLOCK_FLAGS_EMPTY,
                 .files = {0},

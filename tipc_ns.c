@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+#include <assert.h>
 #include <lk/compiler.h>
 #include <stdint.h>
 #include <string.h>
@@ -197,7 +198,11 @@ void ns_close_file(handle_t ipc_handle, ns_handle_t handle) {
     }
 }
 
-long ns_get_max_size(handle_t ipc_handle, ns_handle_t handle) {
+int ns_get_max_size(handle_t ipc_handle,
+                    ns_handle_t handle,
+                    data_block_t* size) {
+    assert(size != NULL);
+
     SS_DBG_IO("get max size: %llu\n", handle);
     struct storage_file_get_max_size_req req = {
             .handle = handle,
@@ -238,7 +243,8 @@ long ns_get_max_size(handle_t ipc_handle, ns_handle_t handle) {
         return ERR_NOT_VALID;
     }
 
-    return resp.max_size;
+    *size = resp.max_size;
+    return rc;
 }
 
 int ns_read_pos(handle_t ipc_handle,
