@@ -126,16 +126,21 @@ static enum storage_err session_set_files_count(
         return STORAGE_ERR_NOT_VALID;
     }
 
-    files = realloc(session->files, sizeof(files[0]) * files_count);
-    if (!files) {
-        SS_ERR("%s: out of memory\n", __func__);
-        return STORAGE_ERR_GENERIC;
-    }
-    if (files_count > session->files_count)
-        memset(files + session->files_count, 0,
-               sizeof(files[0]) * (files_count - session->files_count));
+    if (!files_count) {
+        free(session->files);
+        session->files = NULL;
+    } else {
+        files = realloc(session->files, sizeof(files[0]) * files_count);
+        if (!files) {
+            SS_ERR("%s: out of memory\n", __func__);
+            return STORAGE_ERR_GENERIC;
+        }
+        if (files_count > session->files_count)
+            memset(files + session->files_count, 0,
+                   sizeof(files[0]) * (files_count - session->files_count));
 
-    session->files = files;
+        session->files = files;
+    }
     session->files_count = files_count;
 
     SS_INFO("%s: new file table size, 0x%x\n", __func__, files_count);
