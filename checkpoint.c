@@ -126,13 +126,13 @@ bool checkpoint_read(struct transaction* tr,
 
     checkpoint_ro = block_get(tr, checkpoint, NULL, &checkpoint_ro_ref);
     if (tr->failed) {
-        goto err;
+        goto err_block_get;
     }
 
     if (checkpoint_ro->magic != CHECKPOINT_MAGIC) {
         pr_err("Checkpoint magic mismatch!\n");
         transaction_fail(tr);
-        goto err;
+        goto err_magic_mismatch;
     }
 
     if (files) {
@@ -143,7 +143,8 @@ bool checkpoint_read(struct transaction* tr,
         block_range_clear(&free->initial_range);
     }
 
-err:
+err_magic_mismatch:
     block_put(checkpoint_ro, &checkpoint_ro_ref);
+err_block_get:
     return !tr->failed;
 }
