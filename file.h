@@ -124,6 +124,9 @@ enum file_create_mode {
  * @FILE_OPEN_ERR_ALREADY_OPEN: File is already open in the provided
  *                              transaction.
  * @FILE_OPEN_ERR_NOT_FOUND: File was not found.
+ * @FILE_OPEN_ERR_FS_REPAIRED: File system has been repaired which may have
+ *                             impacted the requested file. Pass @allow_repaired
+ *                             = true to accept the repaired state.
  */
 enum file_open_result {
     FILE_OPEN_SUCCESS,
@@ -131,11 +134,13 @@ enum file_open_result {
     FILE_OPEN_ERR_EXIST,
     FILE_OPEN_ERR_ALREADY_OPEN,
     FILE_OPEN_ERR_NOT_FOUND,
+    FILE_OPEN_ERR_FS_REPAIRED,
 };
 enum file_open_result file_open(struct transaction* tr,
                                 const char* path,
                                 struct file_handle* file,
-                                enum file_create_mode create);
+                                enum file_create_mode create,
+                                bool allow_repaired);
 void file_close(struct file_handle* file);
 bool file_delete(struct transaction* tr,
                  const char* path); /* returns true if path was found */

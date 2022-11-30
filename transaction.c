@@ -389,6 +389,14 @@ void transaction_complete_etc(struct transaction* tr, bool update_checkpoint) {
         goto err_transaction_failed;
     }
 
+    if (tr->fs->alternate_data && tr->repaired) {
+        if (!tr->failed) {
+            transaction_fail(tr);
+        }
+        pr_warn("transaction cannot repair alternate fs, abort\n");
+        goto err_transaction_failed;
+    }
+
     if (0) {
         printf("%s: old free:\n", __func__);
         block_set_print(tr, &tr->fs->free);
@@ -491,6 +499,10 @@ void transaction_complete_etc(struct transaction* tr, bool update_checkpoint) {
     tr->fs->files.root = new_files;
     tr->fs->super_block_version = tr->fs->written_super_block_version;
     tr->fs->checkpoint = new_checkpoint_mac;
+    if (tr->repaired) {
+        assert(!tr->fs->alternate_data);
+        tr->fs->main_repaired = true;
+    }
     if (update_checkpoint) {
         tr->fs->checkpoint_free.block_tree.root = new_free_set.block_tree.root;
         block_range_clear(&tr->fs->checkpoint_free.initial_range);
@@ -604,6 +616,7 @@ void transaction_activate(struct transaction* tr) {
     tr->failed = false;
     tr->complete = false;
     tr->rebuild_free_set = false;
+    tr->repaired = false;
     tr->min_free_block = 0;
     tr->last_free_block = 0;
     tr->last_tmp_free_block = 0;

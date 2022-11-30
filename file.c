@@ -929,6 +929,9 @@ bool file_iterate(struct transaction* tr,
  * @file:       File handle object.
  * @create:     FILE_OPEN_NO_CREATE, FILE_OPEN_CREATE or
  *              FILE_OPEN_CREATE_EXCLUSIVE.
+ * @allow_repaired: Accept a repaired file system state. If the file system has
+ *                  been repaired, missing files may have previously existed and
+ *                  are now rolled back.
  *
  * Return: &enum file_open_result.FILE_OPEN_SUCCESS if file was opened, or an
  * error describing the failure to open the file.
@@ -936,7 +939,8 @@ bool file_iterate(struct transaction* tr,
 enum file_open_result file_open(struct transaction* tr,
                                 const char* path,
                                 struct file_handle* file,
-                                enum file_create_mode create) {
+                                enum file_create_mode create,
+                                bool allow_repaired) {
     bool found;
     struct block_mac block_mac;
     struct block_mac committed_block_mac =
@@ -957,6 +961,14 @@ enum file_open_result file_open(struct transaction* tr,
                                     &tree_path, path);
     if (found) {
         goto found;
+    }
+
+    /*
+     * If the file is not found and we have made repairs, the file might have
+     * existed before the repair.
+     */
+    if ((tr->repaired || fs_is_repaired(tr->fs)) && !allow_repaired) {
+        return FILE_OPEN_ERR_FS_REPAIRED;
     }
 
     if (create != FILE_OPEN_NO_CREATE) {

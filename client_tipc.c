@@ -130,6 +130,8 @@ static enum storage_err file_open_result_to_storage_err(
         return STORAGE_ERR_NOT_ALLOWED;
     case FILE_OPEN_ERR_NOT_FOUND:
         return STORAGE_ERR_NOT_FOUND;
+    case FILE_OPEN_ERR_FS_REPAIRED:
+        return STORAGE_ERR_FS_REPAIRED;
     }
 
     SS_ERR("%s: Unknown file_open_result: %d\n", __func__, result);
@@ -429,7 +431,8 @@ static enum storage_err storage_file_move(
         }
     } else {
         open_result = file_open(&session->tr, path_buf, &tmp_file,
-                                FILE_OPEN_NO_CREATE);
+                                FILE_OPEN_NO_CREATE,
+                                msg->flags & STORAGE_MSG_FLAG_FS_REPAIRED_ACK);
         if (open_result != FILE_OPEN_SUCCESS) {
             return file_open_result_to_storage_err(open_result);
         }
@@ -536,7 +539,8 @@ static int storage_file_open(struct storage_msg* msg,
         file_create_mode = FILE_OPEN_NO_CREATE;
     }
 
-    open_result = file_open(&session->tr, path_buf, file, file_create_mode);
+    open_result = file_open(&session->tr, path_buf, file, file_create_mode,
+                            msg->flags & STORAGE_MSG_FLAG_FS_REPAIRED_ACK);
     if (open_result != FILE_OPEN_SUCCESS) {
         result = file_open_result_to_storage_err(open_result);
         goto err_open_file;

@@ -86,6 +86,10 @@ STATIC_ASSERT(sizeof(struct super_block_backup) == 76);
  *                                  super-block in.
  * @super_block_version:            Last read or written super block version.
  * @written_super_block_version:    Last written super block version.
+ * @main_repaired:                  %true if main file system has been repaired
+ *                                  since being wiped. In alternate state only
+ *                                  used to persist this flag in the super
+ *                                  block.
  * @alternate_data:                 If true, the current superblock is for a
  *                                  filesystem with a backing store in an
  *                                  alternate data location and @backup contains
@@ -125,6 +129,7 @@ struct fs {
     data_block_t super_block[2];
     unsigned int super_block_version;
     unsigned int written_super_block_version;
+    bool main_repaired;
     bool alternate_data;
     struct super_block_backup backup;
     data_block_t min_block_num;
@@ -179,6 +184,10 @@ int fs_init(struct fs* fs,
             struct block_device* dev,
             struct block_device* super_dev,
             fs_init_flags32_t flags);
+
+static inline bool fs_is_repaired(struct fs* fs) {
+    return fs->main_repaired && !fs->alternate_data;
+}
 
 /**
  * fs_check - Check (and optionally repair) the file system tree

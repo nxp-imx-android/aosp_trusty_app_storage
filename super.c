@@ -70,13 +70,23 @@ typedef uint8_t super_block_opt_flags8_t;
  * field will interpret non-zero flags as a high @fs_version and will refuse to
  * mount the file-system.
  *
+ * %SUPER_BLOCK_REQUIRED_FLAGS_MAIN_REPAIRED
+ *   Indicates that the main (i.e. flags does not contain
+ *   %SUPER_BLOCK_FLAGS_ALTERNATE) file system has been repaired in a manner
+ *   that effectively resulted in rollback to a previous state since it was last
+ *   cleared. This flag is required to be supported, if set, so that we do not
+ *   discard a repaired state by running an older version of the storage
+ *   service. This flag is cleared when the main file system is cleared, and
+ *   therefore only tracks repairs since the file system was last cleared.
  * %SUPER_BLOCK_REQUIRED_FLAGS_MASK
  *   Mask of bits that are understood by the current storage implementation. If
  *   any bits of this field are set outside of this mask, do not mount the file
  *   system.
  */
 typedef uint16_t super_block_required_flags16_t;
-#define SUPER_BLOCK_REQUIRED_FLAGS_MASK (0x0U)
+#define SUPER_BLOCK_REQUIRED_FLAGS_MAIN_REPAIRED (0x1U)
+#define SUPER_BLOCK_REQUIRED_FLAGS_MASK \
+    (SUPER_BLOCK_REQUIRED_FLAGS_MAIN_REPAIRED)
 
 /**
  * struct super_block - On-disk root block for file system state
@@ -206,6 +216,27 @@ static bool update_super_block_internal(struct transaction* tr,
     }
     if (tr->fs->alternate_data) {
         flags |= SUPER_BLOCK_FLAGS_ALTERNATE;
+    }
+    if (tr->repaired || tr->fs->main_repaired) {
+        /*
+         * We don't track repairs in alternate data mode, so we shouldn't do
+         * them - ensure the transaction does not include a repair if we are in
+         * alternate state. The FS flag is used to persist the state for the
+         * main FS.
+         */
+        assert(!tr->repaired || !tr->fs->alternate_data);
+        required_flags |= SUPER_BLOCK_REQUIRED_FLAGS_MAIN_REPAIRED;
+        /*
+         * TODO: We would like to track the number of repairs in addition to the
+         * current repair state. This may be up to three different counters: 1)
+         * the number of times this fs has been repaired over the device
+         * lifetime to report in metrics, 2) the number of repairs since last
+         * clear, and 3) the overall fs generation count (number of device
+         * lifetime repairs+clears). 2) and 3) would primarily be useful if we
+         * expose them to clients via a new query API, while 1) would mostly be
+         * for device metrics. We can implement some or all of these counters
+         * when we add an API that consumes them.
+         */
     }
 
     pr_write("write super block %" PRIu64 ", ver %d\n",
@@ -614,6 +645,7 @@ static int fs_init_from_super(struct fs* fs,
     fs_file_tree_init(fs, &fs->files);
     fs->files.copy_on_write = true;
     fs->files.allow_copy_on_write = true;
+    fs->main_repaired = false;
 
     memset(&fs->checkpoint, 0, sizeof(fs->checkpoint));
     block_set_init(fs, &fs->checkpoint_free);
@@ -630,6 +662,8 @@ static int fs_init_from_super(struct fs* fs,
 
     if (super) {
         fs->super_block_version = super->flags & SUPER_BLOCK_FLAGS_VERSION_MASK;
+        fs->main_repaired = super->required_flags &
+                            SUPER_BLOCK_REQUIRED_FLAGS_MAIN_REPAIRED;
 
         do_swap = !(super->flags & SUPER_BLOCK_FLAGS_ALTERNATE) !=
                   !(flags & FS_INIT_FLAGS_ALTERNATE_DATA);
@@ -708,6 +742,9 @@ static int fs_init_from_super(struct fs* fs,
         } else if (do_clear) {
             pr_init("clear requested, create empty, version %d\n",
                     fs->super_block_version);
+            if (!fs->alternate_data) {
+                fs->main_repaired = false;
+            }
         } else {
             pr_init("no valid super-block found, create empty\n");
         }
@@ -833,7 +870,7 @@ static bool fs_check_file(struct file_iterate_state* iter,
     file_info_put(info, &info_ref);
 
     enum file_open_result result =
-            file_open(tr, path, &file, FILE_OPEN_NO_CREATE);
+            file_open(tr, path, &file, FILE_OPEN_NO_CREATE, true);
     if (result != FILE_OPEN_SUCCESS) {
         /* TODO: is it ok to leak the filename here? we do it elsewhere */
         pr_err("could not open file %s\n", path);

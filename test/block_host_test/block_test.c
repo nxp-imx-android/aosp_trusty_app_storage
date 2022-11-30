@@ -1032,7 +1032,7 @@ static void open_test_file_etc(struct transaction* tr,
                                enum file_create_mode create,
                                bool expect_failure) {
     enum file_open_result result;
-    result = file_open(tr, path, file, create);
+    result = file_open(tr, path, file, create, false);
     if (print_test_verbose) {
         printf("%s: lookup file %s, create %d, got %" PRIu64 ":\n", __func__,
                path, create, block_mac_to_block(tr, &file->block_mac));
@@ -1143,7 +1143,7 @@ static void file_create_all_test(struct transaction* tr) {
     enum file_open_result result;
     for (i = 0;; i++) {
         snprintf(path, sizeof(path), "test%08x", i);
-        result = file_open(tr, path, &file, FILE_OPEN_CREATE_EXCLUSIVE);
+        result = file_open(tr, path, &file, FILE_OPEN_CREATE_EXCLUSIVE, false);
         if (result != FILE_OPEN_SUCCESS) {
             break;
         }
@@ -2007,6 +2007,137 @@ static void fs_rebuild_with_pending_transaction(struct transaction* tr) {
     transaction_free(&other_tr);
 }
 
+static void fs_repair_flag(struct transaction* tr) {
+    enum file_open_result result;
+    struct file_handle file;
+
+    /* clear FS to reset repair flag */
+    transaction_fail(tr);
+    block_test_reinit(tr, FS_INIT_FLAGS_DO_CLEAR);
+
+    /* a non-existent file should not return FS_REPAIRED */
+    result = file_open(tr, "test_simulated_repair_nonexistent", &file,
+                       FILE_OPEN_NO_CREATE, false);
+    assert(result == FILE_OPEN_ERR_NOT_FOUND);
+
+    /* simulate an operation that requires setting the repair flag */
+    file_test(tr, "test_simulated_repair", FILE_OPEN_CREATE_EXCLUSIVE,
+              file_test_block_count, 0, 0, false, 1);
+    tr->repaired = true;
+    transaction_complete(tr);
+    assert(!tr->failed);
+    assert(fs_is_repaired(tr->fs));
+    transaction_activate(tr);
+
+    /* and again */
+    file_test(tr, "test_simulated_repair", FILE_OPEN_NO_CREATE,
+              file_test_block_count, 0, 0, false, 2);
+    tr->repaired = true;
+    transaction_complete(tr);
+    assert(!tr->failed);
+    assert(fs_is_repaired(tr->fs));
+    transaction_activate(tr);
+
+    /* a non-existent file should now report FS_REPAIRED */
+    result = file_open(tr, "test_simulated_repair_nonexistent", &file,
+                       FILE_OPEN_NO_CREATE, false);
+    assert(result == FILE_OPEN_ERR_FS_REPAIRED);
+
+    result = file_open(tr, "test_simulated_repair_nonexistent", &file,
+                       FILE_OPEN_CREATE, false);
+    assert(result == FILE_OPEN_ERR_FS_REPAIRED);
+
+    /* ...unless we allow a repaired FS */
+    result = file_open(tr, "test_simulated_repair_nonexistent", &file,
+                       FILE_OPEN_NO_CREATE, true);
+    assert(result == FILE_OPEN_ERR_NOT_FOUND);
+
+    result = file_open(tr, "test_simulated_repair_nonexistent", &file,
+                       FILE_OPEN_CREATE, true);
+    assert(result == FILE_OPEN_SUCCESS);
+
+    file_close(&file);
+
+    /*
+     * re-initialize the fs to make sure we propagate the repaired state through
+     * the super block
+     */
+    transaction_fail(tr);
+    block_test_reinit(tr, FS_INIT_FLAGS_NONE);
+    assert(fs_is_repaired(tr->fs));
+    transaction_complete(tr);
+
+    block_test_reinit(tr, FS_INIT_FLAGS_DO_CLEAR);
+    assert(!fs_is_repaired(tr->fs));
+    /* force the cleared superblock to be written */
+    file_test(tr, "test_simulated_repair", FILE_OPEN_CREATE_EXCLUSIVE,
+              file_test_block_count, 0, 0, false, 1);
+    transaction_complete(tr);
+
+    /* did the cleared repair flag persist? */
+    block_test_reinit(tr, FS_INIT_FLAGS_NONE);
+    assert(!fs_is_repaired(tr->fs));
+
+    file_delete(tr, "test_simulated_repair");
+}
+
+/*
+ * We don't allow repairs of the alternate FS, but we must persist it from the
+ * main FS across usage of the alternate.
+ */
+static void fs_repair_with_alternate(struct transaction* tr) {
+    enum file_open_result result;
+    struct file_handle file;
+
+    /* simulate an operation that requires setting the repair flag */
+    file_test(tr, "test_repair_with_alternate", FILE_OPEN_CREATE_EXCLUSIVE,
+              file_test_block_count, 0, 0, false, 1);
+    tr->repaired = true;
+    transaction_complete(tr);
+    assert(!tr->failed);
+    assert(fs_is_repaired(tr->fs));
+    transaction_activate(tr);
+
+    /*
+     * re-initialize the fs to make sure we propagate the repaired state through
+     * the super block
+     */
+    transaction_fail(tr);
+    block_test_swap_clear_reinit(
+            tr, FS_INIT_FLAGS_DO_CLEAR | FS_INIT_FLAGS_ALTERNATE_DATA);
+    assert(tr->fs->main_repaired);
+    assert(!fs_is_repaired(tr->fs));
+
+    /* Opening a non-existent file does not return FILE_OPEN_ERR_FS_REPAIRED */
+    result = file_open(tr, "test_alternate_nonexistent", &file,
+                       FILE_OPEN_NO_CREATE, true);
+    assert(result == FILE_OPEN_ERR_NOT_FOUND);
+
+    /* Make sure we rewrite the alternate superblock */
+    file_test(tr, "test_alternate_create", FILE_OPEN_CREATE_EXCLUSIVE,
+              file_test_block_count, 0, 0, true, 1);
+    transaction_complete(tr);
+    assert(!tr->failed);
+    transaction_activate(tr);
+
+    /* But we can't do a repair on the alternate FS */
+    file_test(tr, "test_alternate_repair", FILE_OPEN_CREATE_EXCLUSIVE,
+              file_test_block_count, 0, 0, false, 1);
+    tr->repaired = true;
+    transaction_complete(tr);
+    assert(tr->failed);
+    assert(!fs_is_repaired(tr->fs));
+
+    /* Back to the main FS, which must still be repaired */
+    block_test_swap_reinit(tr, FS_INIT_FLAGS_NONE);
+    assert(fs_is_repaired(tr->fs));
+    transaction_complete(tr);
+
+    /* Clear the repair flag */
+    block_test_reinit(tr, FS_INIT_FLAGS_DO_CLEAR);
+    assert(!fs_is_repaired(tr->fs));
+}
+
 static void future_fs_version_test(struct transaction* tr) {
     struct obj_ref super_ref = OBJ_REF_INITIAL_VALUE(super_ref);
     struct fs* fs = tr->fs;
@@ -2107,12 +2238,13 @@ static void unknown_required_flags_test(struct transaction* tr) {
     uint16_t initial_required_flags;
 
     /* update when SUPER_BLOCK_REQUIRED_FLAGS_MASK changes in super.c */
-    uint16_t first_unsupported_fs_flag = 0x1U;
+    uint16_t first_unsupported_required_flag = 0x2U;
 
     transaction_complete(tr);
     transaction_free(tr);
 
-    initial_required_flags = set_required_flags(fs, first_unsupported_fs_flag);
+    initial_required_flags =
+            set_required_flags(fs, first_unsupported_required_flag);
 
     fs_destroy(fs);
 
@@ -2969,6 +3101,8 @@ struct {
         TEST(fs_rebuild_fragmented_free_set),
         TEST(fs_rebuild_with_pending_file),
         TEST(fs_rebuild_with_pending_transaction),
+        TEST(fs_repair_flag),
+        TEST(fs_repair_with_alternate),
         TEST(future_fs_version_test),
         TEST(unknown_required_flags_test),
         TEST(fs_recovery_roots_test),

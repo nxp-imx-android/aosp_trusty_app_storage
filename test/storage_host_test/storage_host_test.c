@@ -49,7 +49,8 @@ static void open_test_file_etc(struct transaction* tr,
                                enum file_create_mode create,
                                bool expect_failure) {
     enum file_open_result result;
-    result = file_open(tr, path, file, create);
+    /* TODO: parameterize the allow_repaired argument if needed */
+    result = file_open(tr, path, file, create, false);
     if (print_test_verbose) {
         printf("%s: lookup file %s, create %d, got %" PRIu64 ":\n", __func__,
                path, create, block_mac_to_block(tr, &file->block_mac));

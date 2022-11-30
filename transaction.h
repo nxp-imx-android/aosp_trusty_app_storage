@@ -34,6 +34,8 @@
  * @complete:               Transaction has been written to disk.
  * @rebuild_free_set:       %true if this transaction requires the free set to
  *                          be reuilt by a full file-system scan.
+ * @repaired:               Transaction includes a repair that should increment
+ *                          the file system repair count when committed.
  * @min_free_block:         Used when completing a transaction to track how much
  *                          of the free set has been updated.
  * @last_free_block:        Similar to @last_tmp_free_block, used when
@@ -56,6 +58,7 @@ struct transaction {
     bool failed;
     bool complete;
     bool rebuild_free_set;
+    bool repaired;
     data_block_t min_free_block;
     data_block_t last_free_block;
     data_block_t last_tmp_free_block;
