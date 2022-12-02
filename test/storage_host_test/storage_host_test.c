@@ -48,15 +48,16 @@ static void open_test_file_etc(struct transaction* tr,
                                const char* path,
                                enum file_create_mode create,
                                bool expect_failure) {
-    bool found;
-    found = file_open(tr, path, file, create);
+    enum file_open_result result;
+    result = file_open(tr, path, file, create);
     if (print_test_verbose) {
         printf("%s: lookup file %s, create %d, got %" PRIu64 ":\n", __func__,
                path, create, block_mac_to_block(tr, &file->block_mac));
     }
 
-    ASSERT_EQ(found, !expect_failure);
-    ASSERT_EQ(true, !found || block_mac_valid(tr, &file->block_mac));
+    ASSERT_EQ(result == FILE_OPEN_SUCCESS, !expect_failure);
+    ASSERT_EQ(true, result != FILE_OPEN_SUCCESS ||
+                            block_mac_valid(tr, &file->block_mac));
 
 test_abort:;
 }

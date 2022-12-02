@@ -1031,15 +1031,16 @@ static void open_test_file_etc(struct transaction* tr,
                                const char* path,
                                enum file_create_mode create,
                                bool expect_failure) {
-    bool found;
-    found = file_open(tr, path, file, create);
+    enum file_open_result result;
+    result = file_open(tr, path, file, create);
     if (print_test_verbose) {
         printf("%s: lookup file %s, create %d, got %" PRIu64 ":\n", __func__,
                path, create, block_mac_to_block(tr, &file->block_mac));
     }
 
-    assert(found == !expect_failure);
-    assert(!found || block_mac_valid(tr, &file->block_mac));
+    assert((result == FILE_OPEN_SUCCESS) == !expect_failure);
+    assert(result != FILE_OPEN_SUCCESS ||
+           block_mac_valid(tr, &file->block_mac));
 }
 
 static void open_test_file(struct transaction* tr,
@@ -1139,11 +1140,11 @@ static void file_create_all_test(struct transaction* tr) {
     char path[4 + 8 + 1];
     struct file_handle file;
 
-    bool found;
+    enum file_open_result result;
     for (i = 0;; i++) {
         snprintf(path, sizeof(path), "test%08x", i);
-        found = file_open(tr, path, &file, FILE_OPEN_CREATE_EXCLUSIVE);
-        if (!found) {
+        result = file_open(tr, path, &file, FILE_OPEN_CREATE_EXCLUSIVE);
+        if (result != FILE_OPEN_SUCCESS) {
             break;
         }
         file_close(&file);

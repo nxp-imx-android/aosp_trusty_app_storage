@@ -115,10 +115,27 @@ enum file_create_mode {
     FILE_OPEN_CREATE,
     FILE_OPEN_CREATE_EXCLUSIVE,
 };
-bool file_open(struct transaction* tr,
-               const char* path,
-               struct file_handle* file,
-               enum file_create_mode create);
+
+/**
+ * enum file_open_result - Result of attempting to open a file
+ * @FILE_OPEN_SUCCESS: File was opened successfully.
+ * @FILE_OPEN_ERR_FAILED: Transaction failed while attempting to open the file.
+ * @FILE_OPEN_ERR_EXIST: File was found but exclusive access was requested.
+ * @FILE_OPEN_ERR_ALREADY_OPEN: File is already open in the provided
+ *                              transaction.
+ * @FILE_OPEN_ERR_NOT_FOUND: File was not found.
+ */
+enum file_open_result {
+    FILE_OPEN_SUCCESS,
+    FILE_OPEN_ERR_FAILED,
+    FILE_OPEN_ERR_EXIST,
+    FILE_OPEN_ERR_ALREADY_OPEN,
+    FILE_OPEN_ERR_NOT_FOUND,
+};
+enum file_open_result file_open(struct transaction* tr,
+                                const char* path,
+                                struct file_handle* file,
+                                enum file_create_mode create);
 void file_close(struct file_handle* file);
 bool file_delete(struct transaction* tr,
                  const char* path); /* returns true if path was found */

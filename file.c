@@ -930,12 +930,13 @@ bool file_iterate(struct transaction* tr,
  * @create:     FILE_OPEN_NO_CREATE, FILE_OPEN_CREATE or
  *              FILE_OPEN_CREATE_EXCLUSIVE.
  *
- * Return: %true if file was opened, %false if file could not be opeened.
+ * Return: &enum file_open_result.FILE_OPEN_SUCCESS if file was opened, or an
+ * error describing the failure to open the file.
  */
-bool file_open(struct transaction* tr,
-               const char* path,
-               struct file_handle* file,
-               enum file_create_mode create) {
+enum file_open_result file_open(struct transaction* tr,
+                                const char* path,
+                                struct file_handle* file,
+                                enum file_create_mode create) {
     bool found;
     struct block_mac block_mac;
     struct block_mac committed_block_mac =
@@ -964,22 +965,22 @@ bool file_open(struct transaction* tr,
     if (found) {
         goto created;
     }
-    return false;
+    return FILE_OPEN_ERR_NOT_FOUND;
 
 found:
     if (create == FILE_OPEN_CREATE_EXCLUSIVE) {
-        return false;
+        return FILE_OPEN_ERR_EXIST;
     }
     if (file_find_open(tr, &block_mac)) {
         pr_warn("%s already open\n", path);
-        return false;
+        return FILE_OPEN_ERR_ALREADY_OPEN;
     }
 created:
     file_entry_ro = block_get(tr, &block_mac, NULL, &file_entry_ref);
     if (!file_entry_ro) {
         assert(tr->failed);
         pr_warn("transaction failed, abort\n");
-        return false;
+        return FILE_OPEN_ERR_FAILED;
     }
     assert(file_entry_ro);
     list_add_head(&tr->open_files, &file->node);
@@ -990,7 +991,7 @@ created:
     file->used_by_tr = false;
     block_put(file_entry_ro, &file_entry_ref);
 
-    return true;
+    return FILE_OPEN_SUCCESS;
 }
 
 /**

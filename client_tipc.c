@@ -116,6 +116,26 @@ static int get_path(char* path_out,
     return STORAGE_NO_ERROR;
 }
 
+static enum storage_err file_open_result_to_storage_err(
+        enum file_open_result result) {
+    switch (result) {
+    case FILE_OPEN_SUCCESS:
+        return STORAGE_NO_ERROR;
+    case FILE_OPEN_ERR_FAILED:
+        /* TODO: Consider returning STORAGE_ERR_TRANSACT consistently */
+        return STORAGE_ERR_GENERIC;
+    case FILE_OPEN_ERR_EXIST:
+        return STORAGE_ERR_EXIST;
+    case FILE_OPEN_ERR_ALREADY_OPEN:
+        return STORAGE_ERR_NOT_ALLOWED;
+    case FILE_OPEN_ERR_NOT_FOUND:
+        return STORAGE_ERR_NOT_FOUND;
+    }
+
+    SS_ERR("%s: Unknown file_open_result: %d\n", __func__, result);
+    return STORAGE_ERR_GENERIC;
+}
+
 static enum storage_err session_set_files_count(
         struct storage_client_session* session,
         size_t files_count) {
@@ -338,7 +358,7 @@ static enum storage_err storage_file_move(
         size_t req_size,
         struct storage_client_session* session) {
     bool moved;
-    bool found;
+    enum file_open_result open_result;
     enum storage_err result;
     const char* old_name;
     const char* new_name;
@@ -408,10 +428,10 @@ static enum storage_err storage_file_move(
             return STORAGE_ERR_NOT_VALID;
         }
     } else {
-        found = file_open(&session->tr, path_buf, &tmp_file,
-                          FILE_OPEN_NO_CREATE);
-        if (!found) {
-            return STORAGE_ERR_NOT_FOUND;
+        open_result = file_open(&session->tr, path_buf, &tmp_file,
+                                FILE_OPEN_NO_CREATE);
+        if (open_result != FILE_OPEN_SUCCESS) {
+            return file_open_result_to_storage_err(open_result);
         }
         file = &tmp_file;
     }
@@ -459,7 +479,7 @@ static int storage_file_open(struct storage_msg* msg,
                              struct storage_client_session* session)
 
 {
-    bool found;
+    enum file_open_result open_result;
     enum storage_err result;
     struct file_handle* file = NULL;
     const char* fname;
@@ -516,16 +536,9 @@ static int storage_file_open(struct storage_msg* msg,
         file_create_mode = FILE_OPEN_NO_CREATE;
     }
 
-    found = file_open(&session->tr, path_buf, file, file_create_mode);
-    if (!found) {
-        /* TODO: get more accurate error code from file_open */
-        if (session->tr.failed) {
-            result = STORAGE_ERR_GENERIC;
-        } else if (flags & STORAGE_FILE_OPEN_CREATE) {
-            result = STORAGE_ERR_EXIST;
-        } else {
-            result = STORAGE_ERR_NOT_FOUND;
-        }
+    open_result = file_open(&session->tr, path_buf, file, file_create_mode);
+    if (open_result != FILE_OPEN_SUCCESS) {
+        result = file_open_result_to_storage_err(open_result);
         goto err_open_file;
     }
 

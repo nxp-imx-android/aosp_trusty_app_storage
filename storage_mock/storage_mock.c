@@ -162,7 +162,7 @@ int storage_open_file(storage_session_t session,
             }
             if (!strcmp(storage_mock_handlers[i]->name, name)) {
                 /* open a same file second time is not allowed. */
-                return ERR_NOT_FOUND;
+                return ERR_NOT_ALLOWED;
             }
         }
         if (flags & STORAGE_FILE_OPEN_TRUNCATE) {

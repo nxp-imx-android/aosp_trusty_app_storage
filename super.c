@@ -794,8 +794,9 @@ static bool fs_check_file(struct file_iterate_state* iter,
     path[sizeof(path) - 1] = '\0';
     file_info_put(info, &info_ref);
 
-    bool opened = file_open(tr, path, &file, FILE_OPEN_NO_CREATE);
-    if (!opened) {
+    enum file_open_result result =
+            file_open(tr, path, &file, FILE_OPEN_NO_CREATE);
+    if (result != FILE_OPEN_SUCCESS) {
         /* TODO: is it ok to leak the filename here? we do it elsewhere */
         pr_err("could not open file %s\n", path);
         needs_delete = true;

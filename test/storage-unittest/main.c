@@ -769,7 +769,7 @@ TEST_F(StorageTest, OpenSame) {
 
     // open the same file second time (is not allowed)
     rc = storage_open_file(ss, &handle2, fname, 0, 0);
-    ASSERT_EQ(ERR_NOT_FOUND, rc);
+    ASSERT_EQ(ERR_NOT_ALLOWED, rc);
 
     // delete file (expect 0)
     rc = storage_delete_file(ss, fname, STORAGE_OP_COMPLETE);
