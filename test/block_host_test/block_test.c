@@ -2014,9 +2014,12 @@ static void future_fs_version_test(struct transaction* tr) {
     struct block_device* dev = fs->dev;
     struct block_device* super_dev = fs->super_dev;
     const void* super_ro;
-    uint32_t* super_rw;
+    uint16_t* super_rw;
     data_block_t block;
     int ret;
+
+    /* offset of fs_version field in uint16_t words */
+    size_t fs_version_offset = 28 / 2;
 
     transaction_complete(tr);
 
@@ -2025,7 +2028,7 @@ static void future_fs_version_test(struct transaction* tr) {
     assert(super_ro);
     super_rw = block_dirty(tr, super_ro, false);
     assert(super_rw);
-    super_rw[7]++;
+    super_rw[fs_version_offset]++;
     block_put_dirty_no_mac(super_rw, &super_ref, false);
     block_cache_clean_transaction(tr);
 
@@ -2046,10 +2049,107 @@ static void future_fs_version_test(struct transaction* tr) {
     assert(super_ro);
     super_rw = block_dirty(tr, super_ro, false);
     assert(super_rw);
-    super_rw[7]--;
+    super_rw[fs_version_offset]--;
     block_put_dirty_no_mac(super_rw, &super_ref, false);
     block_cache_clean_transaction(tr);
     transaction_free(tr);
+
+    ret = fs_init(fs, key, dev, super_dev, FS_INIT_FLAGS_NONE);
+    assert(ret == 0);
+
+    transaction_init(tr, fs, true);
+}
+
+/**
+ * set_required_flags - helper to modify the required_flags super block field
+ * @fs:             File system object.
+ * @required_flags: Flags to write into the required_flags field.
+ *
+ * Write @required_flags into the required_flags field of the active super
+ * block. @fs may have been destroyed with fs_destroy() but @fs->dev and
+ * @fs->super_dev must be reset correctly after it was destroyed.
+ *
+ * Returns: the previous required_flags value of the active super block.
+ */
+static uint16_t set_required_flags(struct fs* fs, uint16_t required_flags) {
+    /* offset of required_flags field in uint16_t words */
+    size_t required_flags_offset = 30 / 2;
+
+    struct obj_ref super_ref = OBJ_REF_INITIAL_VALUE(super_ref);
+    struct transaction tr;
+    struct block_device* dev = fs->dev;
+    const void* super_ro;
+    uint16_t* super_rw;
+    data_block_t block;
+    uint16_t old_required_flags;
+
+    transaction_init(&tr, fs, false);
+    block = fs->super_block[fs->super_block_version & 1];
+    super_ro = block_get_super(fs, block, &super_ref);
+    assert(super_ro);
+    super_rw = block_dirty(&tr, super_ro, false);
+    assert(super_rw);
+    old_required_flags = super_rw[required_flags_offset];
+    super_rw[required_flags_offset] = required_flags;
+    block_put_dirty_no_mac(super_rw, &super_ref, false);
+    block_cache_clean_transaction(&tr);
+    transaction_free(&tr);
+    block_cache_dev_destroy(dev);
+    return old_required_flags;
+}
+
+static void unknown_required_flags_test(struct transaction* tr) {
+    struct fs* fs = tr->fs;
+    const struct key* key = fs->key;
+    struct block_device* dev = fs->dev;
+    struct block_device* super_dev = fs->super_dev;
+    int ret;
+    uint16_t initial_required_flags;
+
+    /* update when SUPER_BLOCK_REQUIRED_FLAGS_MASK changes in super.c */
+    uint16_t first_unsupported_fs_flag = 0x1U;
+
+    transaction_complete(tr);
+    transaction_free(tr);
+
+    initial_required_flags = set_required_flags(fs, first_unsupported_fs_flag);
+
+    fs_destroy(fs);
+
+    ret = fs_init(fs, key, dev, super_dev, FS_INIT_FLAGS_NONE);
+    assert(ret == -1);
+
+    ret = fs_init(fs, key, dev, super_dev, FS_INIT_FLAGS_DO_CLEAR);
+    assert(ret == -1);
+
+    fs->dev = dev;
+    fs->super_dev = super_dev;
+
+    /* set all flag bits, this should fail unless we support 16 flags */
+    set_required_flags(fs, UINT16_MAX);
+
+    ret = fs_init(fs, key, dev, super_dev, FS_INIT_FLAGS_NONE);
+    assert(ret == -1);
+
+    ret = fs_init(fs, key, dev, super_dev, FS_INIT_FLAGS_DO_CLEAR);
+    assert(ret == -1);
+
+    fs->dev = dev;
+    fs->super_dev = super_dev;
+
+    /* set highest flag bit, this should fail unless we support 16 flags */
+    set_required_flags(fs, 0x1U << 15);
+
+    ret = fs_init(fs, key, dev, super_dev, FS_INIT_FLAGS_NONE);
+    assert(ret == -1);
+
+    ret = fs_init(fs, key, dev, super_dev, FS_INIT_FLAGS_DO_CLEAR);
+    assert(ret == -1);
+
+    fs->dev = dev;
+    fs->super_dev = super_dev;
+
+    set_required_flags(fs, initial_required_flags);
 
     ret = fs_init(fs, key, dev, super_dev, FS_INIT_FLAGS_NONE);
     assert(ret == 0);
@@ -2864,6 +2964,7 @@ struct {
         TEST(fs_rebuild_with_pending_file),
         TEST(fs_rebuild_with_pending_transaction),
         TEST(future_fs_version_test),
+        TEST(unknown_required_flags_test),
         TEST(fs_recovery_roots_test),
         TEST(fs_check_file_child_test),
         TEST(fs_check_free_child_test),

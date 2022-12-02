@@ -61,6 +61,24 @@ typedef uint8_t super_block_opt_flags8_t;
 #define SUPER_BLOCK_OPT_FLAGS_HAS_CHECKPOINT (0x2U)
 
 /**
+ * typedef super_block_required_flags16_t - Required FS flags, can be ORed
+ *                                          together
+ *
+ * These flags are required to be supported by the current implementation; if
+ * any unrecognized flag bits are set the file system must not be mounted.
+ * Versions of the storage service prior to the addition of the @required_flags
+ * field will interpret non-zero flags as a high @fs_version and will refuse to
+ * mount the file-system.
+ *
+ * %SUPER_BLOCK_REQUIRED_FLAGS_MASK
+ *   Mask of bits that are understood by the current storage implementation. If
+ *   any bits of this field are set outside of this mask, do not mount the file
+ *   system.
+ */
+typedef uint16_t super_block_required_flags16_t;
+#define SUPER_BLOCK_REQUIRED_FLAGS_MASK (0x0U)
+
+/**
  * struct super_block - On-disk root block for file system state
  * @iv:             Initial value used for encrypt/decrypt.
  * @magic:          SUPER_BLOCK_MAGIC.
@@ -68,6 +86,9 @@ typedef uint8_t super_block_opt_flags8_t;
  * @fs_version:     Required file system version. If greater than
  *                  %SUPER_BLOCK_FS_VERSION, do not mount or overwrite
  *                  filesystem.
+ * @required_flags: Required file system flags. To mount this file system, any
+ *                  non-zero flag bits set must be supported by the storage
+ *                  implementation.
  * @block_size:     Block size of file system.
  * @block_num_size: Number of bytes used to store block numbers.
  * @mac_size:       number of bytes used to store mac values.
@@ -103,7 +124,8 @@ struct super_block {
     struct iv iv;
     uint64_t magic;
     uint32_t flags;
-    uint32_t fs_version;
+    uint16_t fs_version;
+    super_block_required_flags16_t required_flags;
     uint32_t block_size;
     uint8_t block_num_size;
     uint8_t mac_size;
@@ -123,6 +145,14 @@ struct super_block {
 STATIC_ASSERT(offsetof(struct super_block, flags2) == 124);
 STATIC_ASSERT(offsetof(struct super_block, flags3) == 252);
 STATIC_ASSERT(sizeof(struct super_block) == 256);
+
+/*
+ * We rely on these offsets in future_fs_version_test and
+ * unknown_required_flags_test in the storage_block_test to test that we will
+ * not mount or modify a super block with unknown version or fs flags.
+ */
+STATIC_ASSERT(offsetof(struct super_block, fs_version) == 28);
+STATIC_ASSERT(offsetof(struct super_block, required_flags) == 30);
 
 /* block_device_tipc.c ensures that we have at least 256 bytes in RPMB blocks */
 STATIC_ASSERT(sizeof(struct super_block) <= 256);
@@ -150,6 +180,7 @@ static bool update_super_block_internal(struct transaction* tr,
     struct obj_ref super_ref = OBJ_REF_INITIAL_VALUE(super_ref);
     unsigned int ver;
     unsigned int index;
+    super_block_required_flags16_t required_flags = 0;
     uint32_t flags;
     uint32_t block_size = tr->fs->super_dev->block_size;
     super_block_opt_flags8_t opt_flags = SUPER_BLOCK_OPT_FLAGS_HAS_FLAGS3 |
@@ -190,6 +221,7 @@ static bool update_super_block_internal(struct transaction* tr,
     super_rw->flags = flags;
     /* TODO: keep existing fs version when possible */
     super_rw->fs_version = SUPER_BLOCK_FS_VERSION;
+    super_rw->required_flags = required_flags;
     super_rw->block_size = tr->fs->dev->block_size;
     super_rw->block_num_size = tr->fs->block_num_size;
     super_rw->mac_size = tr->fs->mac_size;
@@ -560,6 +592,12 @@ static int fs_init_from_super(struct fs* fs,
     if (super && super->fs_version > SUPER_BLOCK_FS_VERSION) {
         pr_err("ERROR: super block is from the future 0x%x\n",
                super->fs_version);
+        return -1;
+    }
+
+    if (super && (super->required_flags & ~SUPER_BLOCK_REQUIRED_FLAGS_MASK)) {
+        pr_err("ERROR: super block requires unrecognized fs features: 0x%x\n",
+               super->required_flags);
         return -1;
     }
 
