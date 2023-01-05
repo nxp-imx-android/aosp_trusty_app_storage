@@ -54,4 +54,8 @@ void block_map_truncate(struct transaction* tr,
                         struct block_map* block_map,
                         data_block_t index);
 
+bool block_map_check(struct transaction* tr,
+                     struct block_map* block_map,
+                     data_block_t count);
+
 void block_map_free(struct transaction* tr, struct block_map* block_map);

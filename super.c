@@ -890,32 +890,11 @@ err:
 
 struct fs_check_state {
     struct file_iterate_state iter;
-    bool check_all_data_blocks;
     bool delete_invalid_files;
 
     bool internal_state_valid;
     bool invalid_block_found;
 };
-
-static bool fs_check_delete_file(struct fs* fs, char* path) {
-    struct transaction tr;
-    bool ret;
-
-    pr_err("deleting invalid file %s\n", path);
-    transaction_init(&tr, fs, true);
-    if (!file_delete(&tr, path)) {
-        if (!tr.failed) {
-            transaction_fail(&tr);
-        }
-        goto err_delete;
-    }
-    transaction_complete_etc(&tr, false);
-
-err_delete:
-    ret = !tr.failed;
-    transaction_free(&tr);
-    return ret;
-}
 
 static bool fs_check_file(struct file_iterate_state* iter,
                           struct transaction* tr,
@@ -925,11 +904,8 @@ static bool fs_check_file(struct file_iterate_state* iter,
     struct fs_check_state* fs_check_state =
             containerof(iter, struct fs_check_state, iter);
     struct obj_ref info_ref = OBJ_REF_INITIAL_VALUE(info_ref);
-    struct obj_ref data_ref = OBJ_REF_INITIAL_VALUE(data_ref);
     struct file_handle file;
-    const void* data = NULL;
     char path[FS_PATH_MAX];
-    bool needs_delete = false;
 
     assert(!tr->failed);
     assert(!tr->invalid_block_found);
@@ -950,45 +926,17 @@ static bool fs_check_file(struct file_iterate_state* iter,
     if (result != FILE_OPEN_SUCCESS) {
         /* TODO: is it ok to leak the filename here? we do it elsewhere */
         pr_err("could not open file %s\n", path);
-        needs_delete = true;
+        fs_check_state->internal_state_valid = false;
         goto err_file_open;
     }
 
-    data_block_t data_check_count = fs_check_state->check_all_data_blocks
-                                            ? file.size
-                                            : MIN(1, file.size);
-
-    for (data_block_t i = 0; i < data_check_count; ++i) {
-        data = file_get_block(tr, &file, i, &data_ref);
-        if (data) {
-            file_block_put(data, &data_ref);
-            data = NULL;
-        } else {
-            /* TODO: is it ok to leak the filename here? we do it elsewhere */
-            pr_err("invalid file data at block %" PRIu64 " of file %s\n", i,
-                   path);
-            assert(tr->failed);
-            needs_delete = true;
-            break;
-        }
+    if (!file_check(tr, &file)) {
+        fs_check_state->internal_state_valid = false;
     }
 
     file_close(&file);
 
 err_file_open:
-    if (needs_delete) {
-        if (fs_check_state->delete_invalid_files) {
-            if (fs_check_delete_file(tr->fs, path)) {
-                /* We deleted the file, any invalid blocks are gone */
-                tr->invalid_block_found = false;
-            } else {
-                pr_err("delete failed, internal state is corrupted\n");
-                fs_check_state->internal_state_valid = false;
-            }
-        } else {
-            fs_check_state->internal_state_valid = false;
-        }
-    }
 err_file_info:
     if (tr->invalid_block_found) {
         fs_check_state->invalid_block_found = true;
@@ -1003,16 +951,12 @@ err_file_info:
     return false;
 }
 
-enum fs_check_result fs_check(struct fs* fs,
-                              bool delete_invalid_files,
-                              bool check_all_data_blocks) {
+enum fs_check_result fs_check(struct fs* fs) {
     bool free_set_valid, file_tree_valid;
     enum fs_check_result res = FS_CHECK_NO_ERROR;
     struct transaction iterate_tr;
     struct fs_check_state state = {
             .iter.file = fs_check_file,
-            .check_all_data_blocks = check_all_data_blocks,
-            .delete_invalid_files = delete_invalid_files,
             .internal_state_valid = true,
             .invalid_block_found = false,
     };

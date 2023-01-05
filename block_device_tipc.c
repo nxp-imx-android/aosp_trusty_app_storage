@@ -691,11 +691,9 @@ int block_device_tipc_init(struct block_device_tipc* state,
 
     /*
      * Check that all files are accessible and attempt to clear the FS if files
-     * cannot be accessed. This check only reads the first block of each file to
-     * not take too much time. As long as the file is readable at all, a client
-     * can delete or rewrite the data blocks.
+     * cannot be accessed.
      */
-    if (fs_check(&state->tr_state_ns_nsp, true, false) != FS_CHECK_NO_ERROR) {
+    if (fs_check(&state->tr_state_ns_nsp) != FS_CHECK_NO_ERROR) {
         SS_ERR("%s: NSP filesystem check failed, attempting to clear\n",
                __func__);
         fs_destroy(&state->tr_state_ns_nsp);

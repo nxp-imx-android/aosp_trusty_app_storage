@@ -99,6 +99,8 @@ void file_set_size(struct transaction* tr,
 void file_print(struct transaction* tr, const struct file_handle* file);
 void files_print(struct transaction* tr);
 
+bool file_check(struct transaction* tr, const struct file_handle* file);
+
 void file_transaction_complete(struct transaction* tr,
                                struct block_mac* new_files_block_mac);
 void file_transaction_complete_failed(struct transaction* tr);

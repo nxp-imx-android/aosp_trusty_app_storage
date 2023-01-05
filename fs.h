@@ -238,15 +238,9 @@ enum fs_check_result {
 /**
  * fs_check - Check (and optionally repair) the file system tree
  * @fs:                    File system state object.
- * @delete_invalid_files:  If %true, attempt to repair invalid files by deleting
- *                         them.
- * @check_all_data_blocks: If %true, read every data block in every file to
- *                         ensure they are valid. If %false, only check the
- *                         first block (of non-empty files) in a file.
  *
- * Walk the filesystem tree and visit each file, reading the first block (or all
- * blocks if @check_all_data_blocks is %true) to ensure that there is no
- * corruption of the tree below the root nodes.
+ * Walk the filesystem tree and visit each file, checking the file tree and each
+ * file block map for consistency.
  *
  * Returns @fs_check_result.FS_CHECK_NO_ERROR if no corruption was encountered
  * or any encountered corruption was repaired. Returns another @fs_check_result
@@ -258,9 +252,7 @@ enum fs_check_result {
  * differentiate between invalid blocks that indicate corruption and possibly
  * transient communication errors with the storage proxy.
  */
-enum fs_check_result fs_check(struct fs* fs,
-                              bool delete_invalid_files,
-                              bool check_all_data_blocks);
+enum fs_check_result fs_check(struct fs* fs);
 
 void fs_file_tree_init(const struct fs* fs, struct block_tree* tree);
 

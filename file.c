@@ -162,6 +162,23 @@ void files_print(struct transaction* tr) {
 }
 
 /**
+ * file_check - Check the file block map for errors
+ * @tr:         Transaction object.
+ * @file:       File handle object.
+ *
+ * Return: %false if an unrecoverable error was detected in the file block map,
+ * %true if the block map was consistent.
+ */
+bool file_check(struct transaction* tr, const struct file_handle* file) {
+    struct block_map block_map;
+    data_block_t file_block_size = get_file_block_size(tr->fs);
+
+    file_block_map_init(tr, &block_map, &file->block_mac);
+    return block_map_check(tr, &block_map,
+                           DIV_ROUND_UP(file->size, file_block_size));
+}
+
+/**
  * file_block_map_update - Update file entry with block_map or size changes
  * @tr:         Transaction object.
  * @block_map:  Block map object.

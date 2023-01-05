@@ -218,6 +218,65 @@ void block_map_truncate(struct transaction* tr,
 }
 
 /**
+ * block_map_check - Check block map for errors
+ * @tr:             Transaction object.
+ * @block_map:      Block map object.
+ * @max_index:      Block map index at and after which no data is expected (i.e.
+ *                  maximum exclusive)
+ *
+ * Return: %false if an error was detected, %true otherwise.
+ */
+bool block_map_check(struct transaction* tr,
+                     struct block_map* block_map,
+                     data_block_t max_index) {
+    struct block_tree_path path;
+    data_block_t prev_index = 0;
+    data_block_t index = 1;
+    data_block_t min = tr->fs->min_block_num;
+    data_block_t max = tr->fs->dev->block_count;
+    data_block_t data;
+
+    if (!block_tree_check(tr, &block_map->tree)) {
+        return false;
+    }
+
+    max_index++; /* 0 is not a valid block tree key */
+
+    block_tree_walk(tr, &block_map->tree, index, false, &path);
+    index = block_tree_path_get_key(&path);
+    while (index) {
+        if (index <= prev_index) {
+            pr_err("block map indices are not sequential, %" PRIu64
+                   " is after %" PRIu64 "\n",
+                   index, prev_index);
+            return false;
+        }
+        if (index >= max_index) {
+            pr_err("block map index %" PRIu64
+                   " is past (exclusive) block map max index %" PRIu64 "\n",
+                   index, max_index);
+            return false;
+        }
+        data = block_tree_path_get_data(&path);
+        if (data < min) {
+            pr_err("block map data %" PRIu64 " < minimum block %" PRIu64 "\n",
+                   index, min);
+            return false;
+        }
+        if (data >= max) {
+            pr_err("block map data %" PRIu64 " >= block count %" PRIu64 "\n",
+                   index, max);
+            return false;
+        }
+        prev_index = index;
+        block_tree_path_next(&path);
+        index = block_tree_path_get_key(&path);
+    }
+
+    return true;
+}
+
+/**
  * block_map_free - Free blocks
  * @tr:         Transaction object.
  * @block_map:  Block map object.
