@@ -894,6 +894,7 @@ struct fs_check_state {
     bool delete_invalid_files;
 
     bool internal_state_valid;
+    bool invalid_block_found;
 };
 
 static bool fs_check_delete_file(struct fs* fs, char* path) {
@@ -929,6 +930,9 @@ static bool fs_check_file(struct file_iterate_state* iter,
     const void* data = NULL;
     char path[FS_PATH_MAX];
     bool needs_delete = false;
+
+    assert(!tr->failed);
+    assert(!tr->invalid_block_found);
 
     const struct file_info* info = file_get_info(tr, block_mac, &info_ref);
     if (!info) {
@@ -974,7 +978,10 @@ static bool fs_check_file(struct file_iterate_state* iter,
 err_file_open:
     if (needs_delete) {
         if (fs_check_state->delete_invalid_files) {
-            if (!fs_check_delete_file(tr->fs, path)) {
+            if (fs_check_delete_file(tr->fs, path)) {
+                /* We deleted the file, any invalid blocks are gone */
+                tr->invalid_block_found = false;
+            } else {
                 pr_err("delete failed, internal state is corrupted\n");
                 fs_check_state->internal_state_valid = false;
             }
@@ -983,6 +990,11 @@ err_file_open:
         }
     }
 err_file_info:
+    if (tr->invalid_block_found) {
+        fs_check_state->invalid_block_found = true;
+        /* We have noted the invalid block, reset for the next file. */
+        tr->invalid_block_found = false;
+    }
     if (tr->failed) {
         transaction_activate(tr);
     }
@@ -991,37 +1003,70 @@ err_file_info:
     return false;
 }
 
-bool fs_check(struct fs* fs,
-              bool delete_invalid_files,
-              bool check_all_data_blocks) {
+enum fs_check_result fs_check(struct fs* fs,
+                              bool delete_invalid_files,
+                              bool check_all_data_blocks) {
+    bool free_set_valid, file_tree_valid;
+    enum fs_check_result res = FS_CHECK_NO_ERROR;
     struct transaction iterate_tr;
     struct fs_check_state state = {
             .iter.file = fs_check_file,
             .check_all_data_blocks = check_all_data_blocks,
             .delete_invalid_files = delete_invalid_files,
             .internal_state_valid = true,
+            .invalid_block_found = false,
     };
 
     transaction_init(&iterate_tr, fs, true);
-    file_iterate(&iterate_tr, NULL, false, &state.iter);
-    if (iterate_tr.failed) {
-        state.internal_state_valid = false;
-        goto finished;
-    }
 
     /* Check the free list for consistency */
-    if (!block_set_check(&iterate_tr, &fs->free) || iterate_tr.failed) {
-        pr_err("free block set is corrupted\n");
+    free_set_valid = block_set_check(&iterate_tr, &fs->free);
+    if (!free_set_valid || iterate_tr.invalid_block_found) {
+        pr_err("free block set is invalid\n");
+        res = FS_CHECK_INVALID_FREE_SET;
+        /*
+         * We can recover the free set non-destructively by rebuilding from the
+         * file tree, so we don't need to report the invalid block.
+         */
+        iterate_tr.invalid_block_found = false;
+    }
+    if (iterate_tr.failed) {
+        pr_err("free set tree not fully readable\n");
         state.internal_state_valid = false;
+        transaction_activate(&iterate_tr);
     }
 
-finished:
+    /* Check the file tree for consistency */
+    file_tree_valid = block_tree_check(&iterate_tr, &fs->files);
+    if (!file_tree_valid) {
+        pr_err("file tree is invalid\n");
+        res = FS_CHECK_INVALID_FILE_TREE;
+    }
+    if (iterate_tr.invalid_block_found) {
+        pr_err("invalid block encountered in file tree\n");
+        state.invalid_block_found = true;
+        iterate_tr.invalid_block_found = false;
+    }
+    if (iterate_tr.failed) {
+        pr_err("file tree not fully readable\n");
+        state.internal_state_valid = false;
+        transaction_activate(&iterate_tr);
+    }
+
+    file_iterate(&iterate_tr, NULL, false, &state.iter);
+
+    /* Invalid blocks take precedence over internal consistency errors. */
+    if (state.invalid_block_found) {
+        res = FS_CHECK_INVALID_BLOCK;
+    } else if (res == FS_CHECK_NO_ERROR && !state.internal_state_valid) {
+        res = FS_CHECK_UNKNOWN;
+    }
     if (!iterate_tr.failed) {
         transaction_fail(&iterate_tr);
     }
     transaction_free(&iterate_tr);
 
-    return state.internal_state_valid;
+    return res;
 }
 
 /**

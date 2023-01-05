@@ -695,7 +695,7 @@ int block_device_tipc_init(struct block_device_tipc* state,
      * not take too much time. As long as the file is readable at all, a client
      * can delete or rewrite the data blocks.
      */
-    if (!fs_check(&state->tr_state_ns_nsp, true, false)) {
+    if (fs_check(&state->tr_state_ns_nsp, true, false) != FS_CHECK_NO_ERROR) {
         SS_ERR("%s: NSP filesystem check failed, attempting to clear\n",
                __func__);
         fs_destroy(&state->tr_state_ns_nsp);

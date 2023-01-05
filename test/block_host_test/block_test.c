@@ -2537,8 +2537,8 @@ static void fs_recovery_roots_test(struct transaction* tr) {
      */
     expect_errors(TRUSTY_STORAGE_ERROR_BLOCK_MAC_MISMATCH, 3);
 
-    assert(!fs_check(tr->fs, false, false));
-    expect_errors(TRUSTY_STORAGE_ERROR_BLOCK_MAC_MISMATCH, 1);
+    assert(fs_check(tr->fs, false, false) == FS_CHECK_INVALID_BLOCK);
+    expect_errors(TRUSTY_STORAGE_ERROR_BLOCK_MAC_MISMATCH, 2);
 
     /* re-initialize the filesystem with recovery enabled */
     block_test_reinit(tr, FS_INIT_FLAGS_RECOVERY_CLEAR_ALLOWED);
@@ -2555,7 +2555,7 @@ static void fs_recovery_roots_test(struct transaction* tr) {
     assert(tr->invalid_block_found);
     expect_errors(TRUSTY_STORAGE_ERROR_BLOCK_MAC_MISMATCH, 3);
 
-    assert(!fs_check(tr->fs, false, false));
+    assert(fs_check(tr->fs, false, false) == FS_CHECK_INVALID_FREE_SET);
     expect_errors(TRUSTY_STORAGE_ERROR_BLOCK_MAC_MISMATCH, 1);
 
     /* re-initialize the filesystem with recovery enabled */
@@ -2579,20 +2579,20 @@ static void fs_check_file_child_test(struct transaction* tr) {
     assert(tr->failed);
 
     /* Ensure that we detect this corruption */
-    assert(!fs_check(tr->fs, true, false));
-    expect_errors(TRUSTY_STORAGE_ERROR_BLOCK_MAC_MISMATCH, 1);
+    assert(fs_check(tr->fs, true, false) == FS_CHECK_INVALID_BLOCK);
+    expect_errors(TRUSTY_STORAGE_ERROR_BLOCK_MAC_MISMATCH, 2);
 
     /* re-initialize the filesystem with recovery enabled */
     block_test_reinit(tr, FS_INIT_FLAGS_RECOVERY_CLEAR_ALLOWED);
 
     /* recovery doesn't fix this error */
-    assert(!fs_check(tr->fs, true, false));
-    expect_errors(TRUSTY_STORAGE_ERROR_BLOCK_MAC_MISMATCH, 1);
+    assert(fs_check(tr->fs, true, false) == FS_CHECK_INVALID_BLOCK);
+    expect_errors(TRUSTY_STORAGE_ERROR_BLOCK_MAC_MISMATCH, 2);
 
     transaction_fail(tr);
     block_test_reinit(tr, FS_INIT_FLAGS_DO_CLEAR);
 
-    assert(fs_check(tr->fs, false, false));
+    assert(fs_check(tr->fs, false, false) == FS_CHECK_NO_ERROR);
 }
 
 static void fs_check_free_child_test(struct transaction* tr) {
@@ -2609,20 +2609,20 @@ static void fs_check_free_child_test(struct transaction* tr) {
     expect_errors(TRUSTY_STORAGE_ERROR_BLOCK_MAC_MISMATCH, 4);
 
     /* Ensure that we detect this corruption */
-    assert(!fs_check(tr->fs, true, false));
+    assert(fs_check(tr->fs, true, false) == FS_CHECK_INVALID_FREE_SET);
     expect_errors(TRUSTY_STORAGE_ERROR_BLOCK_MAC_MISMATCH, 2);
 
     /* re-initialize the filesystem with recovery enabled */
     block_test_reinit(tr, FS_INIT_FLAGS_RECOVERY_CLEAR_ALLOWED);
 
-    /* recovery doesn't fix this error */
-    assert(!fs_check(tr->fs, true, false));
+    /* recovery clear doesn't fix this error */
+    assert(fs_check(tr->fs, true, false) == FS_CHECK_INVALID_FREE_SET);
     expect_errors(TRUSTY_STORAGE_ERROR_BLOCK_MAC_MISMATCH, 2);
 
     transaction_fail(tr);
     block_test_reinit(tr, FS_INIT_FLAGS_DO_CLEAR);
 
-    assert(fs_check(tr->fs, false, false));
+    assert(fs_check(tr->fs, false, false) == FS_CHECK_NO_ERROR);
 }
 
 static void fs_recovery_data_blocks_test(struct transaction* tr) {
@@ -2630,7 +2630,7 @@ static void fs_recovery_data_blocks_test(struct transaction* tr) {
     assert(!tr->failed);
     transaction_activate(tr);
 
-    assert(fs_check(tr->fs, true, false));
+    assert(fs_check(tr->fs, true, false) == FS_CHECK_NO_ERROR);
     expect_errors(TRUSTY_STORAGE_ERROR_BLOCK_MAC_MISMATCH, 1);
 
     /* file should have been deleted as corrupted */
@@ -2640,7 +2640,8 @@ static void fs_recovery_data_blocks_test(struct transaction* tr) {
     assert(!tr->failed);
     transaction_activate(tr);
 
-    assert(fs_check(tr->fs, true, false));
+    /* not scanning all blocks, so we don't detect the error */
+    assert(fs_check(tr->fs, true, false) == FS_CHECK_NO_ERROR);
 
     /* file should still exist because we didn't do a full scan */
     file_test(tr, "recovery", FILE_OPEN_NO_CREATE, 0, 0, 0, true, 1);
@@ -2650,7 +2651,7 @@ static void fs_recovery_data_blocks_test(struct transaction* tr) {
     transaction_activate(tr);
 
     /* scan all data blocks */
-    assert(fs_check(tr->fs, true, true));
+    assert(fs_check(tr->fs, true, true) == FS_CHECK_NO_ERROR);
 
     /* file should have been deleted as corrupted */
     create_and_delete(tr, "recovery");

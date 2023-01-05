@@ -212,6 +212,30 @@ static inline bool fs_is_writable(struct fs* fs) {
 }
 
 /**
+ * enum fs_check_result - Result of a filesystem check
+ * @FS_CHECK_NO_ERROR:      No error was enountered in the checked blocks.
+ * @FS_CHECK_INVALID_BLOCK: A MAC mismatch error or invalid block was
+ *                          encountered while trying to load a block in the
+ *                          file-system. This type of error may indicate that
+ *                          the non-secure data is out of sync with the RPMB
+ *                          superblock. The file-system is likely corrupt.
+ * @FS_CHECK_INVALID_FREE_SET:  The free set was not internally valid or invalid
+ *                              blocks were encountered in the free set tree.
+ * @FS_CHECK_INVALID_FILE_TREE: The file tree was not internally valid but no
+ *                              invalid blocks were encountered.
+ * @FS_CHECK_UNKNOWN:       An unknown error was encountered while checking the
+ *                          file-system. The file-system may not be entirely
+ *                          readable or valid.
+ */
+enum fs_check_result {
+    FS_CHECK_NO_ERROR = 0,
+    FS_CHECK_INVALID_BLOCK,
+    FS_CHECK_INVALID_FREE_SET,
+    FS_CHECK_INVALID_FILE_TREE,
+    FS_CHECK_UNKNOWN,
+};
+
+/**
  * fs_check - Check (and optionally repair) the file system tree
  * @fs:                    File system state object.
  * @delete_invalid_files:  If %true, attempt to repair invalid files by deleting
@@ -222,14 +246,21 @@ static inline bool fs_is_writable(struct fs* fs) {
  *
  * Walk the filesystem tree and visit each file, reading the first block (or all
  * blocks if @check_all_data_blocks is %true) to ensure that there is no
- * corruption of the tree below the root nodes. Returns %true if no corruption
- * was encountered, or, when @delete_invalid_files is %true, if all corrupt
- * files were successfully deleted. Returns %false if the filesystem remains
- * corrupted after this operation.
+ * corruption of the tree below the root nodes.
+ *
+ * Returns @fs_check_result.FS_CHECK_NO_ERROR if no corruption was encountered
+ * or any encountered corruption was repaired. Returns another @fs_check_result
+ * variant describing the error if the filesystem remains corrupted after this
+ * operation. Errors are prioritized in the following order (highest to lowest):
+ * %FS_CHECK_INVALID_BLOCK (except in the free set, which is reported
+ * separately), %FS_CHECK_INVALID_FILE_TREE, %FS_CHECK_INVALID_FREE_SET,
+ * %FS_CHECK_UNKNOWN. This ordering is intended to allow callers to
+ * differentiate between invalid blocks that indicate corruption and possibly
+ * transient communication errors with the storage proxy.
  */
-bool fs_check(struct fs* fs,
-              bool delete_invalid_files,
-              bool check_all_data_blocks);
+enum fs_check_result fs_check(struct fs* fs,
+                              bool delete_invalid_files,
+                              bool check_all_data_blocks);
 
 void fs_file_tree_init(const struct fs* fs, struct block_tree* tree);
 
