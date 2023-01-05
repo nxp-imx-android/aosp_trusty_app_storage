@@ -538,21 +538,39 @@ static bool use_new_super(const struct block_device* dev,
     return false;
 }
 
+static void fs_init_free_set(struct fs* fs, struct block_set* set);
+
 /**
  * fs_set_roots - Initialize fs state from super block roots
  * @fs:                File system state object
  * @free:              Free set root node
  * @files:             Files tree root node
  * @checkpoint:        Checkpoint metadata block. May be NULL.
+ * @restore_checkpoint: If %true, restore files and free roots from @checkpoint
+ *                      (which must not be NULL).
  *
- * Returns %true if fs roots were correctly initialized, %false otherwise.
+ * Unconditionally sets the filesystem roots to @free and @files respectively,
+ * then attempts to restore the checkpoint roots if @restore_checkpoint is
+ * %true. When attempting to restore from a checkpoint that exists but is not
+ * readable, return %false, leaving the filesystem roots initialized to @free
+ * and @files. If attempting to restore from checkpoint but no checkpoint was
+ * previously set, this function will clear the filesystem.
+ *
+ * Returns %true if fs roots were correctly initialized as requested, %false if
+ * a requested checkpoint restore failed (but roots were still initialized to
+ * the provided blocks).
  */
 static bool fs_set_roots(struct fs* fs,
                          const struct block_mac* free,
                          const struct block_mac* files,
-                         const struct block_mac* checkpoint) {
+                         const struct block_mac* checkpoint,
+                         bool restore_checkpoint) {
     bool success = true;
     struct transaction tr;
+    struct block_tree checkpoint_files =
+            BLOCK_TREE_INITIAL_VALUE(checkpoint_files);
+
+    assert(!restore_checkpoint || checkpoint);
 
     fs->free.block_tree.root = *free;
     fs->files.root = *files;
@@ -560,14 +578,31 @@ static bool fs_set_roots(struct fs* fs,
     if (checkpoint) {
         fs->checkpoint = *checkpoint;
         transaction_init(&tr, fs, true);
-        assert(!block_range_empty(fs->checkpoint_free.initial_range));
+
         /*
-         * fs->checkpoint_free is initialized to contain all blocks, so we don't
-         * have to initialize it if there is no checkpoint on disk
+         * fs->checkpoint_free is initialized to contain all blocks, so we
+         * don't have to initialize it if there is no checkpoint on disk
          */
+        assert(!block_range_empty(fs->checkpoint_free.initial_range));
+
         if (block_mac_valid(&tr, &fs->checkpoint)) {
-            success = checkpoint_read(&tr, &fs->checkpoint, NULL,
+            success = checkpoint_read(&tr, &fs->checkpoint, &checkpoint_files,
                                       &fs->checkpoint_free);
+        }
+        if (success && restore_checkpoint) {
+            /*
+             * Checkpoint restore counts as a repair which must set the repaired
+             * flag. We disallow checkpoint restore in alternate mode in
+             * fs_init().
+             */
+            fs->main_repaired = true;
+            fs->files.root = checkpoint_files.root;
+            block_set_copy_ro(&tr, &fs->free, &fs->checkpoint_free);
+            /*
+             * block_set_copy_ro() clears the copy_on_write flag for the free
+             * set, so we have to reset it to allow modification.
+             */
+            fs->free.block_tree.copy_on_write = true;
         }
         if (!tr.failed) {
             /* temporary transaction is only for reading, drop it */
@@ -786,7 +821,12 @@ static int fs_init_from_super(struct fs* fs,
     }
 
     if (super && !is_clear && !do_clear) {
-        if (!fs_set_roots(fs, new_free_root, new_files_root, new_checkpoint)) {
+        if (!fs_set_roots(fs, new_free_root, new_files_root, new_checkpoint,
+                          flags & FS_INIT_FLAGS_RESTORE_CHECKPOINT)) {
+            /*
+             * fs_set_roots() returns false if the checkpoint restore failed,
+             * but leaves the roots in a valid state to allow read-only access.
+             */
             pr_err("failed to initialize filesystem roots\n");
             read_only = true;
         } else {
@@ -828,7 +868,7 @@ static int fs_init_from_super(struct fs* fs,
     }
 
     fs->writable = true;
-    if (do_clear && !is_clear) {
+    if ((do_clear && !is_clear) || flags & FS_INIT_FLAGS_RESTORE_CHECKPOINT) {
         if (!write_initial_super_block(fs)) {
             return -1;
         }
@@ -1055,6 +1095,12 @@ int fs_init(struct fs* fs,
         pr_err("unsupported block count for super_dev, %" PRIu64 "\n",
                super_dev->block_count);
         return -1;  // ERR_NOT_VALID?
+    }
+
+    if ((flags & FS_INIT_FLAGS_ALTERNATE_DATA) &&
+        (flags & FS_INIT_FLAGS_RESTORE_CHECKPOINT)) {
+        pr_err("Alternate file system cannot restore to a checkpoint\n");
+        return -1;
     }
 
     fs->name = name;

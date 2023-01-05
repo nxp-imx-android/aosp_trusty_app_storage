@@ -181,6 +181,10 @@ bool update_super_block(struct transaction* tr,
  *   a tamper-detecting block device. This filesystem WILL NOT detect any
  *   tampering and a malicious actor may arbitrarily roll it back to any
  *   previous state.
+ *
+ * %FS_INIT_FLAGS_RESTORE_CHECKPOINT
+ *   Restore this filesystem to the current checkpointed state, discarding any
+ *   changes since that checkpoint was made.
  */
 typedef uint32_t fs_init_flags32_t;
 #define FS_INIT_FLAGS_NONE 0U
@@ -188,9 +192,11 @@ typedef uint32_t fs_init_flags32_t;
 #define FS_INIT_FLAGS_RECOVERY_CLEAR_ALLOWED (1U << 1)
 #define FS_INIT_FLAGS_ALTERNATE_DATA (1U << 2)
 #define FS_INIT_FLAGS_ALLOW_TAMPERING (1U << 3)
+#define FS_INIT_FLAGS_RESTORE_CHECKPOINT (1U << 4)
 #define FS_INIT_FLAGS_MASK                                           \
     (FS_INIT_FLAGS_DO_CLEAR | FS_INIT_FLAGS_RECOVERY_CLEAR_ALLOWED | \
-     FS_INIT_FLAGS_ALTERNATE_DATA | FS_INIT_FLAGS_ALLOW_TAMPERING)
+     FS_INIT_FLAGS_ALTERNATE_DATA | FS_INIT_FLAGS_ALLOW_TAMPERING |  \
+     FS_INIT_FLAGS_RESTORE_CHECKPOINT)
 
 int fs_init(struct fs* fs,
             const char* name,

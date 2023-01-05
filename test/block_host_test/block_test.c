@@ -110,6 +110,8 @@ static struct block blocks[BLOCK_COUNT];
 static struct block blocks_backup[BLOCK_COUNT];
 static const struct key key;
 
+static bool allow_repaired = false;
+
 static bool print_test_verbose = false;
 static bool print_block_tree_test_verbose = false;
 
@@ -1036,7 +1038,7 @@ static void open_test_file_etc(struct transaction* tr,
                                enum file_create_mode create,
                                bool expect_failure) {
     enum file_open_result result;
-    result = file_open(tr, path, file, create, false);
+    result = file_open(tr, path, file, create, allow_repaired);
     if (print_test_verbose) {
         printf("%s: lookup file %s, create %d, got %" PRIu64 ":\n", __func__,
                path, create, block_mac_to_block(tr, &file->block_mac));
@@ -2033,6 +2035,9 @@ static void fs_repair_flag(struct transaction* tr) {
     assert(fs_is_repaired(tr->fs));
     transaction_activate(tr);
 
+    /* globally acknowledge repair in test helpers */
+    allow_repaired = true;
+
     /* and again */
     file_test(tr, "test_simulated_repair", FILE_OPEN_NO_CREATE,
               file_test_block_count, 0, 0, false, 2);
@@ -2056,6 +2061,11 @@ static void fs_repair_flag(struct transaction* tr) {
                        FILE_OPEN_NO_CREATE, true);
     assert(result == FILE_OPEN_ERR_NOT_FOUND);
 
+    result = file_open(tr, "test_simulated_repair", &file, FILE_OPEN_NO_CREATE,
+                       true);
+    assert(result == FILE_OPEN_SUCCESS);
+    file_close(&file);
+
     result = file_open(tr, "test_simulated_repair_nonexistent", &file,
                        FILE_OPEN_CREATE, true);
     assert(result == FILE_OPEN_SUCCESS);
@@ -2070,6 +2080,9 @@ static void fs_repair_flag(struct transaction* tr) {
     block_test_reinit(tr, FS_INIT_FLAGS_NONE);
     assert(fs_is_repaired(tr->fs));
     transaction_complete(tr);
+
+    /* disallow repair globally in test helpers */
+    allow_repaired = false;
 
     block_test_reinit(tr, FS_INIT_FLAGS_DO_CLEAR);
     assert(!fs_is_repaired(tr->fs));
@@ -2519,7 +2532,7 @@ static void create_and_delete(struct transaction* tr, const char* filename) {
     transaction_activate(tr);
 }
 
-static void fs_recovery_roots_test(struct transaction* tr) {
+static void fs_recovery_clear_roots_test(struct transaction* tr) {
     /*
      * Create and delete a file to ensure that we have a root files block and
      * not just an empty super block.
@@ -2699,6 +2712,104 @@ static void fs_recovery_clear_test(struct transaction* tr) {
 
     /* test file should NOT be back */
     open_test_file_etc(tr, &file, "recovery", FILE_OPEN_NO_CREATE, true);
+}
+
+static void fs_recovery_restore_test(struct transaction* tr) {
+    struct file_handle file;
+    enum file_open_result result;
+
+    /* ensure that there is no existing checkpoint */
+    transaction_fail(tr);
+    block_test_clear_superblock_reinit(tr, FS_INIT_FLAGS_NONE);
+
+    /* create empty checkpoint block */
+    transaction_complete_update_checkpoint(tr);
+
+    /* restore the empty checkpoint, do we still end up with a usable fs */
+    full_assert(check_fs(tr));
+    transaction_fail(tr);
+    block_test_reinit(tr, FS_INIT_FLAGS_RESTORE_CHECKPOINT);
+    full_assert(check_fs(tr));
+
+    /* globally acknowledge repair in test helpers */
+    allow_repaired = true;
+
+    file_test(tr, "recovery_restore", FILE_OPEN_CREATE_EXCLUSIVE,
+              file_test_block_count, 0, 0, false, 1);
+    transaction_complete_update_checkpoint(tr);
+    assert(!tr->failed);
+    transaction_activate(tr);
+
+    /* check and delete the file */
+    file_test(tr, "recovery_restore", FILE_OPEN_NO_CREATE, 0,
+              file_test_block_count, 0, true, 1);
+    transaction_complete(tr);
+    assert(!tr->failed);
+    transaction_activate(tr);
+
+    /* make sure it's gone */
+    open_test_file_etc(tr, &file, "recovery_restore", FILE_OPEN_NO_CREATE,
+                       true);
+    file_test(tr, "recovery_not_in_checkpoint", FILE_OPEN_CREATE_EXCLUSIVE,
+              file_test_block_count, 0, 0, false, 1);
+    transaction_complete(tr);
+    assert(!tr->failed);
+
+    full_assert(check_fs(tr));
+    block_test_reinit(tr, FS_INIT_FLAGS_RESTORE_CHECKPOINT);
+    full_assert(check_fs(tr));
+
+    /*
+     * check and delete the file again (note this writes a new superblock,
+     * persisting the repair flag)
+     */
+    file_test(tr, "recovery_restore", FILE_OPEN_NO_CREATE, 0,
+              file_test_block_count, 0, true, 1);
+
+    result = file_open(tr, "recovery_not_in_checkpoint", &file,
+                       FILE_OPEN_NO_CREATE, false);
+    assert(result == FILE_OPEN_ERR_FS_REPAIRED);
+    result = file_open(tr, "recovery_not_in_checkpoint", &file,
+                       FILE_OPEN_NO_CREATE, true);
+    assert(result == FILE_OPEN_ERR_NOT_FOUND);
+}
+
+/* Attempt to restore the checkpoint again */
+static void fs_recovery_restore_test2(struct transaction* tr) {
+    struct file_handle file;
+    enum file_open_result result;
+
+    /* this file should only be in the checkpoint */
+    result =
+            file_open(tr, "recovery_restore", &file, FILE_OPEN_NO_CREATE, true);
+    assert(result == FILE_OPEN_ERR_NOT_FOUND);
+    transaction_complete(tr);
+    assert(!tr->failed);
+
+    full_assert(check_fs(tr));
+    block_test_reinit(tr, FS_INIT_FLAGS_RESTORE_CHECKPOINT);
+    full_assert(check_fs(tr));
+
+    /* check that the file is back again (and delete it) */
+    file_test(tr, "recovery_restore", FILE_OPEN_NO_CREATE, 0,
+              file_test_block_count, 0, true, 1);
+
+    /* but this one isn't */
+    result = file_open(tr, "recovery_not_in_checkpoint", &file,
+                       FILE_OPEN_NO_CREATE, false);
+    assert(result == FILE_OPEN_ERR_FS_REPAIRED);
+    result = file_open(tr, "recovery_not_in_checkpoint", &file,
+                       FILE_OPEN_NO_CREATE, true);
+    assert(result == FILE_OPEN_ERR_NOT_FOUND);
+}
+
+static void fs_recovery_restore_cleanup(struct transaction* tr) {
+    transaction_complete(tr);
+    /* clear the FS to reset the repair flag */
+    block_test_reinit(tr, FS_INIT_FLAGS_DO_CLEAR);
+    transaction_complete_update_checkpoint(tr);
+    transaction_activate(tr);
+    allow_repaired = false;
 }
 
 /*
@@ -3298,12 +3409,15 @@ struct {
         TEST(fs_repair_with_alternate),
         TEST(future_fs_version_test),
         TEST(unknown_required_flags_test),
-        TEST(fs_recovery_roots_test),
+        TEST(fs_recovery_clear_roots_test),
         TEST(fs_check_file_child_test),
         TEST(fs_check_free_child_test),
         TEST(fs_check_sparse_file_test),
         TEST(fs_corrupt_data_blocks_test),
         TEST(fs_recovery_clear_test),
+        TEST(fs_recovery_restore_test),
+        TEST(fs_recovery_restore_test2),
+        TEST(fs_recovery_restore_cleanup),
         TEST(fs_alternate_negative_test),
         TEST(fs_alternate_test),
         TEST(fs_alternate_empty_test),
