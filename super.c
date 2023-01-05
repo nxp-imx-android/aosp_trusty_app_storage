@@ -1053,6 +1053,16 @@ enum fs_check_result fs_check(struct fs* fs) {
     return res;
 }
 
+enum fs_check_result fs_check_quick(struct fs* fs) {
+    bool fs_is_clear = !block_range_empty(fs->free.initial_range);
+    if (fs_is_clear || (block_probe(fs, &fs->files.root, true) &&
+                        block_probe(fs, &fs->free.block_tree.root, false))) {
+        return FS_CHECK_NO_ERROR;
+    } else {
+        return FS_CHECK_INVALID_BLOCK;
+    }
+}
+
 /**
  * fs_file_tree_init - Initialize an empty file tree for a file system
  * @fs:        File system state object.

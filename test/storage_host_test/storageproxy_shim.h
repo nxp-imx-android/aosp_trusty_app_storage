@@ -48,3 +48,13 @@ void fail_next_rpmb_reads(int count);
  * Used for testing failure conditions
  */
 void fail_next_rpmb_get_counters(int count);
+
+/**
+ * ignore_next_ns_writes - Silently ignore the next @count writes to NS backing
+ *                         files
+ * @count:      Number of subsequent NS writes to ignore. If %INT_MAX, ignore
+ *              all subsequent writes.
+ *
+ * Used for testing failure conditions
+ */
+void ignore_next_ns_writes(int count);

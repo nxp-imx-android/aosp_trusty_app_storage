@@ -37,6 +37,7 @@
 #define TLOG_TAG "ss-test"
 
 #define DATA_DIRECTORY "rpmb_host_test_data"
+#define PERSIST_DIRECTORY "persist"
 #define RPMB_FILENAME "RPMB_DATA"
 #define HOST_TEST_RPMB_SIZE 1024
 
@@ -44,6 +45,12 @@ static char data_directory[PATH_MAX];
 static struct rpmb_dev_state rpmb_state = {
         .data_fd = -1,
 };
+
+/* If >0 silently ignore writes to NS backing data files. */
+static int ignore_next_ns_write_count = 0;
+void ignore_next_ns_writes(int count) {
+    ignore_next_ns_write_count = count;
+}
 
 bool init_rpmb_state(const char* base_directory) {
     int rc;
@@ -60,6 +67,24 @@ bool init_rpmb_state(const char* base_directory) {
             goto err_mkdir;
         }
     }
+
+#if HAS_FS_TDP
+    char* tdp_directory =
+            malloc(strlen(data_directory) + sizeof(PERSIST_DIRECTORY) + 2);
+    if (!tdp_directory) {
+        goto err_alloc_tdp;
+    }
+    rc = sprintf(tdp_directory, "%s/%s", data_directory, PERSIST_DIRECTORY);
+    if (rc < 0) {
+        goto err_tdp_dirname;
+    }
+    rc = mkdir(tdp_directory, S_IWUSR | S_IRUSR | S_IXUSR);
+    if (rc < 0) {
+        if (errno != EEXIST) {
+            goto err_tdp_mkdir;
+        }
+    }
+#endif
 
     char* rpmb_filename =
             malloc(strlen(data_directory) + sizeof(RPMB_FILENAME) + 2);
@@ -97,6 +122,12 @@ err_open_rpmb:
 err_rpmb_filename:
     free(rpmb_filename);
 err_alloc_rpmb:
+#if HAS_FS_TDP
+err_tdp_mkdir:
+err_tdp_dirname:
+    free(tdp_directory);
+err_alloc_tdp:
+#endif
 err_mkdir:
     return res;
 }
@@ -170,7 +201,7 @@ int ns_open_file(handle_t ipc_handle,
         rc = open(path, flags, S_IWUSR | S_IRUSR);
     }
     if (rc < 0) {
-        fprintf(stderr, "shim %s: open failed: %s\n", __func__,
+        fprintf(stderr, "shim %s: open of file %s failed: %s\n", __func__, path,
                 strerror(errno));
         goto err;
     }
@@ -276,6 +307,12 @@ int ns_write_pos(handle_t ipc_handle,
                  int data_size,
                  bool is_userdata,
                  bool sync) {
+    if (ignore_next_ns_write_count > 0) {
+        if (ignore_next_ns_write_count != INT_MAX) {
+            ignore_next_ns_write_count--;
+        }
+        return data_size;
+    }
     if (write_with_retry(handle, data, data_size, pos)) {
         fprintf(stderr, "shim %s: write failed: %s\n", __func__,
                 strerror(errno));

@@ -260,6 +260,19 @@ enum fs_check_result {
  */
 enum fs_check_result fs_check(struct fs* fs);
 
+/**
+ * fs_check_quick - Quickly check the file-system tree
+ * @fs:                    File system state object.
+ *
+ * Perform a basic check that the file-system roots are valid. Suitable for use
+ * while mounting file-systems where we don't want to pay the cost to walk the
+ * entire file-system tree.
+ *
+ * Returns @fs_check_result.FS_CHECK_NO_ERROR if no corruption was encountered,
+ * or another @fs_check_result variant describing the error.
+ */
+enum fs_check_result fs_check_quick(struct fs* fs);
+
 void fs_file_tree_init(const struct fs* fs, struct block_tree* tree);
 
 void fs_unknown_super_block_state_all(void);

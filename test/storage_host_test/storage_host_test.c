@@ -18,6 +18,7 @@
 
 #include <inttypes.h>
 #include <libgen.h>
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -42,6 +43,11 @@ static bool print_test_verbose = false;
 
 static inline void transaction_complete(struct transaction* tr) {
     return transaction_complete_etc(tr, false);
+}
+
+static inline void transaction_complete_update_checkpoint(
+        struct transaction* tr) {
+    return transaction_complete_etc(tr, true);
 }
 
 static void open_test_file_etc(struct transaction* tr,
@@ -260,6 +266,12 @@ typedef struct transaction_test {
 } StorageTest_t;
 
 #define IS_TP() (_state->tr.fs == &test_block_device.tr_state_rpmb)
+
+#if HAS_FS_TDP
+#define IS_TDP() (_state->tr.fs == &test_block_device.tr_state_ns_tdp)
+#else
+#define IS_TDP() (false)
+#endif
 
 TEST_F_SETUP(StorageTest) {
     fail_next_rpmb_writes(0, false);
@@ -576,10 +588,92 @@ test_abort:;
     clear_all_pending_superblock_writes();
 }
 
-INSTANTIATE_TEST_SUITE_P(Filesystem,
-                         StorageTest,
-                         testing_Values(&test_block_device.tr_state_rpmb,
-                                        &test_block_device.tr_state_ns));
+/* Storage tests for filesystems with non-RPMB backing file */
+
+TEST_P(StorageTest, DesyncBackingFile) {
+    int rc;
+    handle_t null_handle = 0;
+    struct file_handle file;
+    bool allow_repaired = false;
+    struct fs* fs = _state->tr.fs;
+
+    if (IS_TP()) {
+        transaction_fail(&_state->tr);
+        trusty_unittest_printf(
+                "[  SKIPPED ] - FS does not have separate backing storage\n");
+        return;
+    }
+
+    /* ensure a file is only in the checkpoint */
+    file_test(&_state->tr, "checkpoint_only", FILE_OPEN_CREATE, 1, 0, 0, false,
+              1);
+    transaction_complete_update_checkpoint(&_state->tr);
+    ASSERT_EQ(false, _state->tr.failed);
+    transaction_activate(&_state->tr);
+    file_delete(&_state->tr, "checkpoint_only", false);
+    transaction_complete(&_state->tr);
+    ASSERT_EQ(false, _state->tr.failed);
+    transaction_activate(&_state->tr);
+
+    ignore_next_ns_writes(INT_MAX);
+    file_test(&_state->tr, __func__, FILE_OPEN_CREATE_EXCLUSIVE, 1, 0, 0, false,
+              0);
+
+    /* force data block to be written */
+    transaction_complete(&_state->tr);
+    ASSERT_EQ(false, _state->tr.failed);
+    ignore_next_ns_writes(0);
+    transaction_free(&_state->tr);
+
+    block_device_tipc_uninit(&test_block_device);
+    rc = block_device_tipc_init(&test_block_device, null_handle,
+                                &storage_test_key, NULL, null_handle);
+    ASSERT_EQ(rc, 0);
+    transaction_init(&_state->tr, fs, true);
+    _state->initial_super_block_version = _state->tr.fs->super_block_version;
+
+    if (IS_TDP()) {
+        /*
+         * FS has been repaired, we shouldn't be able to create a file without
+         * acknowledging this
+         */
+        open_test_file_etc(&_state->tr, &file, __func__,
+                           FILE_OPEN_CREATE_EXCLUSIVE, FILE_OP_ERR_FS_REPAIRED,
+                           allow_repaired);
+
+        allow_repaired = true;
+
+        /* check the checkpoint file (must allow repair) */
+        file_test_etc(&_state->tr, false, allow_repaired, "checkpoint_only",
+                      FILE_OPEN_NO_CREATE, NULL, FILE_OPEN_NO_CREATE, 0, 1, 0,
+                      true, 1);
+    }
+
+    file_test_etc(&_state->tr, false, allow_repaired, __func__,
+                  FILE_OPEN_CREATE_EXCLUSIVE, NULL, FILE_OPEN_NO_CREATE, 1, 0,
+                  0, true, 0);
+    transaction_complete(&_state->tr);
+    ASSERT_EQ(false, _state->tr.failed);
+
+    /* assert that we have overwritten the superblock */
+    ASSERT_NE(_state->initial_super_block_version,
+              _state->tr.fs->super_block_version);
+
+test_abort:;
+}
+
+#if HAS_FS_TDP
+#define TEST_FILESYSTEMS                             \
+    testing_Values(&test_block_device.tr_state_rpmb, \
+                   &test_block_device.tr_state_ns,   \
+                   &test_block_device.tr_state_ns_tdp)
+#else
+#define TEST_FILESYSTEMS                             \
+    testing_Values(&test_block_device.tr_state_rpmb, \
+                   &test_block_device.tr_state_ns)
+#endif /* HAS_FS_TDP */
+
+INSTANTIATE_TEST_SUITE_P(Filesystem, StorageTest, TEST_FILESYSTEMS);
 
 int main(int argc, const char* argv[]) {
     int rc = 1;

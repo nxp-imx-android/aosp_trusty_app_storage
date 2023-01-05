@@ -610,6 +610,21 @@ int block_device_tipc_init(struct block_device_tipc* state,
         goto err_init_fs_ns_tdp_tr_state;
     }
 
+#if STORAGE_TDP_RECOVERY_CHECKPOINT_RESTORE_ALLOWED
+    if (fs_check_quick(&state->tr_state_ns_tdp) == FS_CHECK_INVALID_BLOCK) {
+        SS_ERR("%s: TDP filesystem check failed with invalid block, "
+               "attempting to restore checkpoint\n",
+               __func__);
+        fs_destroy(&state->tr_state_ns_tdp);
+        ret = fs_init(&state->tr_state_ns_tdp, file_system_id_tdp, fs_key,
+                      &state->dev_ns_tdp.dev, &state->dev_ns_tdp_rpmb.dev,
+                      FS_INIT_FLAGS_RESTORE_CHECKPOINT);
+        if (ret < 0) {
+            goto err_init_fs_ns_tdp_tr_state;
+        }
+    }
+#endif
+
 #else
     /*
      * Create STORAGE_CLIENT_TDP_PORT alias after we know the backing file for
