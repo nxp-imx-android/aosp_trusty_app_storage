@@ -41,6 +41,7 @@
  *                                be updated when the load operation completes.
  * @BLOCK_ENTRY_DATA_LOAD_FAILED: Block data could not be loaded from the disk.
  *                                This may be caused by a transient I/O error.
+ * @BLOCK_ENTRY_DATA_NOT_FOUND:   Block does not exist on disk.
  * @BLOCK_ENTRY_DATA_CLEAN_DECRYPTED: Block entry contains valid plaintext data
  *                                    that is either on disk or queued to be
  *                                    written to disk
@@ -62,6 +63,7 @@ enum block_cache_entry_data_state {
     BLOCK_ENTRY_DATA_INVALID = 0,
     BLOCK_ENTRY_DATA_LOADING,
     BLOCK_ENTRY_DATA_LOAD_FAILED,
+    BLOCK_ENTRY_DATA_NOT_FOUND,
     BLOCK_ENTRY_DATA_CLEAN_DECRYPTED,
     BLOCK_ENTRY_DATA_CLEAN_ENCRYPTED,
     BLOCK_ENTRY_DATA_DIRTY_DECRYPTED,

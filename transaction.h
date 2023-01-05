@@ -31,6 +31,9 @@
  * @failed:                 %true if transaction ran out of disk space, or
  *                          collided with another transaction, %false if no
  *                          error has occured since transaction_activate.
+ * @invalid_block_found:    %true if a block MAC mismatch or missing block was
+ *                          encountered while trying to operate on this
+ *                          transaction.
  * @complete:               Transaction has been written to disk.
  * @rebuild_free_set:       %true if this transaction requires the free set to
  *                          be reuilt by a full file-system scan.
@@ -56,6 +59,7 @@ struct transaction {
     struct fs* fs;
     struct list_node open_files;
     bool failed;
+    bool invalid_block_found;
     bool complete;
     bool rebuild_free_set;
     bool repaired;

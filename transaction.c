@@ -614,6 +614,7 @@ void transaction_activate(struct transaction* tr) {
     assert(!transaction_is_active(tr));
 
     tr->failed = false;
+    tr->invalid_block_found = false;
     tr->complete = false;
     tr->rebuild_free_set = false;
     tr->repaired = false;

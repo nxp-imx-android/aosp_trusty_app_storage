@@ -26,11 +26,17 @@ struct fs;
 struct iv;
 struct transaction;
 
+enum block_read_error {
+    BLOCK_READ_SUCCESS = 0,
+    BLOCK_READ_IO_ERROR,
+    BLOCK_READ_NO_DATA,
+};
+
 void block_cache_complete_read(struct block_device* dev,
                                data_block_t block,
                                const void* data,
                                size_t data_size,
-                               bool failed);
+                               enum block_read_error res);
 
 enum block_write_error {
     BLOCK_WRITE_SUCCESS = 0,

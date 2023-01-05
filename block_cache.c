@@ -87,6 +87,8 @@ static const char* block_cache_entry_data_state_name(
         return "BLOCK_ENTRY_DATA_LOADING";
     case BLOCK_ENTRY_DATA_LOAD_FAILED:
         return "BLOCK_ENTRY_DATA_LOAD_FAILED";
+    case BLOCK_ENTRY_DATA_NOT_FOUND:
+        return "BLOCK_ENTRY_DATA_NOT_FOUND";
     case BLOCK_ENTRY_DATA_CLEAN_DECRYPTED:
         return "BLOCK_ENTRY_DATA_CLEAN_DECRYPTED";
     case BLOCK_ENTRY_DATA_CLEAN_ENCRYPTED:
@@ -193,9 +195,11 @@ static struct block_cache_entry* block_cache_pop_io_op(struct block_device* dev,
  * block_cache_complete_read - Read complete callback from block device
  * @dev:        Block device
  * @block:      Block number
- * @data:       Pointer to encrypted data
+ * @data:       Pointer to encrypted data, only valid if @res is
+ *              &block_read_error.BLOCK_READ_SUCCESS
  * @data_size:  Data size, must match block size of device.
- * @failed:     true if read operation failed, and data is not valid.
+ * @res:        &block_read_error.BLOCK_READ_SUCCESS if read operation was
+ *              successful, otherwise describes the error.
  *
  * Calculates mac and decrypts data into cache entry. Does not validate mac.
  */
@@ -203,7 +207,7 @@ void block_cache_complete_read(struct block_device* dev,
                                data_block_t block,
                                const void* data,
                                size_t data_size,
-                               bool failed) {
+                               enum block_read_error res) {
     int ret;
     struct block_cache_entry* entry;
 
@@ -212,12 +216,22 @@ void block_cache_complete_read(struct block_device* dev,
 
     entry = block_cache_pop_io_op(dev, block, BLOCK_CACHE_IO_OP_READ);
     assert(entry->state == BLOCK_ENTRY_DATA_LOADING);
-    if (failed) {
+    switch (res) {
+    case BLOCK_READ_SUCCESS:
+        /* handled below */
+        break;
+    case BLOCK_READ_IO_ERROR:
         printf("%s: load block %" PRIu64 " failed\n", __func__, entry->block);
         entry->state = BLOCK_ENTRY_DATA_LOAD_FAILED;
         return;
+    case BLOCK_READ_NO_DATA:
+        printf("%s: load block %" PRIu64 " failed, no data\n", __func__,
+               entry->block);
+        entry->state = BLOCK_ENTRY_DATA_NOT_FOUND;
+        return;
     }
-    assert(!failed);
+    assert(res == BLOCK_READ_SUCCESS);
+
     entry->block_size = data_size;
     /* TODO: change decrypt function to take separate in/out buffers */
     memcpy(entry->data, data, data_size);
@@ -715,19 +729,30 @@ done:
     return entry;
 }
 
+enum cache_load_result {
+    CACHE_LOAD_SUCCESS = 0,
+    CACHE_LOAD_IO_FAILED,
+    CACHE_LOAD_NO_DATA,
+    CACHE_LOAD_MAC_MISMATCH,
+};
+
 /**
  * block_cache_load_entry - Get cache entry for a specific block
  * @entry:      Block cache entry to load.
  * @mac:        Optional mac.
  * @mac_size:   Size of @mac.
  *
- * Return: false if entry could not be loaded or if non-NULL @mac does not match
- * the computed mac. true if entry was loaded and @mac is NULL.
+ * If entry is not already loaded, attempt to load the block and optionally
+ * compare with the expected @mac, if provided.
+ *
+ * Return: &cache_load_result.CACHE_LOAD_SUCCESS if the block (matching @mac, if
+ * provided) was already in cache or was loaded successfully. Otherwise return a
+ * relevant error.
  */
-
-static bool block_cache_load_entry(struct block_cache_entry* entry,
-                                   const void* mac,
-                                   size_t mac_size) {
+static enum cache_load_result block_cache_load_entry(
+        struct block_cache_entry* entry,
+        const void* mac,
+        size_t mac_size) {
     if (!block_cache_entry_data_is_valid(entry)) {
         assert(!block_cache_entry_has_refs(entry));
         if (print_block_load) {
@@ -738,15 +763,22 @@ static bool block_cache_load_entry(struct block_cache_entry* entry,
         block_cache_complete_io(entry->dev);
     }
     if (!block_cache_entry_data_is_valid(entry)) {
-        printf("%s: failed to load block %" PRIu64 "\n", __func__,
-               entry->block);
-        return false;
+        printf("%s: failed to load block %" PRIu64 ", state: %d\n", __func__,
+               entry->block, entry->state);
+        switch (entry->state) {
+        case BLOCK_ENTRY_DATA_LOAD_FAILED:
+            return CACHE_LOAD_IO_FAILED;
+        case BLOCK_ENTRY_DATA_NOT_FOUND:
+            return CACHE_LOAD_NO_DATA;
+        default:
+            assert(false && "Unexpected entry state");
+        }
     }
     if (mac) {
         if (CRYPTO_memcmp(&entry->mac, mac, mac_size)) {
             printf("%s: block %" PRIu64 ", mac mismatch\n", __func__,
                    entry->block);
-            return false;
+            return CACHE_LOAD_MAC_MISMATCH;
         }
     }
     /*
@@ -760,7 +792,7 @@ static bool block_cache_load_entry(struct block_cache_entry* entry,
     }
     assert(block_cache_entry_data_is_decrypted(entry));
 
-    return true;
+    return CACHE_LOAD_SUCCESS;
 }
 
 /**
@@ -772,27 +804,35 @@ static bool block_cache_load_entry(struct block_cache_entry* entry,
  * @mac:        Optional mac. Unused if @load is false.
  * @mac_size:   Size of @mac.
  * @ref:        Pointer to store reference in.
+ * @load_result: Optional output pointer to store load result in. May be %NULL.
+ *               If not %NULL, @load must be %true.
  *
  * Find cache entry, optionally load then add a reference to it.
  *
  * Return: cache entry matching dev in @tr and @block. Can return NULL if @load
  * is true and entry could not be loaded or does not match provided mac.
  */
-static struct block_cache_entry* block_cache_get(struct fs* fs,
-                                                 struct block_device* dev,
-                                                 data_block_t block,
-                                                 bool load,
-                                                 const void* mac,
-                                                 size_t mac_size,
-                                                 struct obj_ref* ref) {
-    bool loaded;
+static struct block_cache_entry* block_cache_get(
+        struct fs* fs,
+        struct block_device* dev,
+        data_block_t block,
+        bool load,
+        const void* mac,
+        size_t mac_size,
+        struct obj_ref* ref,
+        enum cache_load_result* load_result) {
+    enum cache_load_result res;
     struct block_cache_entry* entry;
 
     assert(dev);
+    assert(!load_result || load);
 
     if (block >= dev->block_count) {
         printf("%s: bad block num %" PRIu64 " >= %" PRIu64 "\n", __func__,
                block, dev->block_count);
+        if (load_result) {
+            *load_result = CACHE_LOAD_NO_DATA;
+        }
         return NULL;
     }
     assert(block < dev->block_count);
@@ -801,8 +841,11 @@ static struct block_cache_entry* block_cache_get(struct fs* fs,
     assert(entry);
 
     if (load) {
-        loaded = block_cache_load_entry(entry, mac, mac_size);
-        if (!loaded) {
+        res = block_cache_load_entry(entry, mac, mac_size);
+        if (load_result) {
+            *load_result = res;
+        }
+        if (res != CACHE_LOAD_SUCCESS) {
             return NULL;
         }
     }
@@ -826,6 +869,8 @@ static struct block_cache_entry* block_cache_get(struct fs* fs,
  * @mac:        Optional mac. Unused if @load is false.
  * @mac_size:   Size of @mac.
  * @ref:        Pointer to store reference in.
+ * @load_result: Optional output pointer to store load result in. May be %NULL.
+ *               Only updated if @load is %true.
  *
  * Return: block data pointer, or NULL if block_cache_get returned NULL.
  */
@@ -835,9 +880,11 @@ static void* block_cache_get_data(struct fs* fs,
                                   bool load,
                                   const void* mac,
                                   size_t mac_size,
-                                  struct obj_ref* ref) {
+                                  struct obj_ref* ref,
+                                  enum cache_load_result* load_result) {
     struct block_cache_entry* entry;
-    entry = block_cache_get(fs, dev, block, load, mac, mac_size, ref);
+    entry = block_cache_get(fs, dev, block, load, mac, mac_size, ref,
+                            load_result);
     if (!entry) {
         return NULL;
     }
@@ -1089,8 +1136,8 @@ const void* block_get_no_read(struct transaction* tr,
     assert(tr);
     assert(tr->fs);
 
-    return block_cache_get_data(tr->fs, tr->fs->dev, block, false, NULL, 0,
-                                ref);
+    return block_cache_get_data(tr->fs, tr->fs->dev, block, false, NULL, 0, ref,
+                                NULL);
 }
 
 /**
@@ -1109,7 +1156,8 @@ const void* block_get_super(struct fs* fs,
     assert((fs->allow_tampering && !fs->super_dev->tamper_detecting) ||
            (!fs->allow_tampering && fs->super_dev->tamper_detecting));
 
-    return block_cache_get_data(fs, fs->super_dev, block, true, NULL, 0, ref);
+    return block_cache_get_data(fs, fs->super_dev, block, true, NULL, 0, ref,
+                                NULL);
 }
 
 /**
@@ -1130,6 +1178,8 @@ const void* block_get_no_tr_fail(struct transaction* tr,
                                  const struct iv* iv,
                                  struct obj_ref* ref) {
     data_block_t block;
+    void* data;
+    enum cache_load_result load_result = CACHE_LOAD_NO_DATA;
 
     assert(tr);
     assert(tr->fs);
@@ -1138,9 +1188,14 @@ const void* block_get_no_tr_fail(struct transaction* tr,
     block = block_mac_to_block(tr, block_mac);
     assert(block);
 
-    return block_cache_get_data(tr->fs, tr->fs->dev, block, true,
+    data = block_cache_get_data(tr->fs, tr->fs->dev, block, true,
                                 block_mac_to_mac(tr, block_mac),
-                                tr->fs->mac_size, ref);
+                                tr->fs->mac_size, ref, &load_result);
+    if (load_result == CACHE_LOAD_MAC_MISMATCH ||
+        load_result == CACHE_LOAD_NO_DATA) {
+        tr->invalid_block_found = true;
+    }
+    return data;
 }
 
 /**
@@ -1455,7 +1510,7 @@ void* block_get_cleared_super(struct transaction* tr,
                               bool pinned) {
     void* data_rw;
     const void* data_ro = block_cache_get_data(tr->fs, tr->fs->super_dev, block,
-                                               false, NULL, 0, ref);
+                                               false, NULL, 0, ref, NULL);
 
     /*
      * We should never end up in a situation where there is a dirty copy of a
@@ -1578,13 +1633,20 @@ void block_put(const void* data, struct obj_ref* ref) {
  * @fs:          Filesystem containing the block to probe
  * @block_mac:   Block to probe
  *
- * Return: %true if the block is valid and matches the expected mac
+ * Return: %false if the block is not valid or does not match the expected mac.
+ * Returns %true if the block was readable, valid and matched the expected mac.
+ * Also returns %true if an I/O error was encountered which does not positively
+ * confirm a corrupted block.
  */
 bool block_probe(struct fs* fs, const struct block_mac* block_mac) {
     struct transaction probe_tr;
     struct obj_ref probe_ref = OBJ_REF_INITIAL_VALUE(probe_ref);
     const void* probe_block;
-    bool valid = false;
+    /*
+     * Assume the block is valid unless we get positive confirmation of an
+     * invalid block.
+     */
+    bool valid = true;
 
     transaction_init(&probe_tr, fs, true);
     if (block_mac_valid(&probe_tr, block_mac)) {
@@ -1592,7 +1654,8 @@ bool block_probe(struct fs* fs, const struct block_mac* block_mac) {
                 block_get_no_tr_fail(&probe_tr, block_mac, NULL, &probe_ref);
         if (probe_block) {
             block_put(probe_block, &probe_ref);
-            valid = true;
+        } else if (probe_tr.invalid_block_found) {
+            valid = false;
         }
     }
     transaction_fail(&probe_tr);

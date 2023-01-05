@@ -177,7 +177,7 @@ static void block_test_start_read(struct block_device* dev,
     assert(dev->block_size <= BLOCK_SIZE);
     assert(block < countof(blocks));
     block_cache_complete_read(dev, block, blocks[block].data, dev->block_size,
-                              false);
+                              BLOCK_READ_SUCCESS);
 }
 
 static void block_test_start_write(struct block_device* dev,
@@ -2402,6 +2402,7 @@ static void fs_recovery_roots_test(struct transaction* tr) {
            block_mac_to_block(tr, &tr->fs->free.block_tree.root));
     fs_corruption_helper(tr, select_free_block, 0, false);
     assert(tr->failed);
+    assert(tr->invalid_block_found);
 
     assert(!fs_check(tr->fs, false, false));
 
@@ -2410,6 +2411,7 @@ static void fs_recovery_roots_test(struct transaction* tr) {
 
     /* Did we recover correctly? */
     create_and_delete(tr, "recovery");
+    assert(!tr->invalid_block_found);
 }
 
 static void fs_check_file_child_test(struct transaction* tr) {
@@ -2448,6 +2450,7 @@ static void fs_check_free_child_test(struct transaction* tr) {
     /* Corrupt a child in the free list */
     fs_corruption_helper(tr, select_free_block, 1, false);
     assert(tr->failed);
+    assert(tr->invalid_block_found);
 
     /* Ensure that we detect this corruption */
     assert(!fs_check(tr->fs, true, false));
@@ -2484,6 +2487,7 @@ static void fs_recovery_data_blocks_test(struct transaction* tr) {
     file_test(tr, "recovery", FILE_OPEN_NO_CREATE, 0, 0, 0, true, 1);
     transaction_complete(tr);
     assert(!tr->failed);
+    assert(!tr->invalid_block_found);
     transaction_activate(tr);
 
     /* scan all data blocks */
@@ -2491,6 +2495,7 @@ static void fs_recovery_data_blocks_test(struct transaction* tr) {
 
     /* file should have been deleted as corrupted */
     create_and_delete(tr, "recovery");
+    assert(!tr->invalid_block_found);
 }
 
 static void fs_recovery_clear_test(struct transaction* tr) {

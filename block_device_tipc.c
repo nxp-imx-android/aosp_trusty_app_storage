@@ -158,7 +158,8 @@ static void block_device_tipc_rpmb_start_read(struct block_device* dev,
     SS_DBG_IO("%s: block %" PRIu64 ", base %d, rpmb_block %d, ret %d\n",
               __func__, block, dev_rpmb->base, rpmb_block, ret);
 
-    block_cache_complete_read(dev, block, tmp, BLOCK_SIZE_RPMB, !!ret);
+    block_cache_complete_read(dev, block, tmp, BLOCK_SIZE_RPMB,
+                              ret ? BLOCK_READ_IO_ERROR : BLOCK_READ_SUCCESS);
 }
 
 static inline enum block_write_error translate_write_error(int rc) {
@@ -213,14 +214,21 @@ static struct block_device_ns* to_block_device_ns(struct block_device* dev) {
 static void block_device_tipc_ns_start_read(struct block_device* dev,
                                             data_block_t block) {
     int ret;
+    enum block_read_error res;
     uint8_t tmp[BLOCK_SIZE_MAIN]; /* TODO: pass data in? */
     struct block_device_ns* dev_ns = to_block_device_ns(dev);
 
     ret = ns_read_pos(dev_ns->state->ipc_handle, dev_ns->ns_handle,
                       block * BLOCK_SIZE_MAIN, tmp, BLOCK_SIZE_MAIN);
     SS_DBG_IO("%s: block %" PRIu64 ", ret %d\n", __func__, block, ret);
-    block_cache_complete_read(dev, block, tmp, BLOCK_SIZE_MAIN,
-                              ret != BLOCK_SIZE_MAIN);
+    if (ret == 0) {
+        res = BLOCK_READ_NO_DATA;
+    } else if (ret == BLOCK_SIZE_MAIN) {
+        res = BLOCK_READ_SUCCESS;
+    } else {
+        res = BLOCK_READ_IO_ERROR;
+    }
+    block_cache_complete_read(dev, block, tmp, BLOCK_SIZE_MAIN, res);
 }
 
 static void block_device_tipc_ns_start_write(struct block_device* dev,
