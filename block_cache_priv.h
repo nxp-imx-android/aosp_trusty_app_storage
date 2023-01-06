@@ -35,6 +35,28 @@
 #endif
 
 /**
+ * enum block_cache_entry_data_state - State of a block cache entry's data
+ * @BLOCK_ENTRY_DATA_INVALID:     Block entry does not contain valid data.
+ * @BLOCK_ENTRY_DATA_LOADING:     Block entry data load is pending. State will
+ *                                be updated when the load operation completes.
+ * @BLOCK_ENTRY_DATA_LOAD_FAILED: Block data could not be loaded from the disk.
+ *                                This may be caused by a transient I/O error.
+ * @BLOCK_ENTRY_DATA_CLEAN:       Block entry contains valid data that is either
+ *                                on disk or queued to be written to disk.
+ * @BLOCK_ENTRY_DATA_DIRTY:       Block entry contains valid data that has not
+ *                                yet been queued for write back to disk. Data
+ *                                must be written back or discarded before the
+ *                                cache entry can be reused.
+ */
+enum block_cache_entry_data_state {
+    BLOCK_ENTRY_DATA_INVALID = 0,
+    BLOCK_ENTRY_DATA_LOADING,
+    BLOCK_ENTRY_DATA_LOAD_FAILED,
+    BLOCK_ENTRY_DATA_CLEAN,
+    BLOCK_ENTRY_DATA_DIRTY,
+};
+
+/**
  * struct block_cache_entry - block cache entry
  * @guard1:                 Set to BLOCK_CACHE_GUARD_1 to detect out of bound
  *                          writes to data.
@@ -47,9 +69,13 @@
  * @block:                  Block number in dev.
  * @block_size:             Size of block, but match dev->block_size.
  * @mac:                    Last calculated mac of encrypted block data.
- * @loaded:                 Data contains valid data.
- * @dirty:                  Data is not on disk and must be written back or
- *                          discarded before cache entry can be reused.
+ * @state:                  Current state of @data, indicating if data has been
+ *                          loaded from disk or written into this cache entry.
+ *                          This state is reset to %BLOCK_ENTRY_INVALID when a
+ *                          cache entry previously containing a different block
+ *                          is selected for reuse. See &enum
+ *                          block_cache_entry_state for details.
+ * @encrypted:              %true if @data is currently encrypted.
  * @dirty_ref:              Data is currently being modified. Only a single
  *                          reference should be allowed.
  * @dirty_mac:              Data has been modified. Mac needs to be updated
@@ -66,6 +92,10 @@
  * @io_op_node:             List node for tracking active read and write
  *                          operations.
  * @io_op:                  Currently active io operation.
+ *
+ * @dirty_ref, @dirty_mac, @dirty_tmp, and @dirty_tr are only relevant if @state
+ * is %BLOCK_ENTRY_DATA_DIRTY, i.e. @data has been modified and not yet queued
+ * for write or discarded.
  */
 struct block_cache_entry {
     uint64_t guard1;
@@ -77,9 +107,8 @@ struct block_cache_entry {
     data_block_t block;
     size_t block_size;
     struct mac mac;
-    bool loaded;
+    enum block_cache_entry_data_state state;
     bool encrypted;
-    bool dirty;
     bool dirty_ref;
     bool dirty_mac;
     bool dirty_tmp;

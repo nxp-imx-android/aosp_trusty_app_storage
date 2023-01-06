@@ -52,6 +52,28 @@ static struct list_node block_cache_lru = LIST_INITIAL_VALUE(block_cache_lru);
 static struct block_cache_entry block_cache_entries[BLOCK_CACHE_SIZE];
 static bool block_cache_init_called = false;
 
+static bool block_cache_entry_data_is_valid(
+        const struct block_cache_entry* entry) {
+    return entry->state == BLOCK_ENTRY_DATA_CLEAN ||
+           entry->state == BLOCK_ENTRY_DATA_DIRTY;
+}
+
+static const char* block_cache_entry_data_state_name(
+        enum block_cache_entry_data_state state) {
+    switch (state) {
+    case BLOCK_ENTRY_DATA_INVALID:
+        return "BLOCK_ENTRY_DATA_INVALID";
+    case BLOCK_ENTRY_DATA_LOADING:
+        return "BLOCK_ENTRY_DATA_LOADING";
+    case BLOCK_ENTRY_DATA_LOAD_FAILED:
+        return "BLOCK_ENTRY_DATA_LOAD_FAILED";
+    case BLOCK_ENTRY_DATA_CLEAN:
+        return "BLOCK_ENTRY_DATA_CLEAN";
+    case BLOCK_ENTRY_DATA_DIRTY:
+        return "BLOCK_ENTRY_DATA_DIRTY";
+    }
+}
+
 /**
  * block_cache_queue_io_op - Helper function to start a read or write operation
  * @entry:      Cache entry.
@@ -76,6 +98,8 @@ static void block_cache_queue_io_op(struct block_cache_entry* entry,
  * @entry:      Cache entry.
  */
 static void block_cache_queue_read(struct block_cache_entry* entry) {
+    assert(entry->state != BLOCK_ENTRY_DATA_DIRTY);
+    entry->state = BLOCK_ENTRY_DATA_LOADING;
     block_cache_queue_io_op(entry, BLOCK_CACHE_IO_OP_READ);
     stats_timer_start(STATS_CACHE_START_READ);
     entry->dev->start_read(entry->dev, entry->block);
@@ -163,9 +187,10 @@ void block_cache_complete_read(struct block_device* dev,
     assert(data_size == dev->block_size);
 
     entry = block_cache_pop_io_op(dev, block, BLOCK_CACHE_IO_OP_READ);
-    assert(!entry->loaded);
+    assert(entry->state == BLOCK_ENTRY_DATA_LOADING);
     if (failed) {
         printf("%s: load block %" PRIu64 " failed\n", __func__, entry->block);
+        entry->state = BLOCK_ENTRY_DATA_LOAD_FAILED;
         return;
     }
     assert(!failed);
@@ -186,7 +211,7 @@ void block_cache_complete_read(struct block_device* dev,
                entry->block);
     }
 
-    entry->loaded = true;
+    entry->state = BLOCK_ENTRY_DATA_CLEAN;
 }
 
 /**
@@ -281,7 +306,7 @@ static void block_cache_entry_decrypt(struct block_cache_entry* entry) {
     void* decrypt_data;
     size_t decrypt_size;
 
-    assert(entry->loaded);
+    assert(block_cache_entry_data_is_valid(entry));
     assert(entry->encrypted);
 
     decrypt_data = entry->data;
@@ -316,7 +341,7 @@ static void block_cache_entry_encrypt(struct block_cache_entry* entry) {
     struct mac mac;
     struct iv* iv = NULL; /* TODO: support external iv */
 
-    assert(entry->dirty);
+    assert(entry->state == BLOCK_ENTRY_DATA_DIRTY);
     assert(!entry->encrypted);
     assert(!block_cache_entry_has_refs(entry));
 
@@ -364,7 +389,7 @@ static void block_cache_entry_encrypt(struct block_cache_entry* entry) {
  * Does not wait for write to complete.
  */
 static void block_cache_entry_clean(struct block_cache_entry* entry) {
-    if (!entry->dirty) {
+    if (entry->state != BLOCK_ENTRY_DATA_DIRTY) {
         return;
     }
 
@@ -411,7 +436,7 @@ static void block_cache_entry_clean(struct block_cache_entry* entry) {
              */
             assert(!entry->dirty_tr->fs->initial_super_block_tr->failed);
             transaction_fail(entry->dirty_tr);
-            assert(!entry->dirty);
+            assert(entry->state == BLOCK_ENTRY_DATA_INVALID);
             return;
         }
     }
@@ -432,7 +457,7 @@ static void block_cache_entry_clean(struct block_cache_entry* entry) {
      * entry->dirty must stay set.
      */
     if (!tr->failed) {
-        entry->dirty = false;
+        entry->state = BLOCK_ENTRY_DATA_CLEAN;
     }
 }
 
@@ -449,7 +474,9 @@ static unsigned int block_cache_entry_score(struct block_cache_entry* entry,
     if (!entry->dev) {
         return UINT_MAX;
     }
-    return (entry->dirty ? (entry->dirty_tmp ? 1 : 2) : 4) * index;
+    return index * (entry->state == BLOCK_ENTRY_DATA_DIRTY
+                            ? (entry->dirty_tmp ? 1 : 2)
+                            : 4);
 }
 
 /**
@@ -459,10 +486,9 @@ static unsigned int block_cache_entry_score(struct block_cache_entry* entry,
 static void block_cache_entry_discard_dirty(struct block_cache_entry* entry) {
     assert(!entry->dirty_ref);
     assert(!list_in_list(&entry->io_op_node));
-    entry->loaded = false;
+    entry->state = BLOCK_ENTRY_DATA_INVALID;
     entry->dev = NULL;
     entry->block = DATA_BLOCK_INVALID;
-    entry->dirty = false;
     entry->dirty_tr = NULL;
     /* We have to unpin here because we're clearing the block number */
     entry->pinned = false;
@@ -534,9 +560,9 @@ static struct block_cache_entry* block_cache_lookup(struct fs* fs,
             if (entry->dev == dev && entry->block == block) {
                 if (print_cache_lookup) {
                     printf("%s: block %" PRIu64
-                           ", found cache entry %zd, loaded %d, dirty %d\n",
+                           ", found cache entry %zd, state %s\n",
                            __func__, block, entry - block_cache_entries,
-                           entry->loaded, entry->dirty);
+                           block_cache_entry_data_state_name(entry->state));
                 }
                 stats_timer_start(STATS_CACHE_LOOKUP_FOUND);
                 stats_timer_stop(STATS_CACHE_LOOKUP_FOUND);
@@ -599,14 +625,15 @@ static struct block_cache_entry* block_cache_lookup(struct fs* fs,
 
         if (print_cache_lookup) {
             printf("%s: block %" PRIu64
-                   ", use cache entry %zd, dirty %d, %u available, %u in_use\n",
-                   __func__, block, entry - block_cache_entries, entry->dirty,
-                   available, in_use);
+                   ", use cache entry %zd, state %s, %u available, %u in_use\n",
+                   __func__, block, entry - block_cache_entries,
+                   block_cache_entry_data_state_name(entry->state), available,
+                   in_use);
         }
 
         assert(!entry->dirty_ref);
 
-        if (entry->dirty) {
+        if (entry->state == BLOCK_ENTRY_DATA_DIRTY) {
             stats_timer_start(STATS_CACHE_LOOKUP_CLEAN);
             block_cache_entry_clean(entry);
             block_cache_complete_io(entry->dev);
@@ -635,7 +662,7 @@ static struct block_cache_entry* block_cache_lookup(struct fs* fs,
                 "Entry block %" PRIu64 " was reused during cleaning.\n",
                 __func__, entry->block);
     }
-    assert(!entry->dirty);
+    assert(entry->state != BLOCK_ENTRY_DATA_DIRTY);
     assert(!entry->dirty_mac);
     assert(!entry->dirty_tr);
 
@@ -644,7 +671,7 @@ static struct block_cache_entry* block_cache_lookup(struct fs* fs,
     assert(dev->block_size <= sizeof(entry->data));
     entry->block_size = dev->block_size;
     entry->key = fs->key;
-    entry->loaded = false;
+    entry->state = BLOCK_ENTRY_DATA_INVALID;
     entry->encrypted = false;
     entry->is_superblock = false;
 
@@ -667,7 +694,7 @@ done:
 static bool block_cache_load_entry(struct block_cache_entry* entry,
                                    const void* mac,
                                    size_t mac_size) {
-    if (!entry->loaded) {
+    if (!block_cache_entry_data_is_valid(entry)) {
         assert(!block_cache_entry_has_refs(entry));
         if (print_block_load) {
             printf("%s: request load block %" PRIu64 "\n", __func__,
@@ -676,7 +703,7 @@ static bool block_cache_load_entry(struct block_cache_entry* entry,
         block_cache_queue_read(entry);
         block_cache_complete_io(entry->dev);
     }
-    if (!entry->loaded) {
+    if (!block_cache_entry_data_is_valid(entry)) {
         printf("%s: failed to load block %" PRIu64 "\n", __func__,
                entry->block);
         return false;
@@ -743,9 +770,9 @@ static struct block_cache_entry* block_cache_get(struct fs* fs,
     assert(!entry->dirty_ref);
     obj_add_ref_allow_unreferenced_obj(&entry->obj, ref);
     if (print_block_ops) {
-        printf("%s: block %" PRIu64 ", cache entry %zd, loaded %d, dirty %d\n",
-               __func__, block, entry - block_cache_entries, entry->loaded,
-               entry->dirty);
+        printf("%s: block %" PRIu64 ", cache entry %zd, state %s\n", __func__,
+               block, entry - block_cache_entries,
+               block_cache_entry_data_state_name(entry->state));
     }
     return entry;
 }
@@ -844,7 +871,7 @@ void block_cache_init(void) {
         block_cache_entries[i].guard2 = BLOCK_CACHE_GUARD_2;
         block_cache_entries[i].dev = NULL;
         block_cache_entries[i].block = DATA_BLOCK_INVALID;
-        block_cache_entries[i].dirty = false;
+        block_cache_entries[i].state = BLOCK_ENTRY_DATA_INVALID;
         block_cache_entries[i].dirty_ref = false;
         block_cache_entries[i].dirty_mac = false;
         block_cache_entries[i].pinned = false;
@@ -890,7 +917,7 @@ void block_cache_clean_transaction(struct transaction* tr) {
             continue;
         }
 
-        assert(entry->dirty);
+        assert(entry->state == BLOCK_ENTRY_DATA_DIRTY);
 
         assert(!entry->dirty_ref);
 
@@ -925,7 +952,7 @@ void block_cache_clean_transaction(struct transaction* tr) {
              * If the write failed we may have reused this block cache entry for
              * a super block write and it therefore might not be clean.
              */
-            assert(!entry->dirty);
+            assert(entry->state != BLOCK_ENTRY_DATA_DIRTY);
             assert(!entry->dirty_tr);
         }
     }
@@ -973,7 +1000,7 @@ void block_cache_discard_transaction(struct transaction* tr, bool discard_all) {
             }
             assert(entry->dev == dev);
         }
-        assert(entry->dirty);
+        assert(entry->state == BLOCK_ENTRY_DATA_DIRTY);
 
         if (print_clean_transaction) {
 #if TLOG_LVL >= TLOG_LVL_DEBUG
@@ -1000,10 +1027,8 @@ void block_cache_discard_transaction(struct transaction* tr, bool discard_all) {
             assert(!block_cache_entry_has_refs(entry));
             assert(entry->dirty_tmp);
         }
-        entry->dirty = false;
         entry->dirty_tr = NULL;
-        entry->loaded = false;
-        assert(!entry->dirty);
+        entry->state = BLOCK_ENTRY_DATA_INVALID;
         assert(!entry->dirty_tr);
     }
 }
@@ -1129,17 +1154,23 @@ void* block_dirty(struct transaction* tr, const void* data, bool is_tmp) {
     assert(!entry->dirty_tr || entry->dirty_tr == tr);
     assert(!entry->dirty_ref);
 
-    if (!entry->loaded || entry->encrypted) {
+    if (entry->encrypted) {
         if (print_block_ops) {
             printf("%s: skip decrypt block %" PRIu64 "\n", __func__,
                    entry->block);
         }
-        entry->loaded = true;
         entry->encrypted = false;
+    } else if (entry->state != BLOCK_ENTRY_DATA_CLEAN) {
+        if (print_block_ops) {
+            printf("%s: Dirtying block %" PRIu64
+                   " that was not loaded. Previous state: %s\n",
+                   __func__, entry->block,
+                   block_cache_entry_data_state_name(entry->state));
+        }
     }
     assert(block_cache_entry_has_one_ref(entry));
     assert(!entry->encrypted);
-    entry->dirty = true;
+    entry->state = BLOCK_ENTRY_DATA_DIRTY;
     entry->dirty_ref = true;
     entry->dirty_tmp = is_tmp;
     entry->dirty_tr = tr;
@@ -1158,7 +1189,7 @@ bool block_is_clean(struct block_device* dev, data_block_t block) {
     struct block_cache_entry* entry;
 
     entry = block_cache_lookup(NULL, dev, block, false);
-    return !entry || !entry->dirty;
+    return !entry || entry->state != BLOCK_ENTRY_DATA_DIRTY;
 }
 
 /**
@@ -1168,7 +1199,7 @@ bool block_is_clean(struct block_device* dev, data_block_t block) {
 void block_discard_dirty(const void* data) {
     struct block_cache_entry* entry = data_to_block_cache_entry(data);
 
-    if (entry->dirty) {
+    if (entry->state == BLOCK_ENTRY_DATA_DIRTY) {
         assert(entry->dev);
         block_cache_entry_discard_dirty(entry);
     }
@@ -1189,7 +1220,7 @@ void block_discard_dirty_by_block(struct block_device* dev,
     }
     assert(!entry->dirty_ref);
     assert(!block_cache_entry_has_refs(entry));
-    if (!entry->dirty) {
+    if (entry->state != BLOCK_ENTRY_DATA_DIRTY) {
         return;
     }
     block_discard_dirty(entry->data);
@@ -1220,9 +1251,8 @@ static void block_put_dirty_etc(struct transaction* tr,
 
     if (tr) {
         assert(block_mac);
-        assert(entry->loaded);
         assert(!entry->encrypted);
-        assert(entry->dirty);
+        assert(entry->state == BLOCK_ENTRY_DATA_DIRTY);
         assert(entry->dirty_ref);
     } else {
         assert(!block_mac);
@@ -1231,7 +1261,7 @@ static void block_put_dirty_etc(struct transaction* tr,
     assert(entry->guard2 == BLOCK_CACHE_GUARD_2);
 
     entry->dirty_ref = false;
-    if (entry->dirty) {
+    if (entry->state == BLOCK_ENTRY_DATA_DIRTY) {
         entry->dirty_mac = true;
         ret = generate_iv(iv);
         assert(!ret);
@@ -1403,7 +1433,7 @@ void* block_get_cleared_super(struct transaction* tr,
      */
     assert(data_ro);
     struct block_cache_entry* entry = data_to_block_cache_entry(data_ro);
-    assert(!entry->dirty);
+    assert(entry->state != BLOCK_ENTRY_DATA_DIRTY);
     entry->pinned = pinned;
     entry->is_superblock = true;
 
@@ -1459,7 +1489,7 @@ void* block_move(struct transaction* tr,
     struct block_cache_entry* entry = data_to_block_cache_entry(data);
 
     assert(block_cache_entry_has_one_ref(entry));
-    assert(!entry->dirty);
+    assert(entry->state != BLOCK_ENTRY_DATA_DIRTY);
     assert(entry->dev == tr->fs->dev);
 
     if (print_block_move) {
@@ -1496,9 +1526,9 @@ void block_put(const void* data, struct obj_ref* ref) {
     struct block_cache_entry* entry = data_to_block_cache_entry(data);
 
     if (print_block_ops) {
-        printf("%s: block %" PRIu64 ", cache entry %zd, loaded %d, dirty %d\n",
-               __func__, entry->block, entry - block_cache_entries,
-               entry->loaded, entry->dirty);
+        printf("%s: block %" PRIu64 ", cache entry %zd, state %s\n", __func__,
+               entry->block, entry - block_cache_entries,
+               block_cache_entry_data_state_name(entry->state));
     }
 
     assert(!entry->dirty_ref);
