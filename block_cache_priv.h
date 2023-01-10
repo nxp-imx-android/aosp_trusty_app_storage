@@ -41,19 +41,31 @@
  *                                be updated when the load operation completes.
  * @BLOCK_ENTRY_DATA_LOAD_FAILED: Block data could not be loaded from the disk.
  *                                This may be caused by a transient I/O error.
- * @BLOCK_ENTRY_DATA_CLEAN:       Block entry contains valid data that is either
- *                                on disk or queued to be written to disk.
- * @BLOCK_ENTRY_DATA_DIRTY:       Block entry contains valid data that has not
- *                                yet been queued for write back to disk. Data
- *                                must be written back or discarded before the
- *                                cache entry can be reused.
+ * @BLOCK_ENTRY_DATA_CLEAN_DECRYPTED: Block entry contains valid plaintext data
+ *                                    that is either on disk or queued to be
+ *                                    written to disk
+ * @BLOCK_ENTRY_DATA_CLEAN_ENCRYPTED: Block entry contains valid ciphertext data
+ *                                    that is either on disk or queued to be
+ *                                    written to disk.
+ * @BLOCK_ENTRY_DATA_DIRTY_DECRYPTED: Block entry contains valid plaintext data
+ *                                    that has not yet been queued for write
+ *                                    back to disk. Data must be encrypted and
+ *                                    written back or discarded before the cache
+ *                                    entry can be reused.
+ * @BLOCK_ENTRY_DATA_DIRTY_ENCRYPTED: Block entry contains valid ciphertext data
+ *                                    that has not yet been queued for write
+ *                                    back to disk. Data must be written back or
+ *                                    discarded before the cache entry can be
+ *                                    reused.
  */
 enum block_cache_entry_data_state {
     BLOCK_ENTRY_DATA_INVALID = 0,
     BLOCK_ENTRY_DATA_LOADING,
     BLOCK_ENTRY_DATA_LOAD_FAILED,
-    BLOCK_ENTRY_DATA_CLEAN,
-    BLOCK_ENTRY_DATA_DIRTY,
+    BLOCK_ENTRY_DATA_CLEAN_DECRYPTED,
+    BLOCK_ENTRY_DATA_CLEAN_ENCRYPTED,
+    BLOCK_ENTRY_DATA_DIRTY_DECRYPTED,
+    BLOCK_ENTRY_DATA_DIRTY_ENCRYPTED,
 };
 
 /**
@@ -108,7 +120,6 @@ struct block_cache_entry {
     size_t block_size;
     struct mac mac;
     enum block_cache_entry_data_state state;
-    bool encrypted;
     bool dirty_ref;
     bool dirty_mac;
     bool dirty_tmp;

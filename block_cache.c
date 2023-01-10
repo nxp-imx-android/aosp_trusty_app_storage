@@ -54,8 +54,28 @@ static bool block_cache_init_called = false;
 
 static bool block_cache_entry_data_is_valid(
         const struct block_cache_entry* entry) {
-    return entry->state == BLOCK_ENTRY_DATA_CLEAN ||
-           entry->state == BLOCK_ENTRY_DATA_DIRTY;
+    return entry->state == BLOCK_ENTRY_DATA_CLEAN_DECRYPTED ||
+           entry->state == BLOCK_ENTRY_DATA_CLEAN_ENCRYPTED ||
+           entry->state == BLOCK_ENTRY_DATA_DIRTY_DECRYPTED ||
+           entry->state == BLOCK_ENTRY_DATA_DIRTY_ENCRYPTED;
+}
+
+static bool block_cache_entry_data_is_dirty(
+        const struct block_cache_entry* entry) {
+    return entry->state == BLOCK_ENTRY_DATA_DIRTY_DECRYPTED ||
+           entry->state == BLOCK_ENTRY_DATA_DIRTY_ENCRYPTED;
+}
+
+static bool block_cache_entry_data_is_encrypted(
+        const struct block_cache_entry* entry) {
+    return entry->state == BLOCK_ENTRY_DATA_CLEAN_ENCRYPTED ||
+           entry->state == BLOCK_ENTRY_DATA_DIRTY_ENCRYPTED;
+}
+
+static bool block_cache_entry_data_is_decrypted(
+        const struct block_cache_entry* entry) {
+    return entry->state == BLOCK_ENTRY_DATA_CLEAN_DECRYPTED ||
+           entry->state == BLOCK_ENTRY_DATA_DIRTY_DECRYPTED;
 }
 
 static const char* block_cache_entry_data_state_name(
@@ -67,10 +87,14 @@ static const char* block_cache_entry_data_state_name(
         return "BLOCK_ENTRY_DATA_LOADING";
     case BLOCK_ENTRY_DATA_LOAD_FAILED:
         return "BLOCK_ENTRY_DATA_LOAD_FAILED";
-    case BLOCK_ENTRY_DATA_CLEAN:
-        return "BLOCK_ENTRY_DATA_CLEAN";
-    case BLOCK_ENTRY_DATA_DIRTY:
-        return "BLOCK_ENTRY_DATA_DIRTY";
+    case BLOCK_ENTRY_DATA_CLEAN_DECRYPTED:
+        return "BLOCK_ENTRY_DATA_CLEAN_DECRYPTED";
+    case BLOCK_ENTRY_DATA_CLEAN_ENCRYPTED:
+        return "BLOCK_ENTRY_DATA_CLEAN_ENCRYPTED";
+    case BLOCK_ENTRY_DATA_DIRTY_DECRYPTED:
+        return "BLOCK_ENTRY_DATA_DIRTY_DECRYPTED";
+    case BLOCK_ENTRY_DATA_DIRTY_ENCRYPTED:
+        return "BLOCK_ENTRY_DATA_DIRTY_ENCRYPTED";
     }
 }
 
@@ -98,7 +122,7 @@ static void block_cache_queue_io_op(struct block_cache_entry* entry,
  * @entry:      Cache entry.
  */
 static void block_cache_queue_read(struct block_cache_entry* entry) {
-    assert(entry->state != BLOCK_ENTRY_DATA_DIRTY);
+    assert(!block_cache_entry_data_is_dirty(entry));
     entry->state = BLOCK_ENTRY_DATA_LOADING;
     block_cache_queue_io_op(entry, BLOCK_CACHE_IO_OP_READ);
     stats_timer_start(STATS_CACHE_START_READ);
@@ -203,7 +227,6 @@ void block_cache_complete_read(struct block_device* dev,
                         entry->block_size);
     stats_timer_stop(STATS_FS_READ_BLOCK_CALC_MAC);
     assert(!ret);
-    entry->encrypted = true;
 
     /* TODO: check mac here instead of when getting data from the cache? */
     if (print_block_load) {
@@ -211,7 +234,7 @@ void block_cache_complete_read(struct block_device* dev,
                entry->block);
     }
 
-    entry->state = BLOCK_ENTRY_DATA_CLEAN;
+    entry->state = BLOCK_ENTRY_DATA_CLEAN_ENCRYPTED;
 }
 
 /**
@@ -306,8 +329,7 @@ static void block_cache_entry_decrypt(struct block_cache_entry* entry) {
     void* decrypt_data;
     size_t decrypt_size;
 
-    assert(block_cache_entry_data_is_valid(entry));
-    assert(entry->encrypted);
+    assert(block_cache_entry_data_is_encrypted(entry));
 
     decrypt_data = entry->data;
     decrypt_size = entry->block_size;
@@ -327,7 +349,20 @@ static void block_cache_entry_decrypt(struct block_cache_entry* entry) {
                entry->block);
     }
 
-    entry->encrypted = false;
+    if (entry->state == BLOCK_ENTRY_DATA_CLEAN_ENCRYPTED) {
+        entry->state = BLOCK_ENTRY_DATA_CLEAN_DECRYPTED;
+    } else if (entry->state == BLOCK_ENTRY_DATA_DIRTY_ENCRYPTED) {
+        /*
+         * We leave blocks in DIRTY_ENCRYPTED state after computing a MAC but
+         * before flushing the block from the cache. We may decrypt a block
+         * again to read it before write back, which is fine as it will be
+         * re-encrypted (with the same IV) when flushed for write back.
+         */
+        entry->state = BLOCK_ENTRY_DATA_DIRTY_DECRYPTED;
+    } else {
+        /* Covered by assert that the entry was encrypted above. */
+        assert(false);
+    }
 }
 
 /**
@@ -341,8 +376,7 @@ static void block_cache_entry_encrypt(struct block_cache_entry* entry) {
     struct mac mac;
     struct iv* iv = NULL; /* TODO: support external iv */
 
-    assert(entry->state == BLOCK_ENTRY_DATA_DIRTY);
-    assert(!entry->encrypted);
+    assert(entry->state == BLOCK_ENTRY_DATA_DIRTY_DECRYPTED);
     assert(!block_cache_entry_has_refs(entry));
 
     encrypt_data = entry->data;
@@ -358,7 +392,7 @@ static void block_cache_entry_encrypt(struct block_cache_entry* entry) {
     ret = encrypt(entry->key, encrypt_data, encrypt_size, iv);
     stats_timer_stop(STATS_FS_WRITE_BLOCK_ENCRYPT);
     assert(!ret);
-    entry->encrypted = true;
+    entry->state = BLOCK_ENTRY_DATA_DIRTY_ENCRYPTED;
     if (print_block_decrypt_encrypt) {
         printf("%s: encrypt block %" PRIu64 " complete\n", __func__,
                entry->block);
@@ -389,7 +423,7 @@ static void block_cache_entry_encrypt(struct block_cache_entry* entry) {
  * Does not wait for write to complete.
  */
 static void block_cache_entry_clean(struct block_cache_entry* entry) {
-    if (entry->state != BLOCK_ENTRY_DATA_DIRTY) {
+    if (!block_cache_entry_data_is_dirty(entry)) {
         return;
     }
 
@@ -398,10 +432,10 @@ static void block_cache_entry_clean(struct block_cache_entry* entry) {
     }
 
     assert(entry->block_size <= sizeof(entry->data));
-    if (!entry->encrypted) {
+    if (entry->state == BLOCK_ENTRY_DATA_DIRTY_DECRYPTED) {
         block_cache_entry_encrypt(entry);
     }
-    assert(entry->encrypted);
+    assert(entry->state == BLOCK_ENTRY_DATA_DIRTY_ENCRYPTED);
     /* TODO: release ref to parent */
 
     assert(entry->dirty_tr);
@@ -457,7 +491,8 @@ static void block_cache_entry_clean(struct block_cache_entry* entry) {
      * entry->dirty must stay set.
      */
     if (!tr->failed) {
-        entry->state = BLOCK_ENTRY_DATA_CLEAN;
+        assert(entry->state == BLOCK_ENTRY_DATA_DIRTY_ENCRYPTED);
+        entry->state = BLOCK_ENTRY_DATA_CLEAN_ENCRYPTED;
     }
 }
 
@@ -474,7 +509,7 @@ static unsigned int block_cache_entry_score(struct block_cache_entry* entry,
     if (!entry->dev) {
         return UINT_MAX;
     }
-    return index * (entry->state == BLOCK_ENTRY_DATA_DIRTY
+    return index * (block_cache_entry_data_is_dirty(entry)
                             ? (entry->dirty_tmp ? 1 : 2)
                             : 4);
 }
@@ -633,7 +668,7 @@ static struct block_cache_entry* block_cache_lookup(struct fs* fs,
 
         assert(!entry->dirty_ref);
 
-        if (entry->state == BLOCK_ENTRY_DATA_DIRTY) {
+        if (block_cache_entry_data_is_dirty(entry)) {
             stats_timer_start(STATS_CACHE_LOOKUP_CLEAN);
             block_cache_entry_clean(entry);
             block_cache_complete_io(entry->dev);
@@ -662,7 +697,7 @@ static struct block_cache_entry* block_cache_lookup(struct fs* fs,
                 "Entry block %" PRIu64 " was reused during cleaning.\n",
                 __func__, entry->block);
     }
-    assert(entry->state != BLOCK_ENTRY_DATA_DIRTY);
+    assert(!block_cache_entry_data_is_dirty(entry));
     assert(!entry->dirty_mac);
     assert(!entry->dirty_tr);
 
@@ -672,7 +707,6 @@ static struct block_cache_entry* block_cache_lookup(struct fs* fs,
     entry->block_size = dev->block_size;
     entry->key = fs->key;
     entry->state = BLOCK_ENTRY_DATA_INVALID;
-    entry->encrypted = false;
     entry->is_superblock = false;
 
 done:
@@ -715,10 +749,16 @@ static bool block_cache_load_entry(struct block_cache_entry* entry,
             return false;
         }
     }
-    if (entry->encrypted) {
+    /*
+     * We eagerly encrypt a block when releasing it so that we can compute the
+     * block's mac. If we re-load the same block before flushing it from the
+     * cache, we may end up decrypting a dirty block here, so we want to allow
+     * decryption of both clean and dirty blocks.
+     */
+    if (block_cache_entry_data_is_encrypted(entry)) {
         block_cache_entry_decrypt(entry);
     }
-    assert(!entry->encrypted);
+    assert(block_cache_entry_data_is_decrypted(entry));
 
     return true;
 }
@@ -917,7 +957,7 @@ void block_cache_clean_transaction(struct transaction* tr) {
             continue;
         }
 
-        assert(entry->state == BLOCK_ENTRY_DATA_DIRTY);
+        assert(block_cache_entry_data_is_dirty(entry));
 
         assert(!entry->dirty_ref);
 
@@ -952,7 +992,7 @@ void block_cache_clean_transaction(struct transaction* tr) {
              * If the write failed we may have reused this block cache entry for
              * a super block write and it therefore might not be clean.
              */
-            assert(entry->state != BLOCK_ENTRY_DATA_DIRTY);
+            assert(!block_cache_entry_data_is_dirty(entry));
             assert(!entry->dirty_tr);
         }
     }
@@ -1000,7 +1040,7 @@ void block_cache_discard_transaction(struct transaction* tr, bool discard_all) {
             }
             assert(entry->dev == dev);
         }
-        assert(entry->state == BLOCK_ENTRY_DATA_DIRTY);
+        assert(block_cache_entry_data_is_dirty(entry));
 
         if (print_clean_transaction) {
 #if TLOG_LVL >= TLOG_LVL_DEBUG
@@ -1154,13 +1194,12 @@ void* block_dirty(struct transaction* tr, const void* data, bool is_tmp) {
     assert(!entry->dirty_tr || entry->dirty_tr == tr);
     assert(!entry->dirty_ref);
 
-    if (entry->encrypted) {
+    if (block_cache_entry_data_is_encrypted(entry)) {
         if (print_block_ops) {
             printf("%s: skip decrypt block %" PRIu64 "\n", __func__,
                    entry->block);
         }
-        entry->encrypted = false;
-    } else if (entry->state != BLOCK_ENTRY_DATA_CLEAN) {
+    } else if (entry->state != BLOCK_ENTRY_DATA_CLEAN_DECRYPTED) {
         if (print_block_ops) {
             printf("%s: Dirtying block %" PRIu64
                    " that was not loaded. Previous state: %s\n",
@@ -1169,8 +1208,7 @@ void* block_dirty(struct transaction* tr, const void* data, bool is_tmp) {
         }
     }
     assert(block_cache_entry_has_one_ref(entry));
-    assert(!entry->encrypted);
-    entry->state = BLOCK_ENTRY_DATA_DIRTY;
+    entry->state = BLOCK_ENTRY_DATA_DIRTY_DECRYPTED;
     entry->dirty_ref = true;
     entry->dirty_tmp = is_tmp;
     entry->dirty_tr = tr;
@@ -1189,7 +1227,7 @@ bool block_is_clean(struct block_device* dev, data_block_t block) {
     struct block_cache_entry* entry;
 
     entry = block_cache_lookup(NULL, dev, block, false);
-    return !entry || entry->state != BLOCK_ENTRY_DATA_DIRTY;
+    return !entry || !block_cache_entry_data_is_dirty(entry);
 }
 
 /**
@@ -1199,7 +1237,7 @@ bool block_is_clean(struct block_device* dev, data_block_t block) {
 void block_discard_dirty(const void* data) {
     struct block_cache_entry* entry = data_to_block_cache_entry(data);
 
-    if (entry->state == BLOCK_ENTRY_DATA_DIRTY) {
+    if (block_cache_entry_data_is_dirty(entry)) {
         assert(entry->dev);
         block_cache_entry_discard_dirty(entry);
     }
@@ -1220,7 +1258,7 @@ void block_discard_dirty_by_block(struct block_device* dev,
     }
     assert(!entry->dirty_ref);
     assert(!block_cache_entry_has_refs(entry));
-    if (entry->state != BLOCK_ENTRY_DATA_DIRTY) {
+    if (!block_cache_entry_data_is_dirty(entry)) {
         return;
     }
     block_discard_dirty(entry->data);
@@ -1251,8 +1289,7 @@ static void block_put_dirty_etc(struct transaction* tr,
 
     if (tr) {
         assert(block_mac);
-        assert(!entry->encrypted);
-        assert(entry->state == BLOCK_ENTRY_DATA_DIRTY);
+        assert(entry->state == BLOCK_ENTRY_DATA_DIRTY_DECRYPTED);
         assert(entry->dirty_ref);
     } else {
         assert(!block_mac);
@@ -1261,7 +1298,7 @@ static void block_put_dirty_etc(struct transaction* tr,
     assert(entry->guard2 == BLOCK_CACHE_GUARD_2);
 
     entry->dirty_ref = false;
-    if (entry->state == BLOCK_ENTRY_DATA_DIRTY) {
+    if (block_cache_entry_data_is_dirty(entry)) {
         entry->dirty_mac = true;
         ret = generate_iv(iv);
         assert(!ret);
@@ -1273,7 +1310,7 @@ static void block_put_dirty_etc(struct transaction* tr,
 
     block_put(data, data_ref);
     /* TODO: fix clients to support lazy write */
-    assert(entry->encrypted || !tr);
+    assert(block_cache_entry_data_is_encrypted(entry) || !tr);
     assert(!entry->dirty_mac);
     if (block_mac) {
         assert(block_mac_to_block(tr, block_mac) == entry->block);
@@ -1433,7 +1470,7 @@ void* block_get_cleared_super(struct transaction* tr,
      */
     assert(data_ro);
     struct block_cache_entry* entry = data_to_block_cache_entry(data_ro);
-    assert(entry->state != BLOCK_ENTRY_DATA_DIRTY);
+    assert(!block_cache_entry_data_is_dirty(entry));
     entry->pinned = pinned;
     entry->is_superblock = true;
 
@@ -1489,7 +1526,7 @@ void* block_move(struct transaction* tr,
     struct block_cache_entry* entry = data_to_block_cache_entry(data);
 
     assert(block_cache_entry_has_one_ref(entry));
-    assert(entry->state != BLOCK_ENTRY_DATA_DIRTY);
+    assert(!block_cache_entry_data_is_dirty(entry));
     assert(entry->dev == tr->fs->dev);
 
     if (print_block_move) {
