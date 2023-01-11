@@ -53,10 +53,11 @@ HOST_INCLUDE_DIRS += \
 	trusty/user/base/lib/hwkey/include \
 	trusty/user/base/lib/system_state/include \
 
-HOST_FLAGS := -DBUILD_STORAGE_TEST=1 -g -O0
+# Turn on FULL_ASSERTs
+HOST_FLAGS := -DBUILD_STORAGE_TEST=1
 
 STORAGE_RPMB_PROTOCOL ?= MMC
-HOST_FLAGS := \
+HOST_FLAGS += \
 	-DRPMB_PROTOCOL=RPMB_PROTOCOL_$(STORAGE_RPMB_PROTOCOL) \
 
 HOST_LIBS := \
