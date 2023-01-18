@@ -47,6 +47,7 @@ struct rpmb_state {
     void* mmc_handle;
     uint32_t write_counter;
     bool first_write_complete;
+    bool verify_failed;
 };
 
 #if RPMB_DEBUG
@@ -307,6 +308,8 @@ static int rpmb_read_data(struct rpmb_state* state,
 
     if (!state)
         return -EINVAL;
+    if (state->verify_failed)
+        return -EIO;
 
     ret = rpmb_send(state->mmc_handle, NULL, 0, &cmd, sizeof(cmd), res,
                     sizeof(res[0]) * count, false, false);
@@ -563,8 +566,9 @@ err_sent:
      * 2.1. The same block number and counter value has already been sent.
      * This success status cannot be trusted. We read back the data to verify.
      * 2.1.1. Verify failed.
-     * This has the same effect as 1.1. We currently abort here because it is
-     * not safe to recover from this state in a TP filesystem.
+     * This has the same effect as 1.1. We currently block all further
+     * read/write operations after this point (until reboot or FS re-mount)
+     * because it is not safe to recover from this state in a TP filesystem.
      *
      * 2.1.2. Verify passed.
      * We are back to a normal state.
@@ -588,6 +592,8 @@ int rpmb_write(struct rpmb_state* state,
 
     if (!state)
         return -EINVAL;
+    if (state->verify_failed)
+        return -EIO;
 
     ret = rpmb_write_data(state, buf, addr, count, sync, sync_checkpoint);
     if (ret < 0)
@@ -617,7 +623,8 @@ int rpmb_write(struct rpmb_state* state,
             fprintf(stderr,
                     "rpmb write verify failure: %d, addr: %hu, count: %hu\n",
                     ret, addr, count);
-            abort(); /* see comment in rpmb_write_data:err_sent */
+            state->verify_failed = true;
+            return ret;
         }
         state->first_write_complete = true;
     }
@@ -662,6 +669,7 @@ int rpmb_init(struct rpmb_state** statep, void* mmc_handle) {
      * this point, so we need to validate our next write.
      */
     state->first_write_complete = false;
+    state->verify_failed = false;
 
     *statep = state;
 

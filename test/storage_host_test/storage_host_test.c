@@ -415,6 +415,78 @@ TEST_P(StorageTest, FailDataWriteFullCacheWithIncrement) {
 test_abort:;
 }
 
+/*
+ * Test that we don't crash the storage process if we fail to verify an RPMB
+ * write. This verify failure can occur if the storageproxy has shut down
+ * because a reboot is in progress, so we don't want to take down the entire
+ * device just because this happens.
+ */
+TEST_P(StorageTest, FailRpmbVerify) {
+    handle_t null_handle = 0;
+    int rc;
+
+    file_test(&_state->tr, "FailRpmbVerifyValidFile",
+              FILE_OPEN_CREATE_EXCLUSIVE, 1, 0, 0, false, 0);
+    transaction_complete(&_state->tr);
+    ASSERT_EQ(false, _state->tr.failed);
+    transaction_activate(&_state->tr);
+
+    fail_next_rpmb_writes(1, true);
+    file_test(&_state->tr, __func__, FILE_OPEN_CREATE_EXCLUSIVE, 1, 0, 0, false,
+              0);
+
+    /* force data block to be written */
+    block_cache_clean_transaction(&_state->tr);
+    if (!IS_TP()) {
+        /* only superblock write should fail for TD */
+        transaction_complete(&_state->tr);
+    }
+    ASSERT_EQ(true, _state->tr.failed);
+    ASSERT_NE(NULL, _state->tr.fs->initial_super_block_tr);
+    ASSERT_NE(_state->tr.fs->super_block_version,
+              _state->tr.fs->written_super_block_version);
+    transaction_activate(&_state->tr);
+
+    /* Fail the verification that we actually performed the RPMB write */
+    fail_next_rpmb_reads(1);
+    file_test(&_state->tr, __func__, FILE_OPEN_CREATE_EXCLUSIVE, 1, 0, 0, false,
+              0);
+
+    /* Write will fail; first_write_complete is false and verification fails */
+    block_cache_clean_transaction(&_state->tr);
+    if (!IS_TP()) {
+        /* only superblock write should fail for TD */
+        transaction_complete(&_state->tr);
+    }
+    ASSERT_EQ(true, _state->tr.failed);
+    transaction_activate(&_state->tr);
+
+    /* All RPMB access should now fail */
+    file_test(&_state->tr, __func__, FILE_OPEN_CREATE_EXCLUSIVE, 1, 0, 0, false,
+              0);
+    transaction_complete(&_state->tr);
+    ASSERT_EQ(true, _state->tr.failed);
+
+    /*
+     * de-initialize and re-initialize the block device to clear the
+     * verify_failed flag from the rpmb state.
+     */
+    transaction_free(&_state->tr);
+    block_device_tipc_uninit(&test_block_device);
+    rc = block_device_tipc_init(&test_block_device, null_handle,
+                                &storage_test_key, NULL, null_handle);
+    ASSERT_EQ(rc, 0);
+    transaction_init(&_state->tr, *((struct fs**)GetParam()), true);
+
+    /* Everything should work now */
+    file_test(&_state->tr, "FailRpmbVerifyValidFile", FILE_OPEN_NO_CREATE, 1, 0,
+              0, true, 0);
+    transaction_complete(&_state->tr);
+    ASSERT_EQ(false, _state->tr.failed);
+
+test_abort:;
+}
+
 TEST(StorageTest, FlushFailingSpecialTransaction) {
     struct transaction td_tr;
     struct transaction tp_tr;
