@@ -2245,6 +2245,12 @@ static void create_and_delete(struct transaction* tr, const char* filename) {
 }
 
 static void fs_recovery_roots_test(struct transaction* tr) {
+    /*
+     * Create and delete a file to ensure that we have a root files block and
+     * not just an empty super block.
+     */
+    create_and_delete(tr, "ensure_roots");
+
     /* Corrupt the root files block */
     assert(select_files_block(tr, 0) ==
            block_mac_to_block(tr, &tr->fs->files.root));
