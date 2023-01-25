@@ -56,10 +56,14 @@
  *   flags3 should be set to the same value as flags
  * %SUPER_BLOCK_OPT_FLAGS_HAS_CHECKPOINT
  *   Indicates that the superblock contains the @checkpoint field
+ * %SUPER_BLOCK_OPT_FLAGS_NEEDS_FULL_SCAN
+ *   An error was detected in this file system, a full scan and possibly repair
+ *   should be initiated on the next mount. Reset after scanning.
  */
 typedef uint8_t super_block_opt_flags8_t;
 #define SUPER_BLOCK_OPT_FLAGS_HAS_FLAGS3 (0x1U)
 #define SUPER_BLOCK_OPT_FLAGS_HAS_CHECKPOINT (0x2U)
+#define SUPER_BLOCK_OPT_FLAGS_NEEDS_FULL_SCAN (0x4U)
 
 /**
  * typedef super_block_required_flags16_t - Required FS flags, can be ORed
@@ -247,6 +251,9 @@ static bool update_super_block_internal(struct transaction* tr,
          * when we add an API that consumes them.
          */
     }
+    if (tr->fs->needs_full_scan) {
+        opt_flags |= SUPER_BLOCK_OPT_FLAGS_NEEDS_FULL_SCAN;
+    }
 
     pr_write("write super block %" PRIu64 ", ver %d\n",
              tr->fs->super_block[index], ver);
@@ -420,6 +427,27 @@ void write_current_super_block(struct fs* fs, bool reinitialize) {
                 "Not safe to proceed.\n");
         abort();
     }
+}
+
+/**
+ * fs_mark_scan_required - Require a full scan for invalid blocks the next time
+ *                         this FS is mounted
+ * @fs:             File system object
+ *
+ * Marks the file system to require a full scan (and possibly repair) on the
+ * next mount. If @fs is writable, this function immediately writes a new copy
+ * of the current super block, so the flag will persist even with no further
+ * writes to the file system.
+ */
+void fs_mark_scan_required(struct fs* fs) {
+    fs->needs_full_scan = true;
+    if (!fs->writable) {
+        /* We can't write back the superblock until this FS is writable. */
+        return;
+    }
+    write_current_super_block(fs, false);
+    assert(fs->initial_super_block_tr);
+    transaction_initial_super_block_complete(fs->initial_super_block_tr);
 }
 
 /**
@@ -713,6 +741,8 @@ static int fs_init_from_super(struct fs* fs,
 
     if (super) {
         fs->super_block_version = super->flags & SUPER_BLOCK_FLAGS_VERSION_MASK;
+        fs->needs_full_scan =
+                super->opt_flags & SUPER_BLOCK_OPT_FLAGS_NEEDS_FULL_SCAN;
         fs->main_repaired = super->required_flags &
                             SUPER_BLOCK_REQUIRED_FLAGS_MAIN_REPAIRED;
 
@@ -803,6 +833,10 @@ static int fs_init_from_super(struct fs* fs,
         }
     }
 
+    if (!fs->alternate_data && (flags & FS_INIT_FLAGS_RESTORE_CHECKPOINT)) {
+        fs->needs_full_scan = false;
+    }
+
     /*
      * If any of the following are true:
      * - we are initializing a new fs
@@ -843,6 +877,7 @@ static int fs_init_from_super(struct fs* fs,
                     fs->super_block_version);
             if (!fs->alternate_data) {
                 fs->main_repaired = false;
+                fs->needs_full_scan = false;
             }
         } else {
             pr_init("no valid super-block found, create empty\n");
@@ -991,7 +1026,7 @@ err_file_info:
     return false;
 }
 
-enum fs_check_result fs_check(struct fs* fs) {
+enum fs_check_result fs_check_full(struct fs* fs) {
     bool free_set_valid, file_tree_valid;
     enum fs_check_result res = FS_CHECK_NO_ERROR;
     struct transaction iterate_tr;
@@ -1060,6 +1095,15 @@ enum fs_check_result fs_check_quick(struct fs* fs) {
         return FS_CHECK_NO_ERROR;
     } else {
         return FS_CHECK_INVALID_BLOCK;
+    }
+}
+
+enum fs_check_result fs_check(struct fs* fs) {
+    if (fs->needs_full_scan) {
+        pr_warn("%s filesystem requires full scan on mount\n", fs->name);
+        return fs_check_full(fs);
+    } else {
+        return fs_check_quick(fs);
     }
 }
 

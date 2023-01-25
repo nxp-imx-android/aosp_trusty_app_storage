@@ -104,6 +104,11 @@ STATIC_ASSERT(sizeof(struct super_block_backup) == 76);
  *                                  false, @backup may contain a backup of the
  *                                  superblock for an alternate filesystem, but
  *                                  it may be outdated.
+ * @needs_full_scan:                %true if an error was detected in this file
+ *                                  system data and the file system should be
+ *                                  scanned on the next mount. Persisted to the
+ *                                  super block so that we can initiate a scan
+ *                                  the next time we mount the file system.
  * @backup:                         Backup superblock of other filesystem state
  *                                  (alternate if @alternate_data is false, main
  *                                  otherwise) Should be preserved across all
@@ -143,6 +148,7 @@ struct fs {
     unsigned int written_super_block_version;
     bool main_repaired;
     bool alternate_data;
+    bool needs_full_scan;
     struct super_block_backup backup;
     data_block_t min_block_num;
     size_t block_num_size;
@@ -156,6 +162,8 @@ bool update_super_block(struct transaction* tr,
                         const struct block_mac* free,
                         const struct block_mac* files,
                         const struct block_mac* checkpoint);
+
+void fs_mark_scan_required(struct fs* fs);
 
 /**
  * typedef fs_init_flags32_t - Flags that control filesystem clearing and
@@ -242,7 +250,7 @@ enum fs_check_result {
 };
 
 /**
- * fs_check - Check (and optionally repair) the file system tree
+ * fs_check_full - Check the file system tree
  * @fs:                    File system state object.
  *
  * Walk the filesystem tree and visit each file, checking the file tree and each
@@ -258,7 +266,7 @@ enum fs_check_result {
  * differentiate between invalid blocks that indicate corruption and possibly
  * transient communication errors with the storage proxy.
  */
-enum fs_check_result fs_check(struct fs* fs);
+enum fs_check_result fs_check_full(struct fs* fs);
 
 /**
  * fs_check_quick - Quickly check the file-system tree
@@ -272,6 +280,20 @@ enum fs_check_result fs_check(struct fs* fs);
  * or another @fs_check_result variant describing the error.
  */
 enum fs_check_result fs_check_quick(struct fs* fs);
+
+/**
+ * fs_check - Check the file system tree
+ * @fs:                    File system state object.
+ *
+ * If the filesystem was not previously marked as requiring a full scan, perform
+ * a quick check (i.e. behave the same as fs_check_quick()). If the file system
+ * has been marked as potentially having an error, do a full scan using
+ * fs_check_full().
+ *
+ * Returns an @fs_check_result variant, see fs_check_quick() and fs_check_full()
+ * for details.
+ */
+enum fs_check_result fs_check(struct fs* fs);
 
 void fs_file_tree_init(const struct fs* fs, struct block_tree* tree);
 

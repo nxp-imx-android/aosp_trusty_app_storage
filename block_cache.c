@@ -1233,6 +1233,9 @@ const void* block_get(struct transaction* tr,
     if (!data && !tr->failed) {
         pr_warn("transaction failed\n");
         transaction_fail(tr);
+        if (tr->invalid_block_found) {
+            fs_mark_scan_required(tr->fs);
+        }
     }
     return data;
 }

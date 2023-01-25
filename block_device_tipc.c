@@ -611,7 +611,7 @@ int block_device_tipc_init(struct block_device_tipc* state,
     }
 
 #if STORAGE_TDP_RECOVERY_CHECKPOINT_RESTORE_ALLOWED
-    if (fs_check_quick(&state->tr_state_ns_tdp) == FS_CHECK_INVALID_BLOCK) {
+    if (fs_check(&state->tr_state_ns_tdp) == FS_CHECK_INVALID_BLOCK) {
         SS_ERR("%s: TDP filesystem check failed with invalid block, "
                "attempting to restore checkpoint\n",
                __func__);

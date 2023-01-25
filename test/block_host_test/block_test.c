@@ -2540,6 +2540,7 @@ static void fs_recovery_clear_roots_test(struct transaction* tr) {
      * not just an empty super block.
      */
     create_and_delete(tr, "ensure_roots");
+    assert(!tr->fs->needs_full_scan);
 
     /* Corrupt the root files block */
     assert(select_files_block(tr, 0) ==
@@ -2552,7 +2553,8 @@ static void fs_recovery_clear_roots_test(struct transaction* tr) {
      */
     expect_errors(TRUSTY_STORAGE_ERROR_BLOCK_MAC_MISMATCH, 3);
 
-    assert(fs_check(tr->fs) == FS_CHECK_INVALID_BLOCK);
+    assert(fs_check_full(tr->fs) == FS_CHECK_INVALID_BLOCK);
+    assert(tr->fs->needs_full_scan);
     expect_errors(TRUSTY_STORAGE_ERROR_BLOCK_MAC_MISMATCH, 2);
 
     /* re-initialize the filesystem with recovery enabled */
@@ -2561,6 +2563,7 @@ static void fs_recovery_clear_roots_test(struct transaction* tr) {
 
     /* Did we recover correctly? */
     create_and_delete(tr, "recovery");
+    assert(!tr->fs->needs_full_scan);
 
     /* Corrupt the root of the free list */
     assert(select_free_block(tr, 0) ==
@@ -2570,7 +2573,7 @@ static void fs_recovery_clear_roots_test(struct transaction* tr) {
     assert(tr->invalid_block_found);
     expect_errors(TRUSTY_STORAGE_ERROR_BLOCK_MAC_MISMATCH, 3);
 
-    assert(fs_check(tr->fs) == FS_CHECK_INVALID_FREE_SET);
+    assert(fs_check_full(tr->fs) == FS_CHECK_INVALID_FREE_SET);
     expect_errors(TRUSTY_STORAGE_ERROR_BLOCK_MAC_MISMATCH, 1);
 
     /* re-initialize the filesystem with recovery enabled */
@@ -2580,6 +2583,7 @@ static void fs_recovery_clear_roots_test(struct transaction* tr) {
     /* Did we recover correctly? */
     create_and_delete(tr, "recovery");
     assert(!tr->invalid_block_found);
+    assert(!tr->fs->needs_full_scan);
 }
 
 static void fs_check_file_child_test(struct transaction* tr) {
@@ -2588,26 +2592,30 @@ static void fs_check_file_child_test(struct transaction* tr) {
     transaction_complete(tr);
     assert(!tr->failed);
     transaction_activate(tr);
+    assert(!tr->fs->needs_full_scan);
 
     /* Corrupt a child in the files list */
     fs_corruption_helper(tr, select_files_block, 1, false);
     assert(tr->failed);
 
     /* Ensure that we detect this corruption */
-    assert(fs_check(tr->fs) == FS_CHECK_INVALID_BLOCK);
+    assert(fs_check_full(tr->fs) == FS_CHECK_INVALID_BLOCK);
+    assert(tr->fs->needs_full_scan);
     expect_errors(TRUSTY_STORAGE_ERROR_BLOCK_MAC_MISMATCH, 2);
 
     /* re-initialize the filesystem with recovery enabled */
     block_test_reinit(tr, FS_INIT_FLAGS_RECOVERY_CLEAR_ALLOWED);
 
     /* recovery doesn't fix this error */
-    assert(fs_check(tr->fs) == FS_CHECK_INVALID_BLOCK);
+    assert(fs_check_full(tr->fs) == FS_CHECK_INVALID_BLOCK);
+    assert(tr->fs->needs_full_scan);
     expect_errors(TRUSTY_STORAGE_ERROR_BLOCK_MAC_MISMATCH, 2);
 
     transaction_fail(tr);
     block_test_reinit(tr, FS_INIT_FLAGS_DO_CLEAR);
 
-    assert(fs_check(tr->fs) == FS_CHECK_NO_ERROR);
+    assert(fs_check_full(tr->fs) == FS_CHECK_NO_ERROR);
+    assert(!tr->fs->needs_full_scan);
 }
 
 static void fs_check_free_child_test(struct transaction* tr) {
@@ -2616,6 +2624,7 @@ static void fs_check_free_child_test(struct transaction* tr) {
     transaction_complete(tr);
     assert(!tr->failed);
     transaction_activate(tr);
+    assert(!tr->fs->needs_full_scan);
 
     /* Corrupt a child in the free list */
     fs_corruption_helper(tr, select_free_block, 1, false);
@@ -2624,20 +2633,23 @@ static void fs_check_free_child_test(struct transaction* tr) {
     expect_errors(TRUSTY_STORAGE_ERROR_BLOCK_MAC_MISMATCH, 4);
 
     /* Ensure that we detect this corruption */
-    assert(fs_check(tr->fs) == FS_CHECK_INVALID_FREE_SET);
+    assert(fs_check_full(tr->fs) == FS_CHECK_INVALID_FREE_SET);
+    assert(tr->fs->needs_full_scan);
     expect_errors(TRUSTY_STORAGE_ERROR_BLOCK_MAC_MISMATCH, 2);
 
     /* re-initialize the filesystem with recovery enabled */
     block_test_reinit(tr, FS_INIT_FLAGS_RECOVERY_CLEAR_ALLOWED);
 
     /* recovery clear doesn't fix this error */
-    assert(fs_check(tr->fs) == FS_CHECK_INVALID_FREE_SET);
+    assert(fs_check_full(tr->fs) == FS_CHECK_INVALID_FREE_SET);
+    assert(tr->fs->needs_full_scan);
     expect_errors(TRUSTY_STORAGE_ERROR_BLOCK_MAC_MISMATCH, 2);
 
     transaction_fail(tr);
     block_test_reinit(tr, FS_INIT_FLAGS_DO_CLEAR);
 
-    assert(fs_check(tr->fs) == FS_CHECK_NO_ERROR);
+    assert(fs_check_full(tr->fs) == FS_CHECK_NO_ERROR);
+    assert(!tr->fs->needs_full_scan);
 }
 
 static void fs_check_sparse_file_test(struct transaction* tr) {
@@ -2662,7 +2674,8 @@ static void fs_check_sparse_file_test(struct transaction* tr) {
     assert(!tr->failed);
     transaction_activate(tr);
 
-    assert(fs_check(tr->fs) == FS_CHECK_NO_ERROR);
+    assert(fs_check_full(tr->fs) == FS_CHECK_NO_ERROR);
+    assert(!tr->fs->needs_full_scan);
 
     file_close(&file);
     file_delete(tr, "sparse_file", false);
@@ -2673,7 +2686,8 @@ static void fs_corrupt_data_blocks_test(struct transaction* tr) {
     assert(!tr->failed);
     transaction_activate(tr);
 
-    assert(fs_check(tr->fs) == FS_CHECK_NO_ERROR);
+    assert(fs_check_full(tr->fs) == FS_CHECK_NO_ERROR);
+    assert(!tr->fs->needs_full_scan);
 
     /* file should still exist because we don't scan data blocks */
     file_test(tr, "recovery", FILE_OPEN_NO_CREATE, 0, 0, 0, true, 1);
@@ -2690,6 +2704,50 @@ static void fs_corrupt_data_blocks_test(struct transaction* tr) {
 
     create_and_delete(tr, "recovery");
     assert(!tr->invalid_block_found);
+    assert(!tr->fs->needs_full_scan);
+}
+
+static void fs_persist_needs_full_scan_test(struct transaction* tr) {
+    const int* block_data_ro;
+    struct file_handle file;
+    struct obj_ref ref = OBJ_REF_INITIAL_VALUE(ref);
+
+    assert(!tr->fs->needs_full_scan);
+    transaction_complete(tr);
+
+    /* clear the FS to get a known empty starting point */
+    block_test_reinit(tr, FS_INIT_FLAGS_DO_CLEAR);
+
+    /* Corrupt a data block */
+    fs_corruption_helper(tr, select_data_block, 0, false);
+    assert(!tr->failed);
+    assert(!tr->fs->needs_full_scan);
+
+    /* Try to read back the corrupted block */
+    open_test_file(tr, &file, "recovery", FILE_OPEN_NO_CREATE);
+    block_data_ro = file_get_block(tr, &file, 0, &ref);
+    assert(!block_data_ro);
+    assert(tr->failed);
+    assert(tr->fs->needs_full_scan);
+    file_close(&file);
+
+    /* Does the flag survive remount? */
+    block_test_reinit(tr, FS_INIT_FLAGS_NONE);
+    assert(tr->fs->needs_full_scan);
+    transaction_complete(tr);
+
+    /* And a switch back and forth to the alternate FS? */
+    block_test_reinit(tr, FS_INIT_FLAGS_ALTERNATE_DATA);
+    assert(tr->fs->needs_full_scan);
+    transaction_complete(tr);
+
+    block_test_reinit(tr, FS_INIT_FLAGS_NONE);
+    assert(tr->fs->needs_full_scan);
+    transaction_complete(tr);
+
+    /* Clear the FS, clearing the scan flag. */
+    block_test_reinit(tr, FS_INIT_FLAGS_DO_CLEAR);
+    assert(!tr->fs->needs_full_scan);
 }
 
 static void fs_recovery_clear_test(struct transaction* tr) {
@@ -3445,6 +3503,7 @@ struct {
         TEST(fs_check_free_child_test),
         TEST(fs_check_sparse_file_test),
         TEST(fs_corrupt_data_blocks_test),
+        TEST(fs_persist_needs_full_scan_test),
         TEST(fs_recovery_clear_test),
         TEST(fs_recovery_restore_test),
         TEST(fs_recovery_restore_test2),
