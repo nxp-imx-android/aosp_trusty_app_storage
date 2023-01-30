@@ -27,6 +27,15 @@
 
 #define TLOG_TAG "ss-ipc"
 
+/* Start logging response waits after this many milliseconds. */
+#define RESPONSE_TIMEOUT 1000
+
+/*
+ * Don't wait more than this many ms between logging statements (currently
+ * 1000s)
+ */
+#define RESPONSE_TIMEOUT_MAX (RESPONSE_TIMEOUT * 1000 * 1000)
+
 static void* msg_buf;
 static size_t msg_buf_size;
 
@@ -246,9 +255,22 @@ static int read_response(handle_t session,
 
 static int await_response(handle_t session, struct ipc_msg_info* inf) {
     uevent_t uevt;
-    long rc = wait(session, &uevt, INFINITE_TIME);
+    unsigned long wait_timeout = RESPONSE_TIMEOUT;
+    long rc;
+    while (true) {
+        rc = wait(session, &uevt, wait_timeout);
+        if (rc != ERR_TIMED_OUT) {
+            break;
+        }
+        TLOGE("%s: storage response wait timed out after %ld ms", __func__,
+              wait_timeout);
+        wait_timeout *= 2;
+        if (wait_timeout > RESPONSE_TIMEOUT_MAX) {
+            wait_timeout = RESPONSE_TIMEOUT_MAX;
+        }
+    }
     if (rc != NO_ERROR) {
-        TLOGE("%s: interrupted waiting for response (%ld)", __func__, rc);
+        TLOGE("%s: error while waiting for response (%ld)", __func__, rc);
         return rc;
     }
 
