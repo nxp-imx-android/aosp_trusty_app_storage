@@ -260,6 +260,13 @@ static void clear_all_pending_superblock_writes() {
     }
 }
 
+static void reset_repaired_flag(struct transaction* tr) {
+    tr->fs->main_repaired = false;
+    tr->fs->needs_full_scan = false;
+    write_current_super_block(tr->fs, false);
+    transaction_initial_super_block_complete(tr->fs->initial_super_block_tr);
+}
+
 typedef struct transaction_test {
     struct transaction tr;
     int initial_super_block_version;
@@ -604,6 +611,15 @@ TEST_P(StorageTest, DesyncBackingFile) {
         return;
     }
 
+#if !STORAGE_TDP_RECOVERY_CHECKPOINT_RESTORE_ALLOWED
+    if (IS_TDP()) {
+        transaction_fail(&_state->tr);
+        trusty_unittest_printf(
+                "[  SKIPPED ] - FS is not configured to auto-repair\n");
+        return;
+    }
+#endif
+
     /* ensure a file is only in the checkpoint */
     file_test(&_state->tr, "checkpoint_only", FILE_OPEN_CREATE, 1, 0, 0, false,
               1);
@@ -660,6 +676,112 @@ TEST_P(StorageTest, DesyncBackingFile) {
               _state->tr.fs->super_block_version);
 
 test_abort:;
+    reset_repaired_flag(&_state->tr);
+}
+
+TEST_P(StorageTest, CorruptFileInfo) {
+    int rc;
+    handle_t null_handle = 0;
+    struct file_handle file;
+    bool allow_repaired = false;
+    struct fs* fs = _state->tr.fs;
+
+    if (IS_TP()) {
+        transaction_fail(&_state->tr);
+        trusty_unittest_printf(
+                "[  SKIPPED ] - FS does not have separate backing storage\n");
+        return;
+    }
+
+#if !STORAGE_TDP_RECOVERY_CHECKPOINT_RESTORE_ALLOWED
+    if (IS_TDP()) {
+        transaction_fail(&_state->tr);
+        trusty_unittest_printf(
+                "[  SKIPPED ] - FS is not configured to auto-repair\n");
+        return;
+    }
+#endif
+
+    /* ensure a file is only in the checkpoint */
+    file_test(&_state->tr, "checkpoint_only", FILE_OPEN_CREATE, 1, 0, 0, false,
+              1);
+    ASSERT_EQ(false, _state->tr.failed);
+    transaction_complete_update_checkpoint(&_state->tr);
+    ASSERT_EQ(false, _state->tr.failed);
+    transaction_activate(&_state->tr);
+    file_delete(&_state->tr, "checkpoint_only", false);
+    transaction_complete(&_state->tr);
+    ASSERT_EQ(false, _state->tr.failed);
+    transaction_activate(&_state->tr);
+
+    ASSERT_EQ(false, _state->tr.fs->main_repaired);
+
+    file_test(&_state->tr, "source", FILE_OPEN_CREATE_EXCLUSIVE, 1, 0, 0, false,
+              0);
+    transaction_complete(&_state->tr);
+    ASSERT_EQ(false, _state->tr.failed);
+    transaction_activate(&_state->tr);
+
+    open_test_file(&_state->tr, &file, "source", FILE_OPEN_NO_CREATE);
+    file_move(&_state->tr, &file, "corrupted_dest", FILE_OPEN_CREATE_EXCLUSIVE,
+              false);
+    ignore_next_ns_writes(1);
+    block_cache_clean_transaction(&_state->tr);
+    file_close(&file);
+    transaction_complete(&_state->tr);
+    ASSERT_EQ(false, _state->tr.failed);
+    ASSERT_EQ(false, _state->tr.fs->main_repaired);
+    transaction_free(&_state->tr);
+
+    /* remount the filesystem to clear the block cache */
+    block_device_tipc_uninit(&test_block_device);
+    rc = block_device_tipc_init(&test_block_device, null_handle,
+                                &storage_test_key, NULL, null_handle);
+    ASSERT_EQ(rc, 0);
+    transaction_init(&_state->tr, fs, true);
+    _state->initial_super_block_version = _state->tr.fs->super_block_version;
+
+    open_test_file_etc(&_state->tr, &file, "corrupted_dest",
+                       FILE_OPEN_NO_CREATE, FILE_OP_ERR_FAILED, false);
+    ASSERT_EQ(true, _state->tr.failed);
+    ASSERT_EQ(true, fs->needs_full_scan);
+    transaction_free(&_state->tr);
+
+    block_device_tipc_uninit(&test_block_device);
+    rc = block_device_tipc_init(&test_block_device, null_handle,
+                                &storage_test_key, NULL, null_handle);
+    ASSERT_EQ(rc, 0);
+    transaction_init(&_state->tr, fs, true);
+    _state->initial_super_block_version = _state->tr.fs->super_block_version;
+
+    /* TDP should restore to checkpoint and recover */
+    ASSERT_EQ(IS_TDP(), !fs->needs_full_scan);
+
+    if (IS_TDP()) {
+        /*
+         * FS has been repaired, we shouldn't be able to create a file without
+         * acknowledging this
+         */
+        open_test_file_etc(&_state->tr, &file, __func__,
+                           FILE_OPEN_CREATE_EXCLUSIVE, FILE_OP_ERR_FS_REPAIRED,
+                           allow_repaired);
+
+        allow_repaired = true;
+
+        /* check the checkpoint file (must allow repair) */
+        file_test_etc(&_state->tr, false, allow_repaired, "checkpoint_only",
+                      FILE_OPEN_NO_CREATE, NULL, FILE_OPEN_NO_CREATE, 0, 1, 0,
+                      true, 1);
+    }
+
+    file_test_etc(&_state->tr, false, allow_repaired, __func__,
+                  FILE_OPEN_CREATE_EXCLUSIVE, NULL, FILE_OPEN_NO_CREATE, 1, 0,
+                  0, false, 0);
+    transaction_complete(&_state->tr);
+    ASSERT_EQ(false, _state->tr.failed);
+
+test_abort:;
+    reset_repaired_flag(&_state->tr);
 }
 
 #if HAS_FS_TDP
