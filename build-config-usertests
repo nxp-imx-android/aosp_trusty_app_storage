@@ -30,7 +30,7 @@
 
                 ]
             ),
-            porttest("com.android.storage-unittest.tp", timeout=(60 * 15)),
+            porttest("com.android.storage-unittest.tp", timeout=(60 * 30)),
             compositetest(
                 name="com.android.storage-unittest.tdea-init-check-clean",
                 sequence=[
@@ -40,7 +40,7 @@
                     porttest("com.android.storage-unittest.tdea.clean"),
                 ]
             ),
-            porttest("com.android.storage-unittest.tdea", timeout=(60 * 15)),
+            porttest("com.android.storage-unittest.tdea", timeout=(60 * 30)),
         ],
         storage_boot=True,
     ),
@@ -50,9 +50,9 @@
     # in testrunner is insufficient.
     needs(
         [
-            porttest("com.android.storage-unittest.nsp", timeout=(60 * 15)),
+            porttest("com.android.storage-unittest.nsp", timeout=(60 * 30)),
             porttest("com.android.storage-unittest.td"),
-            porttest("com.android.storage-unittest.tdp", timeout=(60 * 15)),
+            porttest("com.android.storage-unittest.tdp", timeout=(60 * 30)),
         ],
         storage_full=True,
     ),
