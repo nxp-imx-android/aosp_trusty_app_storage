@@ -67,13 +67,14 @@ STATIC_ASSERT(sizeof(struct super_block_backup) == 76);
  *                                  allocated by active transactions.
  * @free:                           Block set of free blocks.
  * @files:                          B+ tree of all files.
- * @checkpoint:                     Block and mac of the on-disk checkpoint
- *                                  metadata. Points to a block that holds the
- *                                  files root and free set at the time of the
- *                                  most recent checkpoint.
+ * @checkpoint:                     Block and mac of the latest committed
+ *                                  checkpoint metadata. Points to a block that
+ *                                  holds the files root and free set at the
+ *                                  time of the most recent checkpoint.
  * @checkpoint_free:                Block set of free blocks at the time of the
- *                                  last checkpoint. A block is only free if it
- *                                  is in both @free and @checkpoint_free.
+ *                                  last committed checkpoint. A block is only
+ *                                  free if it is in both @free and
+ *                                  @checkpoint_free.
  * @super_dev:                      Block device used to store super blocks.
  * @readable:                       %true if the file system is initialized and
  *                                  readable. If false, no reads are valid and
@@ -109,6 +110,8 @@ STATIC_ASSERT(sizeof(struct super_block_backup) == 76);
  *                                  scanned on the next mount. Persisted to the
  *                                  super block so that we can initiate a scan
  *                                  the next time we mount the file system.
+ * @checkpoint_required:            %true if a checkpoint must be created before
+ *                                  committing any changes to the file system.
  * @backup:                         Backup superblock of other filesystem state
  *                                  (alternate if @alternate_data is false, main
  *                                  otherwise) Should be preserved across all
@@ -149,6 +152,7 @@ struct fs {
     bool main_repaired;
     bool alternate_data;
     bool needs_full_scan;
+    bool checkpoint_required;
     struct super_block_backup backup;
     data_block_t min_block_num;
     size_t block_num_size;
@@ -193,6 +197,9 @@ void fs_mark_scan_required(struct fs* fs);
  * %FS_INIT_FLAGS_RESTORE_CHECKPOINT
  *   Restore this filesystem to the current checkpointed state, discarding any
  *   changes since that checkpoint was made.
+ *
+ * %FS_INIT_FLAGS_AUTO_CHECKPOINT
+ *   Automatically create a checkpoint of the filesystem state on mount.
  */
 typedef uint32_t fs_init_flags32_t;
 #define FS_INIT_FLAGS_NONE 0U
@@ -201,10 +208,11 @@ typedef uint32_t fs_init_flags32_t;
 #define FS_INIT_FLAGS_ALTERNATE_DATA (1U << 2)
 #define FS_INIT_FLAGS_ALLOW_TAMPERING (1U << 3)
 #define FS_INIT_FLAGS_RESTORE_CHECKPOINT (1U << 4)
+#define FS_INIT_FLAGS_AUTO_CHECKPOINT (1U << 5)
 #define FS_INIT_FLAGS_MASK                                           \
     (FS_INIT_FLAGS_DO_CLEAR | FS_INIT_FLAGS_RECOVERY_CLEAR_ALLOWED | \
      FS_INIT_FLAGS_ALTERNATE_DATA | FS_INIT_FLAGS_ALLOW_TAMPERING |  \
-     FS_INIT_FLAGS_RESTORE_CHECKPOINT)
+     FS_INIT_FLAGS_RESTORE_CHECKPOINT | FS_INIT_FLAGS_AUTO_CHECKPOINT)
 
 int fs_init(struct fs* fs,
             const char* name,

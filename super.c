@@ -1178,6 +1178,7 @@ int fs_init(struct fs* fs,
     fs->readable = false;
     fs->writable = false;
     fs->allow_tampering = flags & FS_INIT_FLAGS_ALLOW_TAMPERING;
+    fs->checkpoint_required = false;
     list_initialize(&fs->transactions);
     list_initialize(&fs->allocated);
     fs->initial_super_block_tr = NULL;
@@ -1197,6 +1198,17 @@ int fs_init(struct fs* fs,
         fs->dev = NULL;
         fs->super_dev = NULL;
         return ret;
+    }
+
+    if ((flags & FS_INIT_FLAGS_AUTO_CHECKPOINT) &&
+        !block_mac_valid_fs(fs, &fs->checkpoint)) {
+        if (fs_check_full(fs) == FS_CHECK_NO_ERROR) {
+            fs->checkpoint_required = true;
+        } else {
+            pr_err("Not automatically creating a checkpoint; "
+                   "an error was found in filesystem %s\n",
+                   fs->name);
+        }
     }
 
     return 0;

@@ -148,3 +148,30 @@ err_magic_mismatch:
 err_block_get:
     return !tr->failed;
 }
+
+/**
+ * checkpoint_commit - Save the current file-system state as a checkpoint
+ * @fs:             File-system to checkpoint.
+ *
+ * Create and commit a checkpoint of the current state of @fs.
+ *
+ * Returns %true if the checkpoint was created and committed successfully,
+ * %false otherwise.
+ */
+bool checkpoint_commit(struct fs* fs) {
+    struct transaction tr;
+    bool success;
+
+    assert(fs);
+    transaction_init(&tr, fs, true);
+    transaction_complete_etc(&tr, true);
+    success = !tr.failed;
+    if (success) {
+        pr_init("Automatically created a checkpoint for filesystem %s\n",
+                fs->name);
+    } else {
+        pr_err("Failed to commit checkpoint for filesystem %s\n", fs->name);
+    }
+    transaction_free(&tr);
+    return success;
+}

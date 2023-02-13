@@ -2807,6 +2807,59 @@ static void fs_restore_nonexistent_checkpoint_test(struct transaction* tr) {
     file_delete(tr, "nonexistent_checkpoint", allow_repaired);
 }
 
+static void fs_auto_checkpoint_test(struct transaction* tr) {
+    /* ensure that there is no existing checkpoint */
+    transaction_fail(tr);
+    block_test_clear_superblock_reinit(tr, FS_INIT_FLAGS_NONE);
+    assert(!block_mac_valid(tr, &tr->fs->checkpoint));
+
+    /* Create lots of files */
+    file_create_many_test(tr);
+    transaction_complete(tr);
+    assert(!tr->failed);
+    transaction_activate(tr);
+
+    fs_corruption_helper(tr, select_files_block, 1, false);
+
+    assert(fs_check_full(tr->fs) == FS_CHECK_INVALID_BLOCK);
+    expect_errors(TRUSTY_STORAGE_ERROR_BLOCK_MAC_MISMATCH, 2);
+
+    /* test that we don't checkpoint a corrupt FS */
+    block_test_reinit(tr, FS_INIT_FLAGS_AUTO_CHECKPOINT);
+    expect_errors(TRUSTY_STORAGE_ERROR_BLOCK_MAC_MISMATCH, 2);
+    assert(!block_mac_valid(tr, &tr->fs->checkpoint));
+
+    transaction_fail(tr);
+    block_test_clear_superblock_reinit(tr, FS_INIT_FLAGS_NONE);
+    assert(!block_mac_valid(tr, &tr->fs->checkpoint));
+
+    file_test(tr, "auto_checkpoint", FILE_OPEN_CREATE_EXCLUSIVE,
+              file_test_block_count, 0, 0, false, 1);
+    transaction_complete(tr);
+    assert(!tr->failed);
+
+    block_test_reinit(tr, FS_INIT_FLAGS_AUTO_CHECKPOINT);
+    transaction_complete(tr);
+    assert(!tr->failed);
+    transaction_activate(tr);
+    assert(block_mac_valid(tr, &tr->fs->checkpoint));
+
+    file_delete(tr, "auto_checkpoint", allow_repaired);
+    transaction_complete(tr);
+    assert(!tr->failed);
+
+    block_test_reinit(tr, FS_INIT_FLAGS_RESTORE_CHECKPOINT);
+    /* globally acknowledge repair in test helpers */
+    allow_repaired = true;
+
+    file_test(tr, "auto_checkpoint", FILE_OPEN_NO_CREATE, 0,
+              file_test_block_count, 0, true, 1);
+    transaction_complete(tr);
+    assert(!tr->failed);
+
+    transaction_activate(tr);
+}
+
 static void fs_recovery_restore_test(struct transaction* tr) {
     struct file_handle file;
     enum file_op_result result;
@@ -3537,6 +3590,8 @@ struct {
         TEST(fs_persist_needs_full_scan_test),
         TEST(fs_recovery_clear_test),
         TEST(fs_restore_nonexistent_checkpoint_test),
+        TEST(fs_auto_checkpoint_test),
+        TEST(fs_recovery_restore_cleanup),
         TEST(fs_recovery_restore_test),
         TEST(fs_recovery_restore_test2),
         TEST(fs_recovery_restore_cleanup),

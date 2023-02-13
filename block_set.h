@@ -118,6 +118,10 @@ void block_set_copy(struct transaction* tr,
                     struct block_set* dest,
                     const struct block_set* src);
 
+void block_set_copy_ro_fs(struct fs* fs,
+                          struct block_set* dest,
+                          const struct block_set* src);
+
 void block_set_copy_ro(struct transaction* tr,
                        struct block_set* dest,
                        const struct block_set* src);

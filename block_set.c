@@ -673,6 +673,22 @@ void block_set_copy(struct transaction* tr,
 }
 
 /**
+ * block_set_copy_ro_fs - Initialize a read-only copy of a block set
+ * @fs:         File-system that contains @src.
+ * @dest:       Output read-only copy of block-set object.
+ * @src:        Read-only block-set object.
+ */
+void block_set_copy_ro_fs(struct fs* fs,
+                          struct block_set* dest,
+                          const struct block_set* src) {
+    block_set_init(fs, dest);
+    dest->block_tree.root = src->block_tree.root;
+    if (!block_range_empty(src->initial_range)) {
+        block_set_add_initial_range(dest, src->initial_range);
+    }
+}
+
+/**
  * block_set_copy_ro - Initialize a read-only copy of a block set
  * @tr:         Transaction object.
  * @dest:       Output read-only copy of block-set object.
@@ -681,9 +697,5 @@ void block_set_copy(struct transaction* tr,
 void block_set_copy_ro(struct transaction* tr,
                        struct block_set* dest,
                        const struct block_set* src) {
-    block_set_init(tr->fs, dest);
-    dest->block_tree.root = src->block_tree.root;
-    if (!block_range_empty(src->initial_range)) {
-        block_set_add_initial_range(dest, src->initial_range);
-    }
+    block_set_copy_ro_fs(tr->fs, dest, src);
 }

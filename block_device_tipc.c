@@ -475,6 +475,9 @@ int block_device_tipc_init(struct block_device_tipc* state,
     int ret;
     bool alternate_data_partition = false;
     uint32_t ns_init_flags = FS_INIT_FLAGS_NONE;
+#if HAS_FS_TDP
+    uint32_t tdp_init_flags = FS_INIT_FLAGS_NONE;
+#endif
     uint8_t probe;
     uint16_t rpmb_key_part_base = 0;
     uint32_t rpmb_block_count;
@@ -603,9 +606,19 @@ int block_device_tipc_init(struct block_device_tipc* state,
                                     rpmb_part_sb_tdp_base,
                                     rpmb_part_sb_ns_block_count, false);
 
+#if STORAGE_TDP_AUTO_CHECKPOINT_ENABLED
+    if (!system_state_provisioning_allowed()) {
+        /*
+         * Automatically create a checkpoint if we are done provisioning but do
+         * not already have a checkpoint.
+         */
+        tdp_init_flags |= FS_INIT_FLAGS_AUTO_CHECKPOINT;
+    }
+#endif
+
     ret = fs_init(&state->tr_state_ns_tdp, file_system_id_tdp, fs_key,
                   &state->dev_ns_tdp.dev, &state->dev_ns_tdp_rpmb.dev,
-                  FS_INIT_FLAGS_NONE);
+                  tdp_init_flags);
     if (ret < 0) {
         goto err_init_fs_ns_tdp_tr_state;
     }
@@ -618,7 +631,7 @@ int block_device_tipc_init(struct block_device_tipc* state,
         fs_destroy(&state->tr_state_ns_tdp);
         ret = fs_init(&state->tr_state_ns_tdp, file_system_id_tdp, fs_key,
                       &state->dev_ns_tdp.dev, &state->dev_ns_tdp_rpmb.dev,
-                      FS_INIT_FLAGS_RESTORE_CHECKPOINT);
+                      tdp_init_flags | FS_INIT_FLAGS_RESTORE_CHECKPOINT);
         if (ret < 0) {
             goto err_init_fs_ns_tdp_tr_state;
         }

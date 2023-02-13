@@ -341,6 +341,20 @@ void transaction_complete_etc(struct transaction* tr, bool update_checkpoint) {
     assert(tr->fs);
     assert(!tr->complete);
 
+    if (tr->fs->checkpoint_required) {
+        tr->fs->checkpoint_required = false;
+        if (!checkpoint_commit(tr->fs)) {
+            /*
+             * checkpoint creation failed, so we need to try again before we
+             * commit the next transaction
+             */
+            tr->fs->checkpoint_required = true;
+            transaction_fail(tr);
+            pr_warn("auto-checkpoint failed, abort\n");
+            goto err_transaction_failed;
+        }
+    }
+
     // printf("%s: %" PRIu64 "\n", __func__, tr->version);
 
     block_mac_copy(tr, &new_checkpoint_mac, &tr->fs->checkpoint);

@@ -62,6 +62,21 @@ static int send_response(struct storage_client_session* session,
                          void* out,
                          size_t out_size);
 
+/**
+ * checkpoint_update_allowed - Is checkpoint modification currently allowed?
+ * @transaction:    Transaction object.
+ *
+ * Check if the given transaction is allowed to create a new or update the
+ * existing checkpoint for its file system. Checkpoint updates may only be
+ * requested by client while the device is in provisioning mode.
+ *
+ * Returns %true if a transaction may update the current checkpoint state,
+ * %false otherwise.
+ */
+static bool checkpoint_update_allowed(struct transaction* tr) {
+    return system_state_provisioning_allowed();
+}
+
 /*
  * Legal secure storage directory and file names contain only
  * characters from the following set: [a-z][A-Z][0-9][.-_]
@@ -1235,8 +1250,8 @@ static int client_handle_msg(struct ipc_channel_context* ctx,
             return send_result(session, msg, STORAGE_ERR_NOT_VALID);
         }
 
-        if (!system_state_provisioning_allowed()) {
-            SS_ERR("%s: Checkpoint requested but provisioning is not allowed.\n",
+        if (!checkpoint_update_allowed(&session->tr)) {
+            SS_ERR("%s: Checkpoint requested but not currently allowed.\n",
                    __func__);
             return send_result(session, msg, STORAGE_ERR_NOT_ALLOWED);
         }

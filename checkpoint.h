@@ -17,6 +17,7 @@
 #pragma once
 
 #include "block_mac.h"
+#include "fs.h"
 #include "transaction.h"
 
 struct checkpoint;
@@ -34,3 +35,5 @@ bool checkpoint_read(struct transaction* tr,
                      const struct block_mac* checkpoint,
                      struct block_tree* files,
                      struct block_set* free);
+
+bool checkpoint_commit(struct fs* fs);
