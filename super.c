@@ -755,7 +755,9 @@ static int fs_init_from_super(struct fs* fs,
             pr_err("failed to initialize filesystem roots\n");
             return -1;
         }
-        pr_init("loaded super block version %d\n", fs->super_block_version);
+        pr_init("loaded super block version %d, checkpoint exists: %d\n",
+                fs->super_block_version,
+                block_range_empty(fs->checkpoint_free.initial_range));
     } else {
         if (is_clear) {
             pr_init("superblock, version %d, is empty fs\n",
