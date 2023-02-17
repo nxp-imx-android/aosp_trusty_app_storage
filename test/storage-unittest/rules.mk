@@ -33,6 +33,10 @@ MODULE_LIBRARY_DEPS += \
 # than rewrite it.
 MODULE_COMPILEFLAGS := -Wno-vla
 
+ifeq (true,$(call TOBOOL,$(STORAGE_UNITTEST_ON_EMULATOR)))
+MODULE_DEFINES += STORAGE_UNITTEST_ON_EMULATOR=1
+endif
+
 include make/trusted_app.mk
 
 

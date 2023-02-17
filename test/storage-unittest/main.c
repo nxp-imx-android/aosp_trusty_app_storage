@@ -34,6 +34,12 @@
 
 #define TLOG_TAG "ss_unittest"
 
+#if STORAGE_UNITTEST_ON_EMULATOR
+#define ENABLED_ON_EMULATOR_ONLY(name) name
+#else
+#define ENABLED_ON_EMULATOR_ONLY(name) DISABLED_##name
+#endif
+
 typedef void (*test_body)(storage_session_t ss, storage_session_t ss_aux);
 
 static const char* storage_test_client_port;
@@ -2871,7 +2877,7 @@ test_abort:;
  * Test that every API that should allow checkpointing does (when provisioning
  * is enabled)
  */
-TEST_F(StorageTest, CheckpointApis) {
+TEST_F(StorageTest, ENABLED_ON_EMULATOR_ONLY(CheckpointApis)) {
     int rc;
     file_handle_t handle;
     size_t blk = 2048;
@@ -2927,7 +2933,8 @@ TEST_F(StorageTest, CheckpointApis) {
 test_abort:;
 }
 
-TEST_F(StorageTest, CheckpointRequiresProvisioningAllowed) {
+TEST_F(StorageTest,
+       ENABLED_ON_EMULATOR_ONLY(CheckpointRequiresProvisioningAllowed)) {
     int rc;
     file_handle_t handle;
     const char* fname = "test_checkpoint_create";
