@@ -1246,6 +1246,11 @@ static int client_handle_msg(struct ipc_channel_context* ctx,
     /* abort transaction and clear sticky transaction error */
     if (msg->cmd == STORAGE_END_TRANSACTION) {
         if (msg->flags & STORAGE_MSG_FLAG_TRANSACT_COMPLETE) {
+            /* Allow checkpoint creation without an active transaction */
+            if (msg->flags & STORAGE_MSG_FLAG_TRANSACT_CHECKPOINT &&
+                !transaction_is_active(&session->tr)) {
+                transaction_activate(&session->tr);
+            }
             /* try to complete current transaction */
             if (transaction_is_active(&session->tr)) {
                 transaction_complete_etc(
