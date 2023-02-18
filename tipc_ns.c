@@ -249,6 +249,18 @@ int ns_get_max_size(handle_t ipc_handle,
     return rc;
 }
 
+/**
+ * ns_read_pos - Read a block of data from a non-secure file
+ * @ipc_handle:         Handle of non-secure connection
+ * @handle:             Handle of file to read from
+ * @pos:                Offset to start reading at
+ * @data:               Pointer to output buffer
+ * @data_size:          Number of bytes to attempt to read
+ *
+ * Return value: Number of bytes read, or a negative error code if an error
+ * occurred. Note: zero is a valid number of bytes read to return if @pos is
+ * past the end of the file.
+ */
 int ns_read_pos(handle_t ipc_handle,
                 ns_handle_t handle,
                 ns_off_t pos,
@@ -283,17 +295,15 @@ int ns_read_pos(handle_t ipc_handle,
         return rc;
     }
 
-    if ((size_t)rc != sizeof(msg) + data_size) {
-        return ERR_NOT_VALID;
-    }
-
     size_t data_len = rc;
+    assert(data_len <= sizeof(msg) + data_size);
 
     rc = check_response(STORAGE_FILE_READ, &msg, data_len);
     if (rc != NO_ERROR) {
         return rc;
     }
 
+    assert(data_len >= sizeof(msg));
     return data_len - sizeof(msg);
 }
 
