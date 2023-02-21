@@ -262,7 +262,7 @@ static int await_response(handle_t session, struct ipc_msg_info* inf) {
         if (rc != ERR_TIMED_OUT) {
             break;
         }
-        TLOGE("%s: storage response wait timed out after %ld ms", __func__,
+        TLOGE("%s: storage response wait timed out after %ldx ms\n", __func__,
               wait_timeout);
         wait_timeout *= 2;
         if (wait_timeout > RESPONSE_TIMEOUT_MAX) {
@@ -270,7 +270,7 @@ static int await_response(handle_t session, struct ipc_msg_info* inf) {
         }
     }
     if (rc != NO_ERROR) {
-        TLOGE("%s: error while waiting for response (%ld)", __func__, rc);
+        TLOGE("%s: error while waiting for response (%ld)\n", __func__, rc);
         return rc;
     }
 
