@@ -1037,7 +1037,7 @@ enum fs_check_result fs_check(struct fs* fs) {
         transaction_activate(&iterate_tr);
     }
 
-    file_iterate(&iterate_tr, NULL, false, &state.iter);
+    file_iterate(&iterate_tr, NULL, false, &state.iter, true);
 
     /* Invalid blocks take precedence over internal consistency errors. */
     if (state.invalid_block_found) {

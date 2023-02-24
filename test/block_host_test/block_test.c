@@ -1127,7 +1127,7 @@ static void file_allocate_all_test(struct transaction* master_tr,
             break;
         }
         if (done) {
-            file_delete(&tr[0], path);
+            file_delete(&tr[0], path, false);
             transaction_complete(&tr[0]);
             assert(!tr[0].failed);
             transaction_activate(&tr[0]);
@@ -1264,7 +1264,7 @@ static void file_move_expect(struct transaction* tr,
 
     open_test_file(tr, &file, src_path, src_create);
 
-    res = file_move(tr, &file, dest_path, dest_create);
+    res = file_move(tr, &file, dest_path, dest_create, false);
     assert(res == expected_result);
     assert(!tr->failed);
     file_close(&file);
@@ -1298,7 +1298,7 @@ static void file_test_etc(struct transaction* tr,
     file_test_commit(tr, commit);
 
     if (move_path) {
-        file_move(tr, &file, move_path, move_create);
+        file_move(tr, &file, move_path, move_create, allow_repaired);
         file_test_commit(tr, commit);
         path = move_path;
     }
@@ -1310,7 +1310,7 @@ static void file_test_etc(struct transaction* tr,
             printf("%s: delete file %s, at %" PRIu64 ":\n", __func__, path,
                    block_mac_to_block(tr, &file.block_mac));
         }
-        delete_res = file_delete(tr, path);
+        delete_res = file_delete(tr, path, allow_repaired);
         file_test_commit(tr, commit);
         assert(delete_res == FILE_OP_SUCCESS);
     }
@@ -1391,7 +1391,7 @@ static void file_test_split_tr(struct transaction* tr,
             printf("%s: delete file %s, at %" PRIu64 ":\n", __func__, path,
                    block_mac_to_block(tr, &file[i].block_mac));
         }
-        delete_res = file_delete(tr, path);
+        delete_res = file_delete(tr, path, false);
         assert(delete_res == FILE_OP_SUCCESS);
     }
 
@@ -1423,7 +1423,7 @@ static void file_read_after_delete_test(struct transaction* tr) {
 
     /* delete and try read in same transaction */
     transaction_activate(tr);
-    file_delete(tr, path);
+    file_delete(tr, path, false);
     block_data_ro = file_get_block(tr, &file, 0, &ref);
     assert(!block_data_ro);
     assert(tr->failed);
@@ -1439,7 +1439,7 @@ static void file_read_after_delete_test(struct transaction* tr) {
     assert(block_data_ro);
     file_block_put(block_data_ro, &ref);
 
-    file_delete(tr, path);
+    file_delete(tr, path, false);
     transaction_complete(tr);
     assert(!tr->failed);
 
@@ -1794,24 +1794,24 @@ static void file_iterate_many_test(struct transaction* tr) {
     enum file_op_result res;
 
     /* iterate over all files in one pass */
-    res = file_iterate(tr, NULL, false, &state.iter);
+    res = file_iterate(tr, NULL, false, &state.iter, false);
     assert(state.found = (1ull << file_test_many_file_count) - 1);
     assert(res == FILE_OP_SUCCESS);
-    res = file_iterate(tr, NULL, true, &state.iter);
+    res = file_iterate(tr, NULL, true, &state.iter, false);
     assert(res == FILE_OP_SUCCESS);
 
     /* lookup one file at a time */
     state.found = 0;
     state.stop = true;
-    res = file_iterate(tr, NULL, false, &state.iter);
+    res = file_iterate(tr, NULL, false, &state.iter, false);
     assert(res == FILE_OP_SUCCESS);
     while (state.found != last_found) {
         last_found = state.found;
-        res = file_iterate(tr, state.last_path, false, &state.iter);
+        res = file_iterate(tr, state.last_path, false, &state.iter, false);
         assert(res == FILE_OP_SUCCESS);
     }
     assert(state.found = (1ull << file_test_many_file_count) - 1);
-    res = file_iterate(tr, NULL, true, &state.iter);
+    res = file_iterate(tr, NULL, true, &state.iter, false);
     assert(res == FILE_OP_SUCCESS);
 }
 
@@ -1847,7 +1847,7 @@ static void fs_create_checkpoint(struct transaction* tr) {
 
     transaction_activate(tr);
     assert(get_fs_checkpoint_count(tr) > 3);
-    file_delete(tr, "test_checkpoint");
+    file_delete(tr, "test_checkpoint", false);
     transaction_complete(tr);
     assert(!tr->failed);
 
@@ -1870,7 +1870,7 @@ static void fs_modify_with_checkpoint(struct transaction* tr) {
 
     transaction_activate(tr);
     assert(get_fs_checkpoint_count(tr) > 3);
-    file_delete(tr, "test_checkpoint");
+    file_delete(tr, "test_checkpoint", false);
     transaction_complete(tr);
     assert(!tr->failed);
 
@@ -1881,7 +1881,7 @@ static void fs_modify_with_checkpoint(struct transaction* tr) {
 static void fs_clear_checkpoint(struct transaction* tr) {
     assert(get_fs_checkpoint_count(tr) > 3);
 
-    file_delete(tr, "test_checkpoint");
+    file_delete(tr, "test_checkpoint", false);
     /* at this point the file-system should be empty, all files are deleted */
     transaction_complete_update_checkpoint(tr);
 
@@ -1988,7 +1988,7 @@ static void fs_rebuild_fragmented_free_set(struct transaction* tr) {
     /* clean up */
     for (i = 0; i < file_test_many_file_count; i++) {
         snprintf(path, sizeof(path), "test%d", i);
-        file_delete(tr, path);
+        file_delete(tr, path, false);
     }
 }
 
@@ -1996,7 +1996,7 @@ static void fs_rebuild_with_pending_file(struct transaction* tr) {
     file_test(tr, "test_rebuild", FILE_OPEN_CREATE_EXCLUSIVE,
               file_test_block_count, 0, 0, false, 1);
     fs_rebuild_free_set(tr);
-    file_delete(tr, "test_rebuild");
+    file_delete(tr, "test_rebuild", false);
 }
 
 static void fs_rebuild_with_pending_transaction(struct transaction* tr) {
@@ -2041,13 +2041,14 @@ static void fs_repair_flag(struct transaction* tr) {
     assert(fs_is_repaired(tr->fs));
     transaction_activate(tr);
 
+    /* Opening existing files must ack repair, because we reset the whole FS */
+    result = file_open(tr, "test_simulated_repair", &file, FILE_OPEN_NO_CREATE,
+                       false);
+    assert(result == FILE_OP_ERR_FS_REPAIRED);
+
     /* a non-existent file should now report FS_REPAIRED */
     result = file_open(tr, "test_simulated_repair_nonexistent", &file,
                        FILE_OPEN_NO_CREATE, false);
-    assert(result == FILE_OP_ERR_FS_REPAIRED);
-
-    result = file_open(tr, "test_simulated_repair_nonexistent", &file,
-                       FILE_OPEN_CREATE, false);
     assert(result == FILE_OP_ERR_FS_REPAIRED);
 
     /* ...unless we allow a repaired FS */
@@ -2088,7 +2089,7 @@ static void fs_repair_flag(struct transaction* tr) {
     block_test_reinit(tr, FS_INIT_FLAGS_NONE);
     assert(!fs_is_repaired(tr->fs));
 
-    file_delete(tr, "test_simulated_repair");
+    file_delete(tr, "test_simulated_repair", false);
 }
 
 /*
@@ -2527,7 +2528,7 @@ static void create_and_delete(struct transaction* tr, const char* filename) {
     assert(!tr->failed);
     file_close(&file);
     transaction_activate(tr);
-    file_delete(tr, filename);
+    file_delete(tr, filename, false);
     transaction_complete(tr);
     assert(!tr->failed);
     transaction_activate(tr);
@@ -2664,7 +2665,7 @@ static void fs_check_sparse_file_test(struct transaction* tr) {
     assert(fs_check(tr->fs) == FS_CHECK_NO_ERROR);
 
     file_close(&file);
-    file_delete(tr, "sparse_file");
+    file_delete(tr, "sparse_file", false);
 }
 
 static void fs_corrupt_data_blocks_test(struct transaction* tr) {
@@ -2682,7 +2683,7 @@ static void fs_corrupt_data_blocks_test(struct transaction* tr) {
     transaction_activate(tr);
 
     /* we can delete files with corrupted data blocks */
-    file_delete(tr, "recovery");
+    file_delete(tr, "recovery", false);
     transaction_complete(tr);
     assert(!tr->failed);
     transaction_activate(tr);
@@ -2761,6 +2762,9 @@ static void fs_recovery_restore_test(struct transaction* tr) {
     full_assert(check_fs(tr));
     block_test_reinit(tr, FS_INIT_FLAGS_RESTORE_CHECKPOINT);
     full_assert(check_fs(tr));
+
+    /* globally acknowledge repair in test helpers */
+    allow_repaired = true;
 
     /*
      * check and delete the file again (note this writes a new superblock,
@@ -3318,7 +3322,7 @@ static void file_allocate_leave_10_test2(struct transaction *tr)
     for (i = 1; i < 10; i++) {
         file_allocate_all_test(tr, 1, 0, 1, "test1", FILE_OPEN_NO_CREATE);
         file_allocate_all_test(tr, 1, 1, i, "test2", FILE_OPEN_CREATE);
-        file_delete(tr, "test2");
+        file_delete(tr, "test2", false);
         transaction_complete(tr);
         assert(!tr->failed);
         transaction_activate(tr);

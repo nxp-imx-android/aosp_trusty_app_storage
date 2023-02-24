@@ -48,10 +48,11 @@ static void open_test_file_etc(struct transaction* tr,
                                struct file_handle* file,
                                const char* path,
                                enum file_create_mode create,
-                               enum file_op_result expected_result) {
+                               enum file_op_result expected_result,
+                               bool allow_repaired) {
     enum file_op_result result;
     /* TODO: parameterize the allow_repaired argument if needed */
-    result = file_open(tr, path, file, create, false);
+    result = file_open(tr, path, file, create, allow_repaired);
     if (print_test_verbose) {
         printf("%s: lookup file %s, create %d, got %" PRIu64 ":\n", __func__,
                path, create, block_mac_to_block(tr, &file->block_mac));
@@ -68,7 +69,7 @@ static void open_test_file(struct transaction* tr,
                            struct file_handle* file,
                            const char* path,
                            enum file_create_mode create) {
-    open_test_file_etc(tr, file, path, create, FILE_OP_SUCCESS);
+    open_test_file_etc(tr, file, path, create, FILE_OP_SUCCESS, false);
 }
 
 /* run tests on already open file */
@@ -171,6 +172,7 @@ test_abort:;
 
 static void file_test_etc(struct transaction* tr,
                           bool commit,
+                          bool allow_repaired,
                           const char* path,
                           enum file_create_mode create,
                           const char* move_path,
@@ -183,7 +185,8 @@ static void file_test_etc(struct transaction* tr,
     enum file_op_result delete_res;
     struct file_handle file;
 
-    open_test_file(tr, &file, path, create);
+    open_test_file_etc(tr, &file, path, create, FILE_OP_SUCCESS,
+                       allow_repaired);
     ASSERT_EQ(false, HasFailure());
     if (tr->failed) {
         goto test_abort;
@@ -192,7 +195,7 @@ static void file_test_etc(struct transaction* tr,
     file_test_commit(tr, commit);
 
     if (move_path) {
-        file_move(tr, &file, move_path, move_create);
+        file_move(tr, &file, move_path, move_create, allow_repaired);
         file_test_commit(tr, commit);
         path = move_path;
     }
@@ -204,7 +207,7 @@ static void file_test_etc(struct transaction* tr,
             printf("%s: delete file %s, at %" PRIu64 ":\n", __func__, path,
                    block_mac_to_block(tr, &file.block_mac));
         }
-        delete_res = file_delete(tr, path);
+        delete_res = file_delete(tr, path, allow_repaired);
         file_test_commit(tr, commit);
         ASSERT_EQ(FILE_OP_SUCCESS, delete_res);
     }
@@ -221,8 +224,8 @@ static void file_test(struct transaction* tr,
                       int free,
                       bool delete,
                       int id) {
-    file_test_etc(tr, false, path, create, NULL, FILE_OPEN_NO_CREATE, allocate,
-                  read, free, delete, id);
+    file_test_etc(tr, false, false, path, create, NULL, FILE_OPEN_NO_CREATE,
+                  allocate, read, free, delete, id);
 }
 
 static void clear_all_pending_superblock_writes() {

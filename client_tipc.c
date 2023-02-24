@@ -303,7 +303,8 @@ static enum storage_err storage_file_delete(
 
     SS_INFO("%s: path %s\n", __func__, path_buf);
 
-    delete_res = file_delete(&session->tr, path_buf);
+    delete_res = file_delete(&session->tr, path_buf,
+                             msg->flags & STORAGE_MSG_FLAG_FS_REPAIRED_ACK);
 
     if (delete_res != FILE_OP_SUCCESS) {
         return file_op_result_to_storage_err(delete_res);
@@ -446,7 +447,8 @@ static enum storage_err storage_file_move(
     }
     SS_INFO("%s: new path %s\n", __func__, path_buf);
 
-    move_result = file_move(&session->tr, file, path_buf, file_create_mode);
+    move_result = file_move(&session->tr, file, path_buf, file_create_mode,
+                            msg->flags & STORAGE_MSG_FLAG_FS_REPAIRED_ACK);
     if (file == &tmp_file) {
         file_close(&tmp_file);
     }
@@ -973,13 +975,17 @@ static int storage_file_list(struct storage_msg* msg,
     }
 
     if (last_state != STORAGE_FILE_LIST_ADDED) {
-        iterate_res = file_iterate(&session->tr, last_name, false, &state.iter);
+        iterate_res =
+                file_iterate(&session->tr, last_name, false, &state.iter,
+                             msg->flags & STORAGE_MSG_FLAG_FS_REPAIRED_ACK);
         last_name = NULL;
     } else {
         iterate_res = FILE_OP_SUCCESS;
     }
     if (iterate_res == FILE_OP_SUCCESS && !storage_file_list_buf_full(&state)) {
-        iterate_res = file_iterate(&session->tr, last_name, true, &state.iter);
+        iterate_res =
+                file_iterate(&session->tr, last_name, true, &state.iter,
+                             msg->flags & STORAGE_MSG_FLAG_FS_REPAIRED_ACK);
     }
     if (iterate_res != FILE_OP_SUCCESS) {
         SS_ERR("%s: file_iterate failed\n", __func__);

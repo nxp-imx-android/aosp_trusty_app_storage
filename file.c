@@ -900,14 +900,17 @@ static struct file_handle* file_find_open(struct transaction* tr,
  * @added:      %false to iterate over committed files, %true to iterate over
  *              uncommitted files added by @tr.
  * @state:      client state object containing function to call for each file.
+ * @allow_repaired: Accept a repaired file system state.
  *
- * Return: %FILE_OP_ERR_FAILED if the file system is not readable or an internal
- * error occurred, and %FILE_OP_SUCCESS otherwise.
+ * Return: %FILE_OP_ERR_FS_REPAIRED if the file system has been repaired and
+ * @allow_repaired was false, %FILE_OP_ERR_FAILED if the file system is not
+ * readable or an internal error occurred, and %FILE_OP_SUCCESS otherwise.
  */
 enum file_op_result file_iterate(struct transaction* tr,
                                  const char* start_path,
                                  bool added,
-                                 struct file_iterate_state* state) {
+                                 struct file_iterate_state* state,
+                                 bool allow_repaired) {
     struct block_tree_path tree_path;
     struct block_mac block_mac;
     struct block_tree* tree = added ? &tr->files_added : &tr->fs->files;
@@ -915,8 +918,12 @@ enum file_op_result file_iterate(struct transaction* tr,
     bool stop;
     bool removed = false;
 
+    assert(tr->fs);
     if (!fs_is_readable(tr->fs)) {
         return FILE_OP_ERR_FAILED;
+    }
+    if (!allow_repaired && (tr->repaired || fs_is_repaired(tr->fs))) {
+        return FILE_OP_ERR_FS_REPAIRED;
     }
 
     if (start_path == NULL) {
@@ -963,8 +970,9 @@ enum file_op_result file_iterate(struct transaction* tr,
  *                  been repaired, missing files may have previously existed and
  *                  are now rolled back.
  *
- * Return: &enum file_op_result.FILE_OP_SUCCESS if file was opened, or an
- * error describing the failure to open the file.
+ * Return: %FILE_OP_ERR_FS_REPAIRED if the file system has been repaired and
+ * @allow_repaired was false, &enum file_op_result.FILE_OP_SUCCESS if file was
+ * opened, or an error describing the failure to open the file.
  */
 enum file_op_result file_open(struct transaction* tr,
                               const char* path,
@@ -980,6 +988,9 @@ enum file_op_result file_open(struct transaction* tr,
     struct obj_ref file_entry_ref = OBJ_REF_INITIAL_VALUE(file_entry_ref);
 
     assert(tr->fs);
+    if (!allow_repaired && (tr->repaired || fs_is_repaired(tr->fs))) {
+        return FILE_OP_ERR_FS_REPAIRED;
+    }
 
     if (!fs_is_readable(tr->fs)) {
         return FILE_OP_ERR_FAILED;
@@ -996,17 +1007,8 @@ enum file_op_result file_open(struct transaction* tr,
     if (found) {
         goto found;
     }
-
     if (tr->failed) {
         return FILE_OP_ERR_FAILED;
-    }
-
-    /*
-     * If the file is not found and we have made repairs, the file might have
-     * existed before the repair.
-     */
-    if ((tr->repaired || fs_is_repaired(tr->fs)) && !allow_repaired) {
-        return FILE_OP_ERR_FS_REPAIRED;
     }
 
     if (create != FILE_OPEN_NO_CREATE) {
@@ -1062,12 +1064,16 @@ void file_close(struct file_handle* file) {
  * file_delete - Delete file
  * @tr:         Transaction object.
  * @path:       Path to find file at.
+ * @allow_repaired: Accept a repaired file system state.
  *
- * Return: %FILE_OP_SUCCESS if the file existed and was deleted,
- * %FILE_OP_ERR_NOT_FOUND if the file did not exist, and %FILE_OP_ERR_FAILED if
- * some other error occurred.
+ * Return: %FILE_OP_ERR_FS_REPAIRED if the file system has been repaired and
+ * @allow_repaired was false, %FILE_OP_SUCCESS if the file existed and was
+ * deleted, %FILE_OP_ERR_NOT_FOUND if the file did not exist, and
+ * %FILE_OP_ERR_FAILED if some other error occurred.
  */
-enum file_op_result file_delete(struct transaction* tr, const char* path) {
+enum file_op_result file_delete(struct transaction* tr,
+                                const char* path,
+                                bool allow_repaired) {
     bool found;
     struct block_mac block_mac;
     struct block_mac old_block_mac;
@@ -1078,8 +1084,12 @@ enum file_op_result file_delete(struct transaction* tr, const char* path) {
     struct block_tree_path tree_path;
     struct file_handle* open_file;
 
+    assert(tr->fs);
     if (!fs_is_readable(tr->fs)) {
         return FILE_OP_ERR_FAILED;
+    }
+    if (!allow_repaired && (tr->repaired || fs_is_repaired(tr->fs))) {
+        return FILE_OP_ERR_FS_REPAIRED;
     }
 
     found = file_tree_lookup(&block_mac, tr, &tr->files_added, &tree_path, path,
@@ -1146,17 +1156,20 @@ enum file_op_result file_delete(struct transaction* tr, const char* path) {
  * @dest_path:      Path to move file to.
  * @dest_create:    FILE_OPEN_NO_CREATE, FILE_OPEN_CREATE or
  *                  FILE_OPEN_CREATE_EXCLUSIVE.
+ * @allow_repaired: Accept a repaired file system state.
  *
- * Return: %FILE_OP_SUCCESS if the operation was successful, %FILE_OP_ERR_EXIST
- * if the destination file already exists and %FILE_OPEN_CREATE_EXCLUSIVE was
- * requested, %FILE_OP_ERR_NOT_FOUND if the destination file did not exist but
- * %FILE_OPEN_NO_CREATE was required, and %FILE_OP_ERR_FAILED if some other
- * error occurred.
+ * Return: %FILE_OP_SUCCESS if the operation was successful,
+ * %FILE_OP_ERR_FS_REPAIRED if the file system has been repaired and
+ * @allow_repaired was false, %FILE_OP_ERR_EXIST if the destination file already
+ * exists and %FILE_OPEN_CREATE_EXCLUSIVE was requested, %FILE_OP_ERR_NOT_FOUND
+ * if the destination file did not exist but %FILE_OPEN_NO_CREATE was required,
+ * and %FILE_OP_ERR_FAILED if some other error occurred.
  */
 enum file_op_result file_move(struct transaction* tr,
                               struct file_handle* file,
                               const char* dest_path,
-                              enum file_create_mode dest_create) {
+                              enum file_create_mode dest_create,
+                              bool allow_repaired) {
     assert(tr->fs);
     struct block_mac block_mac;
     struct block_mac committed_block_mac;
@@ -1165,6 +1178,9 @@ enum file_op_result file_move(struct transaction* tr,
 
     if (!fs_is_readable(tr->fs)) {
         return FILE_OP_ERR_FAILED;
+    }
+    if (!allow_repaired && (tr->repaired || fs_is_repaired(tr->fs))) {
+        return FILE_OP_ERR_FS_REPAIRED;
     }
 
     dest_found = file_tree_lookup(&block_mac, tr, &tr->files_added, &tree_path,
@@ -1185,7 +1201,7 @@ enum file_op_result file_move(struct transaction* tr,
         if (block_mac_eq(tr, &file->block_mac, &block_mac)) {
             return FILE_OP_SUCCESS;
         }
-        file_delete(tr, dest_path);
+        file_delete(tr, dest_path, allow_repaired);
     } else {
         if (dest_create == FILE_OPEN_NO_CREATE) {
             return FILE_OP_ERR_NOT_FOUND;

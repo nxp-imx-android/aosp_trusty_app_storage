@@ -145,12 +145,16 @@ enum file_op_result file_open(struct transaction* tr,
                               bool allow_repaired);
 void file_close(struct file_handle* file);
 
-enum file_op_result file_delete(struct transaction* tr, const char* path);
+enum file_op_result file_delete(struct transaction* tr,
+                                const char* path,
+                                bool allow_repaired);
 enum file_op_result file_move(struct transaction* tr,
                               struct file_handle* file,
                               const char* dest_path,
-                              enum file_create_mode dest_create);
+                              enum file_create_mode dest_create,
+                              bool allow_repaired);
 enum file_op_result file_iterate(struct transaction* tr,
                                  const char* start_path,
                                  bool added,
-                                 struct file_iterate_state* state);
+                                 struct file_iterate_state* state,
+                                 bool allow_repaired);
