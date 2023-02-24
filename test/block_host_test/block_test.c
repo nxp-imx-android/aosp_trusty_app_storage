@@ -1037,16 +1037,15 @@ static void open_test_file_etc(struct transaction* tr,
                                const char* path,
                                enum file_create_mode create,
                                bool expect_failure) {
-    enum file_open_result result;
+    enum file_op_result result;
     result = file_open(tr, path, file, create, allow_repaired);
     if (print_test_verbose) {
         printf("%s: lookup file %s, create %d, got %" PRIu64 ":\n", __func__,
                path, create, block_mac_to_block(tr, &file->block_mac));
     }
 
-    assert((result == FILE_OPEN_SUCCESS) == !expect_failure);
-    assert(result != FILE_OPEN_SUCCESS ||
-           block_mac_valid(tr, &file->block_mac));
+    assert((result == FILE_OP_SUCCESS) == !expect_failure);
+    assert(result != FILE_OP_SUCCESS || block_mac_valid(tr, &file->block_mac));
 }
 
 static void open_test_file(struct transaction* tr,
@@ -1146,11 +1145,11 @@ static void file_create_all_test(struct transaction* tr) {
     char path[4 + 8 + 1];
     struct file_handle file;
 
-    enum file_open_result result;
+    enum file_op_result result;
     for (i = 0;; i++) {
         snprintf(path, sizeof(path), "test%08x", i);
         result = file_open(tr, path, &file, FILE_OPEN_CREATE_EXCLUSIVE, false);
-        if (result != FILE_OPEN_SUCCESS) {
+        if (result != FILE_OP_SUCCESS) {
             break;
         }
         file_close(&file);
@@ -1259,14 +1258,14 @@ static void file_move_expect(struct transaction* tr,
                              enum file_create_mode dest_create,
                              bool expect) {
     struct file_handle file;
-    bool moved;
+    enum file_op_result res;
 
     assert(!tr->failed);
 
     open_test_file(tr, &file, src_path, src_create);
 
-    moved = file_move(tr, &file, dest_path, dest_create);
-    assert(moved == expect);
+    res = file_move(tr, &file, dest_path, dest_create);
+    assert((res == FILE_OP_SUCCESS) == expect);
     assert(!tr->failed);
     file_close(&file);
 }
@@ -1298,7 +1297,7 @@ static void file_test_etc(struct transaction* tr,
                           int free,
                           bool delete,
                           int id) {
-    bool deleted;
+    enum file_op_result delete_res;
     struct file_handle file;
 
     open_test_file(tr, &file, path, create);
@@ -1318,9 +1317,9 @@ static void file_test_etc(struct transaction* tr,
             printf("%s: delete file %s, at %" PRIu64 ":\n", __func__, path,
                    block_mac_to_block(tr, &file.block_mac));
         }
-        deleted = file_delete(tr, path);
+        delete_res = file_delete(tr, path);
         file_test_commit(tr, commit);
-        assert(deleted);
+        assert(delete_res == FILE_OP_SUCCESS);
     }
 
     file_close(&file);
@@ -1349,7 +1348,7 @@ static void file_test_split_tr(struct transaction* tr,
                                int free,
                                bool delete,
                                int id) {
-    bool deleted;
+    enum file_op_result delete_res;
     int i;
     struct file_handle file[open_count];
 
@@ -1399,8 +1398,8 @@ static void file_test_split_tr(struct transaction* tr,
             printf("%s: delete file %s, at %" PRIu64 ":\n", __func__, path,
                    block_mac_to_block(tr, &file[i].block_mac));
         }
-        deleted = file_delete(tr, path);
-        assert(deleted);
+        delete_res = file_delete(tr, path);
+        assert(delete_res == FILE_OP_SUCCESS);
     }
 
     for (i = 0; i < open_count; i++) {
@@ -1797,28 +1796,28 @@ static void file_iterate_many_test(struct transaction* tr) {
             .stop = false,
     };
     uint64_t last_found = 0;
-    bool ret;
+    enum file_op_result res;
 
     /* iterate over all files in one pass */
-    ret = file_iterate(tr, NULL, false, &state.iter);
+    res = file_iterate(tr, NULL, false, &state.iter);
     assert(state.found = (1ull << file_test_many_file_count) - 1);
-    assert(ret);
-    ret = file_iterate(tr, NULL, true, &state.iter);
-    assert(ret);
+    assert(res == FILE_OP_SUCCESS);
+    res = file_iterate(tr, NULL, true, &state.iter);
+    assert(res == FILE_OP_SUCCESS);
 
     /* lookup one file at a time */
     state.found = 0;
     state.stop = true;
-    ret = file_iterate(tr, NULL, false, &state.iter);
-    assert(ret);
+    res = file_iterate(tr, NULL, false, &state.iter);
+    assert(res == FILE_OP_SUCCESS);
     while (state.found != last_found) {
         last_found = state.found;
-        ret = file_iterate(tr, state.last_path, false, &state.iter);
-        assert(ret);
+        res = file_iterate(tr, state.last_path, false, &state.iter);
+        assert(res == FILE_OP_SUCCESS);
     }
     assert(state.found = (1ull << file_test_many_file_count) - 1);
-    ret = file_iterate(tr, NULL, true, &state.iter);
-    assert(ret);
+    res = file_iterate(tr, NULL, true, &state.iter);
+    assert(res == FILE_OP_SUCCESS);
 }
 
 static void file_allocate_all1_test(struct transaction* tr) {
@@ -2014,7 +2013,7 @@ static void fs_rebuild_with_pending_transaction(struct transaction* tr) {
 }
 
 static void fs_repair_flag(struct transaction* tr) {
-    enum file_open_result result;
+    enum file_op_result result;
     struct file_handle file;
 
     /* clear FS to reset repair flag */
@@ -2024,7 +2023,7 @@ static void fs_repair_flag(struct transaction* tr) {
     /* a non-existent file should not return FS_REPAIRED */
     result = file_open(tr, "test_simulated_repair_nonexistent", &file,
                        FILE_OPEN_NO_CREATE, false);
-    assert(result == FILE_OPEN_ERR_NOT_FOUND);
+    assert(result == FILE_OP_ERR_NOT_FOUND);
 
     /* simulate an operation that requires setting the repair flag */
     file_test(tr, "test_simulated_repair", FILE_OPEN_CREATE_EXCLUSIVE,
@@ -2050,26 +2049,25 @@ static void fs_repair_flag(struct transaction* tr) {
     /* a non-existent file should now report FS_REPAIRED */
     result = file_open(tr, "test_simulated_repair_nonexistent", &file,
                        FILE_OPEN_NO_CREATE, false);
-    assert(result == FILE_OPEN_ERR_FS_REPAIRED);
+    assert(result == FILE_OP_ERR_FS_REPAIRED);
 
     result = file_open(tr, "test_simulated_repair_nonexistent", &file,
                        FILE_OPEN_CREATE, false);
-    assert(result == FILE_OPEN_ERR_FS_REPAIRED);
+    assert(result == FILE_OP_ERR_FS_REPAIRED);
 
     /* ...unless we allow a repaired FS */
     result = file_open(tr, "test_simulated_repair_nonexistent", &file,
                        FILE_OPEN_NO_CREATE, true);
-    assert(result == FILE_OPEN_ERR_NOT_FOUND);
+    assert(result == FILE_OP_ERR_NOT_FOUND);
 
     result = file_open(tr, "test_simulated_repair", &file, FILE_OPEN_NO_CREATE,
                        true);
-    assert(result == FILE_OPEN_SUCCESS);
+    assert(result == FILE_OP_SUCCESS);
     file_close(&file);
 
     result = file_open(tr, "test_simulated_repair_nonexistent", &file,
                        FILE_OPEN_CREATE, true);
-    assert(result == FILE_OPEN_SUCCESS);
-
+    assert(result == FILE_OP_SUCCESS);
     file_close(&file);
 
     /*
@@ -2103,7 +2101,7 @@ static void fs_repair_flag(struct transaction* tr) {
  * main FS across usage of the alternate.
  */
 static void fs_repair_with_alternate(struct transaction* tr) {
-    enum file_open_result result;
+    enum file_op_result result;
     struct file_handle file;
 
     /* simulate an operation that requires setting the repair flag */
@@ -2125,10 +2123,10 @@ static void fs_repair_with_alternate(struct transaction* tr) {
     assert(tr->fs->main_repaired);
     assert(!fs_is_repaired(tr->fs));
 
-    /* Opening a non-existent file does not return FILE_OPEN_ERR_FS_REPAIRED */
+    /* Opening a non-existent file does not return FILE_OP_ERR_FS_REPAIRED */
     result = file_open(tr, "test_alternate_nonexistent", &file,
                        FILE_OPEN_NO_CREATE, true);
-    assert(result == FILE_OPEN_ERR_NOT_FOUND);
+    assert(result == FILE_OP_ERR_NOT_FOUND);
 
     /* Make sure we rewrite the alternate superblock */
     file_test(tr, "test_alternate_create", FILE_OPEN_CREATE_EXCLUSIVE,
@@ -2166,7 +2164,7 @@ static void future_fs_version_test(struct transaction* tr) {
     data_block_t block;
     int ret;
     struct file_handle file;
-    enum file_open_result open_result;
+    enum file_op_result open_result;
 
     /* offset of fs_version field in uint16_t words */
     size_t fs_version_offset = 28 / 2;
@@ -2198,7 +2196,7 @@ static void future_fs_version_test(struct transaction* tr) {
     transaction_init(tr, fs, true);
     open_result = file_open(tr, "future_fs_version_file", &file,
                             FILE_OPEN_NO_CREATE, false);
-    assert(open_result == FILE_OPEN_ERR_FAILED);
+    assert(open_result == FILE_OP_ERR_FAILED);
     transaction_fail(tr);
     transaction_free(tr);
     fs_destroy(fs);
@@ -2213,7 +2211,7 @@ static void future_fs_version_test(struct transaction* tr) {
     transaction_init(tr, fs, true);
     open_result = file_open(tr, "future_fs_version_file", &file,
                             FILE_OPEN_NO_CREATE, false);
-    assert(open_result == FILE_OPEN_ERR_FAILED);
+    assert(open_result == FILE_OP_ERR_FAILED);
     transaction_fail(tr);
     transaction_free(tr);
     fs_destroy(fs);
@@ -2299,7 +2297,7 @@ static void unknown_required_flags_test(struct transaction* tr) {
     int ret;
     uint16_t initial_required_flags;
     struct file_handle file;
-    enum file_open_result open_result;
+    enum file_op_result open_result;
 
     /* update when SUPER_BLOCK_REQUIRED_FLAGS_MASK changes in super.c */
     uint16_t first_unsupported_required_flag = 0x2U;
@@ -2324,7 +2322,7 @@ static void unknown_required_flags_test(struct transaction* tr) {
     transaction_init(tr, fs, true);
     open_result = file_open(tr, "unknown_flags_file", &file,
                             FILE_OPEN_NO_CREATE, false);
-    assert(open_result == FILE_OPEN_ERR_FAILED);
+    assert(open_result == FILE_OP_ERR_FAILED);
     transaction_fail(tr);
     transaction_free(tr);
     fs_destroy(fs);
@@ -2339,7 +2337,7 @@ static void unknown_required_flags_test(struct transaction* tr) {
     transaction_init(tr, fs, true);
     open_result = file_open(tr, "unknown_flags_file", &file,
                             FILE_OPEN_NO_CREATE, false);
-    assert(open_result == FILE_OPEN_ERR_FAILED);
+    assert(open_result == FILE_OP_ERR_FAILED);
     transaction_fail(tr);
     transaction_free(tr);
     fs_destroy(fs);
@@ -2366,7 +2364,7 @@ static void unknown_required_flags_test(struct transaction* tr) {
     transaction_init(tr, fs, true);
     open_result = file_open(tr, "unknown_flags_file", &file,
                             FILE_OPEN_NO_CREATE, false);
-    assert(open_result == FILE_OPEN_ERR_FAILED);
+    assert(open_result == FILE_OP_ERR_FAILED);
     transaction_fail(tr);
     transaction_free(tr);
     fs_destroy(fs);
@@ -2381,7 +2379,7 @@ static void unknown_required_flags_test(struct transaction* tr) {
     transaction_init(tr, fs, true);
     open_result = file_open(tr, "unknown_flags_file", &file,
                             FILE_OPEN_NO_CREATE, false);
-    assert(open_result == FILE_OPEN_ERR_FAILED);
+    assert(open_result == FILE_OP_ERR_FAILED);
     transaction_fail(tr);
     transaction_free(tr);
     fs_destroy(fs);
@@ -2404,7 +2402,7 @@ static void unknown_required_flags_test(struct transaction* tr) {
     transaction_init(tr, fs, true);
     open_result = file_open(tr, "unknown_flags_file", &file,
                             FILE_OPEN_NO_CREATE, false);
-    assert(open_result == FILE_OPEN_ERR_FAILED);
+    assert(open_result == FILE_OP_ERR_FAILED);
     transaction_fail(tr);
     transaction_free(tr);
     fs_destroy(fs);
@@ -2419,7 +2417,7 @@ static void unknown_required_flags_test(struct transaction* tr) {
     transaction_init(tr, fs, true);
     open_result = file_open(tr, "unknown_flags_file", &file,
                             FILE_OPEN_NO_CREATE, false);
-    assert(open_result == FILE_OPEN_ERR_FAILED);
+    assert(open_result == FILE_OP_ERR_FAILED);
     transaction_fail(tr);
     transaction_free(tr);
     fs_destroy(fs);
@@ -2450,7 +2448,7 @@ static void fs_corruption_helper(struct transaction* tr,
                                  unsigned int arg,
                                  bool expect_missing_file) {
     struct file_handle file;
-    enum file_open_result result;
+    enum file_op_result result;
     struct fs* fs = tr->fs;
 
     file_test(tr, "recovery", FILE_OPEN_CREATE_EXCLUSIVE, file_test_block_count,
@@ -2471,9 +2469,9 @@ static void fs_corruption_helper(struct transaction* tr,
 
     result = file_open(tr, "recovery", &file, FILE_OPEN_NO_CREATE, false);
     if (expect_missing_file) {
-        assert(result == FILE_OPEN_ERR_FAILED);
+        assert(result == FILE_OP_ERR_FAILED);
     } else {
-        assert(result == FILE_OPEN_SUCCESS);
+        assert(result == FILE_OP_SUCCESS);
         file_close(&file);
     }
     transaction_complete(tr);
@@ -2716,7 +2714,7 @@ static void fs_recovery_clear_test(struct transaction* tr) {
 
 static void fs_recovery_restore_test(struct transaction* tr) {
     struct file_handle file;
-    enum file_open_result result;
+    enum file_op_result result;
 
     /* ensure that there is no existing checkpoint */
     transaction_fail(tr);
@@ -2768,21 +2766,21 @@ static void fs_recovery_restore_test(struct transaction* tr) {
 
     result = file_open(tr, "recovery_not_in_checkpoint", &file,
                        FILE_OPEN_NO_CREATE, false);
-    assert(result == FILE_OPEN_ERR_FS_REPAIRED);
+    assert(result == FILE_OP_ERR_FS_REPAIRED);
     result = file_open(tr, "recovery_not_in_checkpoint", &file,
                        FILE_OPEN_NO_CREATE, true);
-    assert(result == FILE_OPEN_ERR_NOT_FOUND);
+    assert(result == FILE_OP_ERR_NOT_FOUND);
 }
 
 /* Attempt to restore the checkpoint again */
 static void fs_recovery_restore_test2(struct transaction* tr) {
     struct file_handle file;
-    enum file_open_result result;
+    enum file_op_result result;
 
     /* this file should only be in the checkpoint */
     result =
             file_open(tr, "recovery_restore", &file, FILE_OPEN_NO_CREATE, true);
-    assert(result == FILE_OPEN_ERR_NOT_FOUND);
+    assert(result == FILE_OP_ERR_NOT_FOUND);
     transaction_complete(tr);
     assert(!tr->failed);
 
@@ -2797,10 +2795,10 @@ static void fs_recovery_restore_test2(struct transaction* tr) {
     /* but this one isn't */
     result = file_open(tr, "recovery_not_in_checkpoint", &file,
                        FILE_OPEN_NO_CREATE, false);
-    assert(result == FILE_OPEN_ERR_FS_REPAIRED);
+    assert(result == FILE_OP_ERR_FS_REPAIRED);
     result = file_open(tr, "recovery_not_in_checkpoint", &file,
                        FILE_OPEN_NO_CREATE, true);
-    assert(result == FILE_OPEN_ERR_NOT_FOUND);
+    assert(result == FILE_OP_ERR_NOT_FOUND);
 }
 
 static void fs_recovery_restore_cleanup(struct transaction* tr) {

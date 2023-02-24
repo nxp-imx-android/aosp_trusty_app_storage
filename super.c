@@ -961,9 +961,9 @@ static bool fs_check_file(struct file_iterate_state* iter,
     path[sizeof(path) - 1] = '\0';
     file_info_put(info, &info_ref);
 
-    enum file_open_result result =
+    enum file_op_result result =
             file_open(tr, path, &file, FILE_OPEN_NO_CREATE, true);
-    if (result != FILE_OPEN_SUCCESS) {
+    if (result != FILE_OP_SUCCESS) {
         /* TODO: is it ok to leak the filename here? we do it elsewhere */
         pr_err("could not open file %s\n", path);
         fs_check_state->internal_state_valid = false;

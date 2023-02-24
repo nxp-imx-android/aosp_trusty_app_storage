@@ -116,25 +116,25 @@ static int get_path(char* path_out,
     return STORAGE_NO_ERROR;
 }
 
-static enum storage_err file_open_result_to_storage_err(
-        enum file_open_result result) {
+static enum storage_err file_op_result_to_storage_err(
+        enum file_op_result result) {
     switch (result) {
-    case FILE_OPEN_SUCCESS:
+    case FILE_OP_SUCCESS:
         return STORAGE_NO_ERROR;
-    case FILE_OPEN_ERR_FAILED:
+    case FILE_OP_ERR_FAILED:
         /* TODO: Consider returning STORAGE_ERR_TRANSACT consistently */
         return STORAGE_ERR_GENERIC;
-    case FILE_OPEN_ERR_EXIST:
+    case FILE_OP_ERR_EXIST:
         return STORAGE_ERR_EXIST;
-    case FILE_OPEN_ERR_ALREADY_OPEN:
+    case FILE_OP_ERR_ALREADY_OPEN:
         return STORAGE_ERR_NOT_ALLOWED;
-    case FILE_OPEN_ERR_NOT_FOUND:
+    case FILE_OP_ERR_NOT_FOUND:
         return STORAGE_ERR_NOT_FOUND;
-    case FILE_OPEN_ERR_FS_REPAIRED:
+    case FILE_OP_ERR_FS_REPAIRED:
         return STORAGE_ERR_FS_REPAIRED;
     }
 
-    SS_ERR("%s: Unknown file_open_result: %d\n", __func__, result);
+    SS_ERR("%s: Unknown file_op_result: %d\n", __func__, result);
     return STORAGE_ERR_GENERIC;
 }
 
@@ -269,7 +269,7 @@ static enum storage_err storage_file_delete(
         struct storage_file_delete_req* req,
         size_t req_size,
         struct storage_client_session* session) {
-    bool deleted;
+    enum file_op_result delete_res;
     enum storage_err result;
     const char* fname;
     size_t fname_len;
@@ -303,13 +303,10 @@ static enum storage_err storage_file_delete(
 
     SS_INFO("%s: path %s\n", __func__, path_buf);
 
-    deleted = file_delete(&session->tr, path_buf);
+    delete_res = file_delete(&session->tr, path_buf);
 
-    if (session->tr.failed) {
-        SS_ERR("%s: transaction failed\n", __func__);
-        return STORAGE_ERR_GENERIC;
-    } else if (!deleted) {
-        return STORAGE_ERR_NOT_FOUND;
+    if (delete_res != FILE_OP_SUCCESS) {
+        return file_op_result_to_storage_err(delete_res);
     }
 
     if (msg->flags & STORAGE_MSG_FLAG_TRANSACT_COMPLETE) {
@@ -359,8 +356,8 @@ static enum storage_err storage_file_move(
         struct storage_file_move_req* req,
         size_t req_size,
         struct storage_client_session* session) {
-    bool moved;
-    enum file_open_result open_result;
+    enum file_op_result open_result;
+    enum file_op_result move_result;
     enum storage_err result;
     const char* old_name;
     const char* new_name;
@@ -433,8 +430,8 @@ static enum storage_err storage_file_move(
         open_result = file_open(&session->tr, path_buf, &tmp_file,
                                 FILE_OPEN_NO_CREATE,
                                 msg->flags & STORAGE_MSG_FLAG_FS_REPAIRED_ACK);
-        if (open_result != FILE_OPEN_SUCCESS) {
-            return file_open_result_to_storage_err(open_result);
+        if (open_result != FILE_OP_SUCCESS) {
+            return file_op_result_to_storage_err(open_result);
         }
         file = &tmp_file;
     }
@@ -449,17 +446,13 @@ static enum storage_err storage_file_move(
     }
     SS_INFO("%s: new path %s\n", __func__, path_buf);
 
-    moved = file_move(&session->tr, file, path_buf, file_create_mode);
+    move_result = file_move(&session->tr, file, path_buf, file_create_mode);
     if (file == &tmp_file) {
         file_close(&tmp_file);
     }
 
-    if (session->tr.failed) {
-        SS_ERR("%s: transaction failed\n", __func__);
-        return STORAGE_ERR_GENERIC;
-    } else if (!moved) {
-        return (flags & STORAGE_FILE_MOVE_CREATE) ? STORAGE_ERR_EXIST
-                                                  : STORAGE_ERR_NOT_FOUND;
+    if (move_result != FILE_OP_SUCCESS) {
+        return file_op_result_to_storage_err(move_result);
     }
 
     if (msg->flags & STORAGE_MSG_FLAG_TRANSACT_COMPLETE) {
@@ -482,7 +475,7 @@ static int storage_file_open(struct storage_msg* msg,
                              struct storage_client_session* session)
 
 {
-    enum file_open_result open_result;
+    enum file_op_result open_result;
     enum storage_err result;
     struct file_handle* file = NULL;
     const char* fname;
@@ -541,8 +534,8 @@ static int storage_file_open(struct storage_msg* msg,
 
     open_result = file_open(&session->tr, path_buf, file, file_create_mode,
                             msg->flags & STORAGE_MSG_FLAG_FS_REPAIRED_ACK);
-    if (open_result != FILE_OPEN_SUCCESS) {
-        result = file_open_result_to_storage_err(open_result);
+    if (open_result != FILE_OP_SUCCESS) {
+        result = file_op_result_to_storage_err(open_result);
         goto err_open_file;
     }
 
@@ -924,7 +917,7 @@ static int storage_file_list(struct storage_msg* msg,
     enum storage_err result = STORAGE_NO_ERROR;
     void* out = NULL;
     size_t out_size = 0;
-    bool ret;
+    enum file_op_result iterate_res;
     const char* last_name;
     char path_buf[FS_PATH_MAX];
     uint8_t last_state;
@@ -980,17 +973,17 @@ static int storage_file_list(struct storage_msg* msg,
     }
 
     if (last_state != STORAGE_FILE_LIST_ADDED) {
-        ret = file_iterate(&session->tr, last_name, false, &state.iter);
+        iterate_res = file_iterate(&session->tr, last_name, false, &state.iter);
         last_name = NULL;
     } else {
-        ret = true;
+        iterate_res = FILE_OP_SUCCESS;
     }
-    if (ret && !storage_file_list_buf_full(&state)) {
-        ret = file_iterate(&session->tr, last_name, true, &state.iter);
+    if (iterate_res == FILE_OP_SUCCESS && !storage_file_list_buf_full(&state)) {
+        iterate_res = file_iterate(&session->tr, last_name, true, &state.iter);
     }
-    if (!ret) {
+    if (iterate_res != FILE_OP_SUCCESS) {
         SS_ERR("%s: file_iterate failed\n", __func__);
-        result = STORAGE_ERR_GENERIC;
+        result = file_op_result_to_storage_err(iterate_res);
         goto err_file_iterate;
     }
 

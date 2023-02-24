@@ -119,38 +119,38 @@ enum file_create_mode {
 };
 
 /**
- * enum file_open_result - Result of attempting to open a file
- * @FILE_OPEN_SUCCESS: File was opened successfully.
- * @FILE_OPEN_ERR_FAILED: Transaction failed while attempting to open the file.
- * @FILE_OPEN_ERR_EXIST: File was found but exclusive access was requested.
- * @FILE_OPEN_ERR_ALREADY_OPEN: File is already open in the provided
- *                              transaction.
- * @FILE_OPEN_ERR_NOT_FOUND: File was not found.
- * @FILE_OPEN_ERR_FS_REPAIRED: File system has been repaired which may have
- *                             impacted the requested file. Pass @allow_repaired
- *                             = true to accept the repaired state.
+ * enum file_op_result - Result of attempting to operate on a file
+ * @FILE_OP_SUCCESS: File was opened successfully.
+ * @FILE_OP_ERR_FAILED: Transaction failed while attempting to open the file.
+ * @FILE_OP_ERR_EXIST: File was found but exclusive access was requested.
+ * @FILE_OP_ERR_ALREADY_OPEN: File is already open in the provided
+ *                            transaction.
+ * @FILE_OP_ERR_NOT_FOUND: File was not found.
+ * @FILE_OP_ERR_FS_REPAIRED: File system has been repaired which may have
+ *                           impacted the requested file. Pass @allow_repaired
+ *                           = true to accept the repaired state.
  */
-enum file_open_result {
-    FILE_OPEN_SUCCESS,
-    FILE_OPEN_ERR_FAILED,
-    FILE_OPEN_ERR_EXIST,
-    FILE_OPEN_ERR_ALREADY_OPEN,
-    FILE_OPEN_ERR_NOT_FOUND,
-    FILE_OPEN_ERR_FS_REPAIRED,
+enum file_op_result {
+    FILE_OP_SUCCESS,
+    FILE_OP_ERR_FAILED,
+    FILE_OP_ERR_EXIST,
+    FILE_OP_ERR_ALREADY_OPEN,
+    FILE_OP_ERR_NOT_FOUND,
+    FILE_OP_ERR_FS_REPAIRED,
 };
-enum file_open_result file_open(struct transaction* tr,
-                                const char* path,
-                                struct file_handle* file,
-                                enum file_create_mode create,
-                                bool allow_repaired);
+enum file_op_result file_open(struct transaction* tr,
+                              const char* path,
+                              struct file_handle* file,
+                              enum file_create_mode create,
+                              bool allow_repaired);
 void file_close(struct file_handle* file);
-bool file_delete(struct transaction* tr,
-                 const char* path); /* returns true if path was found */
-bool file_move(struct transaction* tr,
-               struct file_handle* file,
-               const char* dest_path,
-               enum file_create_mode dest_create);
-bool file_iterate(struct transaction* tr,
-                  const char* start_path,
-                  bool added,
-                  struct file_iterate_state* state);
+
+enum file_op_result file_delete(struct transaction* tr, const char* path);
+enum file_op_result file_move(struct transaction* tr,
+                              struct file_handle* file,
+                              const char* dest_path,
+                              enum file_create_mode dest_create);
+enum file_op_result file_iterate(struct transaction* tr,
+                                 const char* start_path,
+                                 bool added,
+                                 struct file_iterate_state* state);

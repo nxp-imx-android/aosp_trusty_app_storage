@@ -49,7 +49,7 @@ static void open_test_file_etc(struct transaction* tr,
                                const char* path,
                                enum file_create_mode create,
                                bool expect_failure) {
-    enum file_open_result result;
+    enum file_op_result result;
     /* TODO: parameterize the allow_repaired argument if needed */
     result = file_open(tr, path, file, create, false);
     if (print_test_verbose) {
@@ -57,8 +57,8 @@ static void open_test_file_etc(struct transaction* tr,
                path, create, block_mac_to_block(tr, &file->block_mac));
     }
 
-    ASSERT_EQ(result == FILE_OPEN_SUCCESS, !expect_failure);
-    ASSERT_EQ(true, result != FILE_OPEN_SUCCESS ||
+    ASSERT_EQ(result == FILE_OP_SUCCESS, !expect_failure);
+    ASSERT_EQ(true, result != FILE_OP_SUCCESS ||
                             block_mac_valid(tr, &file->block_mac));
 
 test_abort:;
@@ -180,7 +180,7 @@ static void file_test_etc(struct transaction* tr,
                           int free,
                           bool delete,
                           int id) {
-    bool deleted;
+    enum file_op_result delete_res;
     struct file_handle file;
 
     open_test_file(tr, &file, path, create);
@@ -204,9 +204,9 @@ static void file_test_etc(struct transaction* tr,
             printf("%s: delete file %s, at %" PRIu64 ":\n", __func__, path,
                    block_mac_to_block(tr, &file.block_mac));
         }
-        deleted = file_delete(tr, path);
+        delete_res = file_delete(tr, path);
         file_test_commit(tr, commit);
-        ASSERT_EQ(true, deleted);
+        ASSERT_EQ(FILE_OP_SUCCESS, delete_res);
     }
 
 test_abort:;

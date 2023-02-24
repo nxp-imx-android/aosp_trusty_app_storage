@@ -900,11 +900,14 @@ static struct file_handle* file_find_open(struct transaction* tr,
  * @added:      %false to iterate over committed files, %true to iterate over
  *              uncommitted files added by @tr.
  * @state:      client state object containing function to call for each file.
+ *
+ * Return: %FILE_OP_ERR_FAILED if the file system is not readable or an internal
+ * error occurred, and %FILE_OP_SUCCESS otherwise.
  */
-bool file_iterate(struct transaction* tr,
-                  const char* start_path,
-                  bool added,
-                  struct file_iterate_state* state) {
+enum file_op_result file_iterate(struct transaction* tr,
+                                 const char* start_path,
+                                 bool added,
+                                 struct file_iterate_state* state) {
     struct block_tree_path tree_path;
     struct block_mac block_mac;
     struct block_tree* tree = added ? &tr->files_added : &tr->fs->files;
@@ -913,7 +916,7 @@ bool file_iterate(struct transaction* tr,
     bool removed = false;
 
     if (!fs_is_readable(tr->fs)) {
-        return false;
+        return FILE_OP_ERR_FAILED;
     }
 
     if (start_path == NULL) {
@@ -922,9 +925,12 @@ bool file_iterate(struct transaction* tr,
         found = file_tree_lookup(&block_mac, tr, tree, &tree_path, start_path,
                                  false);
         if (!found) {
-            return false;
+            return FILE_OP_ERR_FAILED;
         }
         block_tree_path_next(&tree_path);
+    }
+    if (tr->failed) {
+        return FILE_OP_ERR_FAILED;
     }
 
     while (block_tree_path_get_key(&tree_path)) {
@@ -933,14 +939,17 @@ bool file_iterate(struct transaction* tr,
             removed = file_is_removed(tr, block_mac_to_block(tr, &block_mac));
             file_check_updated(tr, &block_mac, &block_mac);
         }
+        if (tr->failed) {
+            return FILE_OP_ERR_FAILED;
+        }
 
         stop = state->file(state, tr, &block_mac, added, removed);
         if (stop) {
-            return true;
+            return FILE_OP_SUCCESS;
         }
         block_tree_path_next(&tree_path);
     }
-    return true;
+    return FILE_OP_SUCCESS;
 }
 
 /**
@@ -954,14 +963,14 @@ bool file_iterate(struct transaction* tr,
  *                  been repaired, missing files may have previously existed and
  *                  are now rolled back.
  *
- * Return: &enum file_open_result.FILE_OPEN_SUCCESS if file was opened, or an
+ * Return: &enum file_op_result.FILE_OP_SUCCESS if file was opened, or an
  * error describing the failure to open the file.
  */
-enum file_open_result file_open(struct transaction* tr,
-                                const char* path,
-                                struct file_handle* file,
-                                enum file_create_mode create,
-                                bool allow_repaired) {
+enum file_op_result file_open(struct transaction* tr,
+                              const char* path,
+                              struct file_handle* file,
+                              enum file_create_mode create,
+                              bool allow_repaired) {
     bool found;
     struct block_mac block_mac;
     struct block_mac committed_block_mac =
@@ -973,7 +982,7 @@ enum file_open_result file_open(struct transaction* tr,
     assert(tr->fs);
 
     if (!fs_is_readable(tr->fs)) {
-        return FILE_OPEN_ERR_FAILED;
+        return FILE_OP_ERR_FAILED;
     }
 
     found = file_tree_lookup(&block_mac, tr, &tr->files_added, &tree_path, path,
@@ -989,7 +998,7 @@ enum file_open_result file_open(struct transaction* tr,
     }
 
     if (tr->failed) {
-        return FILE_OPEN_ERR_FAILED;
+        return FILE_OP_ERR_FAILED;
     }
 
     /*
@@ -997,7 +1006,7 @@ enum file_open_result file_open(struct transaction* tr,
      * existed before the repair.
      */
     if ((tr->repaired || fs_is_repaired(tr->fs)) && !allow_repaired) {
-        return FILE_OPEN_ERR_FS_REPAIRED;
+        return FILE_OP_ERR_FS_REPAIRED;
     }
 
     if (create != FILE_OPEN_NO_CREATE) {
@@ -1007,25 +1016,25 @@ enum file_open_result file_open(struct transaction* tr,
         goto created;
     }
     if (tr->failed) {
-        return FILE_OPEN_ERR_FAILED;
+        return FILE_OP_ERR_FAILED;
     } else {
-        return FILE_OPEN_ERR_NOT_FOUND;
+        return FILE_OP_ERR_NOT_FOUND;
     }
 
 found:
     if (create == FILE_OPEN_CREATE_EXCLUSIVE) {
-        return FILE_OPEN_ERR_EXIST;
+        return FILE_OP_ERR_EXIST;
     }
     if (file_find_open(tr, &block_mac)) {
         pr_warn("%s already open\n", path);
-        return FILE_OPEN_ERR_ALREADY_OPEN;
+        return FILE_OP_ERR_ALREADY_OPEN;
     }
 created:
     file_entry_ro = block_get(tr, &block_mac, NULL, &file_entry_ref);
     if (!file_entry_ro) {
         assert(tr->failed);
         pr_warn("transaction failed, abort\n");
-        return FILE_OPEN_ERR_FAILED;
+        return FILE_OP_ERR_FAILED;
     }
     assert(file_entry_ro);
     list_add_head(&tr->open_files, &file->node);
@@ -1036,7 +1045,7 @@ created:
     file->used_by_tr = false;
     block_put(file_entry_ro, &file_entry_ref);
 
-    return FILE_OPEN_SUCCESS;
+    return FILE_OP_SUCCESS;
 }
 
 /**
@@ -1054,9 +1063,11 @@ void file_close(struct file_handle* file) {
  * @tr:         Transaction object.
  * @path:       Path to find file at.
  *
- * Return: %true if file was found, %false otherwise.
+ * Return: %FILE_OP_SUCCESS if the file existed and was deleted,
+ * %FILE_OP_ERR_NOT_FOUND if the file did not exist, and %FILE_OP_ERR_FAILED if
+ * some other error occurred.
  */
-bool file_delete(struct transaction* tr, const char* path) {
+enum file_op_result file_delete(struct transaction* tr, const char* path) {
     bool found;
     struct block_mac block_mac;
     struct block_mac old_block_mac;
@@ -1068,8 +1079,7 @@ bool file_delete(struct transaction* tr, const char* path) {
     struct file_handle* open_file;
 
     if (!fs_is_readable(tr->fs)) {
-        transaction_fail(tr);
-        return false;
+        return FILE_OP_ERR_FAILED;
     }
 
     found = file_tree_lookup(&block_mac, tr, &tr->files_added, &tree_path, path,
@@ -1080,7 +1090,7 @@ bool file_delete(struct transaction* tr, const char* path) {
                                         &tree_path, path);
         if (!found) {
             pr_warn("file %s not found\n", path);
-            return false;
+            return tr->failed ? FILE_OP_ERR_FAILED : FILE_OP_ERR_NOT_FOUND;
         }
         in_files = true;
     }
@@ -1092,7 +1102,7 @@ bool file_delete(struct transaction* tr, const char* path) {
     if (!file_entry) {
         assert(tr->failed);
         pr_warn("transaction failed, abort\n");
-        return false;
+        return FILE_OP_ERR_FAILED;
     }
     assert(file_entry);
     assert(!strcmp(file_entry->info.path, path));
@@ -1110,7 +1120,7 @@ bool file_delete(struct transaction* tr, const char* path) {
                               block_mac_to_block(tr, &block_mac));
             if (tr->failed) {
                 pr_warn("transaction failed, abort\n");
-                return false;
+                return FILE_OP_ERR_FAILED;
             }
         }
         block_tree_insert_block_mac(tr, &tr->files_removed,
@@ -1126,7 +1136,7 @@ bool file_delete(struct transaction* tr, const char* path) {
         open_file->block_mac = clear;
         open_file->size = 0;
     }
-    return true;
+    return FILE_OP_SUCCESS;
 }
 
 /**
@@ -1137,17 +1147,25 @@ bool file_delete(struct transaction* tr, const char* path) {
  * @dest_create:    FILE_OPEN_NO_CREATE, FILE_OPEN_CREATE or
  *                  FILE_OPEN_CREATE_EXCLUSIVE.
  *
- * Return: %true if file was moved, %false otherwise.
+ * Return: %FILE_OP_SUCCESS if the operation was successful, %FILE_OP_ERR_EXIST
+ * if the destination file already exists and %FILE_OPEN_CREATE_EXCLUSIVE was
+ * requested, %FILE_OP_ERR_NOT_FOUND if the destination file did not exist but
+ * %FILE_OPEN_NO_CREATE was required, and %FILE_OP_ERR_FAILED if some other
+ * error occurred.
  */
-bool file_move(struct transaction* tr,
-               struct file_handle* file,
-               const char* dest_path,
-               enum file_create_mode dest_create) {
+enum file_op_result file_move(struct transaction* tr,
+                              struct file_handle* file,
+                              const char* dest_path,
+                              enum file_create_mode dest_create) {
     assert(tr->fs);
     struct block_mac block_mac;
     struct block_mac committed_block_mac;
     struct block_tree_path tree_path;
     bool dest_found;
+
+    if (!fs_is_readable(tr->fs)) {
+        return FILE_OP_ERR_FAILED;
+    }
 
     dest_found = file_tree_lookup(&block_mac, tr, &tr->files_added, &tree_path,
                                   dest_path, false);
@@ -1155,31 +1173,35 @@ bool file_move(struct transaction* tr,
         dest_found = file_lookup_not_removed(&block_mac, &committed_block_mac,
                                              tr, &tree_path, dest_path);
     }
+    if (tr->failed) {
+        pr_warn("transaction failed, abort\n");
+        return FILE_OP_ERR_FAILED;
+    }
 
     if (dest_found) {
         if (dest_create == FILE_OPEN_CREATE_EXCLUSIVE) {
-            return false;
+            return FILE_OP_ERR_EXIST;
         }
         if (block_mac_eq(tr, &file->block_mac, &block_mac)) {
-            return true;
+            return FILE_OP_SUCCESS;
         }
         file_delete(tr, dest_path);
     } else {
         if (dest_create == FILE_OPEN_NO_CREATE) {
-            return false;
+            return FILE_OP_ERR_NOT_FOUND;
         }
     }
 
     if (tr->failed) {
         pr_warn("transaction failed, abort\n");
-        return false;
+        return FILE_OP_ERR_FAILED;
     }
     file_block_map_update(tr, NULL, dest_path, file);
     if (tr->failed) {
         pr_warn("transaction failed, abort\n");
-        return false;
+        return FILE_OP_ERR_FAILED;
     }
-    return true;
+    return FILE_OP_SUCCESS;
 }
 
 /**
