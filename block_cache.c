@@ -32,6 +32,7 @@
 #include "crypt.h"
 #include "debug.h"
 #include "debug_stats.h"
+#include "error_reporting.h"
 #include "transaction.h"
 
 static bool print_cache_lookup = false;
@@ -842,6 +843,9 @@ static struct block_cache_entry* block_cache_get(
 
     if (load) {
         res = block_cache_load_entry(entry, mac, mac_size);
+        if (res == CACHE_LOAD_MAC_MISMATCH) {
+            error_report_block_mac_mismatch(fs->name, BLOCK_TYPE_UNKNOWN);
+        }
         if (load_result) {
             *load_result = res;
         }

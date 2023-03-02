@@ -35,6 +35,7 @@
 #include "block_set.h"
 #include "checkpoint.h"
 #include "debug.h"
+#include "error_reporting.h"
 #include "file.h"
 #include "fs.h"
 #include "transaction.h"
@@ -610,12 +611,14 @@ static int fs_init_from_super(struct fs* fs,
     if (super && super->fs_version > SUPER_BLOCK_FS_VERSION) {
         pr_err("ERROR: super block is from the future 0x%x\n",
                super->fs_version);
+        error_report_superblock_invalid(fs->name);
         return -1;
     }
 
     if (super && (super->required_flags & ~SUPER_BLOCK_REQUIRED_FLAGS_MASK)) {
         pr_err("ERROR: super block requires unrecognized fs features: 0x%x\n",
                super->required_flags);
+        error_report_superblock_invalid(fs->name);
         return -1;
     }
 
