@@ -27,6 +27,7 @@ HOST_SRCS := \
 	$(STORAGE_DIR)/block_tree.c \
 	$(STORAGE_DIR)/checkpoint.c \
 	$(STORAGE_DIR)/crypt.c \
+	$(STORAGE_DIR)/error_reporting.c \
 	$(STORAGE_DIR)/file.c \
 	$(STORAGE_DIR)/super.c \
 	$(STORAGE_DIR)/transaction.c \

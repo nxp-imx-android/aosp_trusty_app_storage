@@ -19,6 +19,8 @@ MODULE := $(LOCAL_DIR)
 
 STORAGE_RPMB_PROTOCOL ?= MMC
 
+CONSTANTS := $(LOCAL_DIR)/storage_consts.json
+
 MANIFEST := $(LOCAL_DIR)/manifest.json
 
 MODULE_DEFINES := \
@@ -60,6 +62,11 @@ ifeq (true,$(call TOBOOL,$(STORAGE_NS_ALTERNATE_SUPERBLOCK_ALLOWED)))
     MODULE_DEFINES += STORAGE_NS_ALTERNATE_SUPERBLOCK_ALLOWED=1
 endif
 
+STORAGE_ENABLE_ERROR_REPORTING ?= false
+ifeq (true,$(call TOBOOL,$(STORAGE_ENABLE_ERROR_REPORTING)))
+    MODULE_DEFINES += STORAGE_ENABLE_ERROR_REPORTING=1
+endif
+
 MODULE_SRCS := \
 	$(LOCAL_DIR)/block_allocator.c \
 	$(LOCAL_DIR)/block_cache.c \
@@ -71,6 +78,7 @@ MODULE_SRCS := \
 	$(LOCAL_DIR)/checkpoint.c \
 	$(LOCAL_DIR)/client_tipc.c \
 	$(LOCAL_DIR)/crypt.c \
+	$(LOCAL_DIR)/error_reporting.c \
 	$(LOCAL_DIR)/file.c \
 	$(LOCAL_DIR)/ipc.c \
 	$(LOCAL_DIR)/main.c \
@@ -86,6 +94,12 @@ MODULE_LIBRARY_DEPS := \
 	trusty/user/base/lib/libc-trusty \
 	trusty/user/base/lib/system_state \
 	external/boringssl \
+
+ifeq (true,$(call TOBOOL,$(STORAGE_ENABLE_ERROR_REPORTING)))
+MODULE_LIBRARY_DEPS += \
+	trusty/user/base/interface/stats/tz \
+	trusty/user/base/lib/metrics_atoms
+endif
 
 MODULE_DEPS += \
 	trusty/user/app/storage/test/block_host_test \
