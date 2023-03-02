@@ -27,6 +27,33 @@ struct rpmb_key;
 struct block_device_tipc;
 
 /**
+ * DOC: File System Identifiers
+ *
+ * These file system names can be used in log messages to distinguish between
+ * operations on different file systems. They are also mapped to identifiers to
+ * report metrics events.
+ *
+ * @file_system_id_td: Tamper detect storage. Rollback or tampering by
+ *                     non-secure code will be detected.
+ * @file_system_id_tdea: Tamper detect early-access storage. Rollback or
+ *                       tampering by non-secure code will be detected.
+ *                       Available before the non-secure OS has booted if
+ *                       supported by the boot loader.
+ * @file_system_id_tdp: Tamper detect persistent storage. Rollback or tampering
+ *                      by non-secure code will be detected. Data will persist
+ *                      across device wipes.
+ * @file_system_id_tp: Tamper proof storage. Non-secure code can prevent read
+ *                     and write operations from succeeding, but it cannot
+ *                     modify on-disk data.
+ * @file_system_id_nsp: Non-secure persistent storage. Deprecated.
+ */
+extern const char file_system_id_td[];
+extern const char file_system_id_tdea[];
+extern const char file_system_id_tdp[];
+extern const char file_system_id_tp[];
+extern const char file_system_id_nsp[];
+
+/**
  * struct block_device_rpmb
  * @state:       Pointer to shared state containing ipc_handle and rpmb_state
  * @dev:         Block device state

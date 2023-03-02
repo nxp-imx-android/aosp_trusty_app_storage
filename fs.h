@@ -112,6 +112,9 @@ STATIC_ASSERT(sizeof(struct super_block_backup) == 76);
  *                                  super block that must be written before any
  *                                  other data. If %NULL superblock is already
  *                                  a safe state.
+ * @name:                           File system name, used to identify the file
+ *                                  system in debugging and error reporting
+ *                                  messages.
  */
 
 struct fs {
@@ -137,6 +140,7 @@ struct fs {
     size_t mac_size;
     data_block_t reserved_count;
     struct transaction* initial_super_block_tr;
+    const char* name;
 };
 
 bool update_super_block(struct transaction* tr,
@@ -180,6 +184,7 @@ typedef uint32_t fs_init_flags32_t;
      FS_INIT_FLAGS_ALTERNATE_DATA | FS_INIT_FLAGS_ALLOW_TAMPERING)
 
 int fs_init(struct fs* fs,
+            const char* name,
             const struct key* key,
             struct block_device* dev,
             struct block_device* super_dev,

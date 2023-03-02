@@ -88,6 +88,12 @@ STATIC_ASSERT(BLOCK_SIZE_RPMB >= 256);
     } while (0)
 #endif
 
+const char file_system_id_td[] = "td";
+const char file_system_id_tdea[] = "tdea";
+const char file_system_id_tdp[] = "tdp";
+const char file_system_id_tp[] = "tp";
+const char file_system_id_nsp[] = "nsp";
+
 struct rpmb_key_derivation_in {
     uint8_t prefix[sizeof(struct key)];
     uint8_t block_data[RPMB_BUF_SIZE];
@@ -525,8 +531,9 @@ int block_device_tipc_init(struct block_device_tipc* state,
                                     rpmb_block_count - rpmb_part2_base, false);
 
     /* TODO: allow non-rpmb based tamper proof storage */
-    ret = fs_init(&state->tr_state_rpmb, fs_key, &state->dev_rpmb.dev,
-                  &state->dev_rpmb.dev, FS_INIT_FLAGS_NONE);
+    ret = fs_init(&state->tr_state_rpmb, file_system_id_tp, fs_key,
+                  &state->dev_rpmb.dev, &state->dev_rpmb.dev,
+                  FS_INIT_FLAGS_NONE);
     if (ret < 0) {
         goto err_init_tr_state_rpmb;
     }
@@ -596,8 +603,9 @@ int block_device_tipc_init(struct block_device_tipc* state,
                                     rpmb_part_sb_tdp_base,
                                     rpmb_part_sb_ns_block_count, false);
 
-    ret = fs_init(&state->tr_state_ns_tdp, fs_key, &state->dev_ns_tdp.dev,
-                  &state->dev_ns_tdp_rpmb.dev, FS_INIT_FLAGS_NONE);
+    ret = fs_init(&state->tr_state_ns_tdp, file_system_id_tdp, fs_key,
+                  &state->dev_ns_tdp.dev, &state->dev_ns_tdp_rpmb.dev,
+                  FS_INIT_FLAGS_NONE);
     if (ret < 0) {
         goto err_init_fs_ns_tdp_tr_state;
     }
@@ -644,8 +652,8 @@ int block_device_tipc_init(struct block_device_tipc* state,
         ns_init_flags |= FS_INIT_FLAGS_ALTERNATE_DATA;
     }
 
-    ret = fs_init(&state->tr_state_ns, fs_key, &state->dev_ns.dev,
-                  &state->dev_ns_rpmb.dev, ns_init_flags);
+    ret = fs_init(&state->tr_state_ns, file_system_id_td, fs_key,
+                  &state->dev_ns.dev, &state->dev_ns_rpmb.dev, ns_init_flags);
     if (ret < 0) {
         goto err_init_fs_ns_tr_state;
     }
@@ -673,8 +681,8 @@ int block_device_tipc_init(struct block_device_tipc* state,
 
     state->fs_nsp.tr_state = &state->tr_state_ns_nsp;
 
-    ret = fs_init(&state->tr_state_ns_nsp, fs_key, &state->dev_ns_nsp.dev,
-                  &state->dev_ns_nsp.dev,
+    ret = fs_init(&state->tr_state_ns_nsp, file_system_id_nsp, fs_key,
+                  &state->dev_ns_nsp.dev, &state->dev_ns_nsp.dev,
                   FS_INIT_FLAGS_RECOVERY_CLEAR_ALLOWED |
                           FS_INIT_FLAGS_ALLOW_TAMPERING);
     if (ret < 0) {
@@ -693,8 +701,8 @@ int block_device_tipc_init(struct block_device_tipc* state,
         fs_destroy(&state->tr_state_ns_nsp);
         block_cache_dev_destroy(&state->dev_ns_nsp.dev);
 
-        ret = fs_init(&state->tr_state_ns_nsp, fs_key, &state->dev_ns_nsp.dev,
-                      &state->dev_ns_nsp.dev,
+        ret = fs_init(&state->tr_state_ns_nsp, file_system_id_nsp, fs_key,
+                      &state->dev_ns_nsp.dev, &state->dev_ns_nsp.dev,
                       FS_INIT_FLAGS_DO_CLEAR | FS_INIT_FLAGS_ALLOW_TAMPERING);
         if (ret < 0) {
             goto err_init_fs_ns_nsp_tr_state;

@@ -50,6 +50,8 @@ long gettime(uint32_t clock_id, uint32_t flags, int64_t* time) {
     return 0;
 }
 
+#define FILE_SYSTEM_TEST "block_test"
+
 #if 0 /* test tree order 3 */
 /* not useful, b+tree for free set grows faster than the space that is added to it */
 #define BLOCK_SIZE (64)
@@ -149,7 +151,7 @@ static void block_test_clear_reinit_etc(struct transaction* tr,
         memset(&blocks[start], 0, (BLOCK_COUNT - start) * sizeof(struct block));
     }
 
-    ret = fs_init(fs, key, dev, super_dev, flags);
+    ret = fs_init(fs, FILE_SYSTEM_TEST, key, dev, super_dev, flags);
     assert(ret == 0);
     transaction_init(tr, fs, true);
 }
@@ -2167,10 +2169,12 @@ static void future_fs_version_test(struct transaction* tr) {
     fs_destroy(fs);
     block_cache_dev_destroy(dev);
 
-    ret = fs_init(fs, key, dev, super_dev, FS_INIT_FLAGS_NONE);
+    ret = fs_init(fs, FILE_SYSTEM_TEST, key, dev, super_dev,
+                  FS_INIT_FLAGS_NONE);
     assert(ret == -1);
 
-    ret = fs_init(fs, key, dev, super_dev, FS_INIT_FLAGS_DO_CLEAR);
+    ret = fs_init(fs, FILE_SYSTEM_TEST, key, dev, super_dev,
+                  FS_INIT_FLAGS_DO_CLEAR);
     assert(ret == -1);
 
     fs->dev = dev;
@@ -2185,7 +2189,8 @@ static void future_fs_version_test(struct transaction* tr) {
     block_cache_clean_transaction(tr);
     transaction_free(tr);
 
-    ret = fs_init(fs, key, dev, super_dev, FS_INIT_FLAGS_NONE);
+    ret = fs_init(fs, FILE_SYSTEM_TEST, key, dev, super_dev,
+                  FS_INIT_FLAGS_NONE);
     assert(ret == 0);
 
     transaction_init(tr, fs, true);
@@ -2248,10 +2253,12 @@ static void unknown_required_flags_test(struct transaction* tr) {
 
     fs_destroy(fs);
 
-    ret = fs_init(fs, key, dev, super_dev, FS_INIT_FLAGS_NONE);
+    ret = fs_init(fs, FILE_SYSTEM_TEST, key, dev, super_dev,
+                  FS_INIT_FLAGS_NONE);
     assert(ret == -1);
 
-    ret = fs_init(fs, key, dev, super_dev, FS_INIT_FLAGS_DO_CLEAR);
+    ret = fs_init(fs, FILE_SYSTEM_TEST, key, dev, super_dev,
+                  FS_INIT_FLAGS_DO_CLEAR);
     assert(ret == -1);
 
     fs->dev = dev;
@@ -2260,10 +2267,12 @@ static void unknown_required_flags_test(struct transaction* tr) {
     /* set all flag bits, this should fail unless we support 16 flags */
     set_required_flags(fs, UINT16_MAX);
 
-    ret = fs_init(fs, key, dev, super_dev, FS_INIT_FLAGS_NONE);
+    ret = fs_init(fs, FILE_SYSTEM_TEST, key, dev, super_dev,
+                  FS_INIT_FLAGS_NONE);
     assert(ret == -1);
 
-    ret = fs_init(fs, key, dev, super_dev, FS_INIT_FLAGS_DO_CLEAR);
+    ret = fs_init(fs, FILE_SYSTEM_TEST, key, dev, super_dev,
+                  FS_INIT_FLAGS_DO_CLEAR);
     assert(ret == -1);
 
     fs->dev = dev;
@@ -2272,10 +2281,12 @@ static void unknown_required_flags_test(struct transaction* tr) {
     /* set highest flag bit, this should fail unless we support 16 flags */
     set_required_flags(fs, 0x1U << 15);
 
-    ret = fs_init(fs, key, dev, super_dev, FS_INIT_FLAGS_NONE);
+    ret = fs_init(fs, FILE_SYSTEM_TEST, key, dev, super_dev,
+                  FS_INIT_FLAGS_NONE);
     assert(ret == -1);
 
-    ret = fs_init(fs, key, dev, super_dev, FS_INIT_FLAGS_DO_CLEAR);
+    ret = fs_init(fs, FILE_SYSTEM_TEST, key, dev, super_dev,
+                  FS_INIT_FLAGS_DO_CLEAR);
     assert(ret == -1);
 
     fs->dev = dev;
@@ -2283,7 +2294,8 @@ static void unknown_required_flags_test(struct transaction* tr) {
 
     set_required_flags(fs, initial_required_flags);
 
-    ret = fs_init(fs, key, dev, super_dev, FS_INIT_FLAGS_NONE);
+    ret = fs_init(fs, FILE_SYSTEM_TEST, key, dev, super_dev,
+                  FS_INIT_FLAGS_NONE);
     assert(ret == 0);
 
     transaction_init(tr, fs, true);
@@ -3173,7 +3185,7 @@ int main(int argc, const char* argv[]) {
     crypt_init();
     block_cache_init();
 
-    fs_init(&fs, &key, &dev, &dev, FS_INIT_FLAGS_DO_CLEAR);
+    fs_init(&fs, FILE_SYSTEM_TEST, &key, &dev, &dev, FS_INIT_FLAGS_DO_CLEAR);
     fs.reserved_count = 18; /* HACK: override default reserved space */
     transaction_init(&tr, &fs, false);
 
@@ -3196,7 +3208,8 @@ int main(int argc, const char* argv[]) {
             transaction_free(&tr);
             fs_destroy(&fs);
             block_cache_dev_destroy(&dev);
-            fs_init(&fs, &key, &dev, &dev, FS_INIT_FLAGS_NONE);
+            fs_init(&fs, FILE_SYSTEM_TEST, &key, &dev, &dev,
+                    FS_INIT_FLAGS_NONE);
             fs.reserved_count = 18; /* HACK: override default reserved space */
             transaction_init(&tr, &fs, false);
         }

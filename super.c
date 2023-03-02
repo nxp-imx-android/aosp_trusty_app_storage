@@ -993,12 +993,14 @@ void fs_file_tree_init(const struct fs* fs, struct block_tree* tree) {
 /**
  * fs_init - Initialize file system state
  * @fs:         File system state object.
+ * @name:       File system name for error reporting. Must be a static string.
  * @key:        Key pointer. Must not be freed while @fs is in use.
  * @dev:        Main block device.
  * @super_dev:  Block device for super block.
  * @flags:      Any of &typedef fs_init_flags32_t, ORed together.
  */
 int fs_init(struct fs* fs,
+            const char* name,
             const struct key* key,
             struct block_device* dev,
             struct block_device* super_dev,
@@ -1017,6 +1019,7 @@ int fs_init(struct fs* fs,
         return -1;  // ERR_NOT_VALID?
     }
 
+    fs->name = name;
     fs->key = key;
     fs->dev = dev;
     fs->super_dev = super_dev;
