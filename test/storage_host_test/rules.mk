@@ -14,6 +14,7 @@
 #
 
 LOCAL_DIR := $(GET_LOCAL_DIR)
+COMMON_DIR := $(LOCAL_DIR)/../common
 STORAGE_DIR := $(LOCAL_DIR)/../..
 
 HOST_TEST := storage_host_test
@@ -28,7 +29,6 @@ HOST_SRCS := \
 	$(STORAGE_DIR)/block_tree.c \
 	$(STORAGE_DIR)/checkpoint.c \
 	$(STORAGE_DIR)/crypt.c \
-	$(STORAGE_DIR)/error_reporting.c \
 	$(STORAGE_DIR)/file.c \
 	$(STORAGE_DIR)/rpmb_dev/rpmb_dev.c \
 	$(STORAGE_DIR)/rpmb.c \
@@ -37,10 +37,12 @@ HOST_SRCS := \
 	$(LOCAL_DIR)/library_shims.c \
 	$(LOCAL_DIR)/storage_host_test.c \
 	$(LOCAL_DIR)/storageproxy_shim.c \
+	$(COMMON_DIR)/error_reporting_mock.c \
 
 HOST_INCLUDE_DIRS += \
 	$(LOCAL_DIR) \
 	$(STORAGE_DIR) \
+	$(COMMON_DIR) \
 	trusty/user/base/interface/storage/include \
 
 # block_device_tipc.h requires hwkey and system_state for declarations even

@@ -77,3 +77,28 @@ static inline void error_report_block_mac_mismatch(
     do_error_report(TRUSTY_STORAGE_ERROR_BLOCK_MAC_MISMATCH, fs_name,
                     block_type);
 }
+
+static inline void error_report_rpmb_counter_mismatch(void) {
+    do_error_report(TRUSTY_STORAGE_ERROR_RPMB_COUNTER_MISMATCH, "unknown",
+                    BLOCK_TYPE_UNKNOWN);
+}
+
+static inline void error_report_rpmb_counter_mismatch_recovered(void) {
+    do_error_report(TRUSTY_STORAGE_ERROR_RPMB_COUNTER_MISMATCH_RECOVERED,
+                    "unknown", BLOCK_TYPE_UNKNOWN);
+}
+
+static inline void error_report_rpmb_counter_read_failure(void) {
+    do_error_report(TRUSTY_STORAGE_ERROR_RPMB_COUNTER_READ_FAILURE, "unknown",
+                    BLOCK_TYPE_UNKNOWN);
+}
+
+static inline void error_report_rpmb_mac_mismatch(void) {
+    do_error_report(TRUSTY_STORAGE_ERROR_RPMB_MAC_MISMATCH, "unknown",
+                    BLOCK_TYPE_UNKNOWN);
+}
+
+static inline void error_report_rpmb_addr_mismatch(void) {
+    do_error_report(TRUSTY_STORAGE_ERROR_RPMB_ADDR_MISMATCH, "unknown",
+                    BLOCK_TYPE_UNKNOWN);
+}

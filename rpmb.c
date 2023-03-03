@@ -15,6 +15,7 @@
  */
 
 #include "rpmb.h"
+#include "error_reporting.h"
 #include "rpmb_protocol.h"
 
 #include <assert.h>
@@ -175,6 +176,7 @@ static int rpmb_check_response(const char* cmd_str,
         if (i == res_count - 1 && mac &&
             CRYPTO_memcmp(res[i].key_mac.byte, mac->byte, sizeof(mac->byte))) {
             fprintf(stderr, "%s: Bad MAC\n", cmd_str);
+            error_report_rpmb_mac_mismatch();
             return -1;
         }
 
@@ -188,12 +190,14 @@ static int rpmb_check_response(const char* cmd_str,
             write_counter != rpmb_get_u32(res[i].write_counter)) {
             fprintf(stderr, "%s: Bad write counter, got %u, expected %u\n",
                     cmd_str, rpmb_get_u32(res[i].write_counter), write_counter);
+            error_report_rpmb_counter_mismatch();
             return -1;
         }
 
         if (addrp && *addrp != rpmb_get_u16(res[i].address)) {
             fprintf(stderr, "%s: Bad addr, got %u, expected %u\n", cmd_str,
                     rpmb_get_u16(res[i].address), *addrp);
+            error_report_rpmb_addr_mismatch();
             return -1;
         }
     }
@@ -280,6 +284,7 @@ static int rpmb_read_counter_retry(struct rpmb_state* state,
     }
 
     /* Return the last error */
+    error_report_rpmb_counter_read_failure();
     return ret;
 }
 
@@ -489,6 +494,7 @@ static int rpmb_write_data(struct rpmb_state* state,
             fprintf(stderr,
                     "Write was committed with failed response. New write counter: %u\n",
                     state->write_counter);
+            error_report_rpmb_counter_mismatch_recovered();
 
             /*
              * Indicate to block device that the FS state is unknown and a clean

@@ -26,6 +26,7 @@
 #include "block_cache.h"
 #include "block_device_tipc.h"
 #include "crypt.h"
+#include "error_reporting_mock.h"
 #include "file.h"
 #include "rpmb.h"
 #include "storageproxy_shim.h"
@@ -259,6 +260,7 @@ typedef struct transaction_test {
 
 TEST_F_SETUP(StorageTest) {
     fail_next_rpmb_writes(0, false);
+    mock_error_report_clear();
     transaction_init(&_state->tr, *((struct fs**)GetParam()), true);
     _state->initial_super_block_version = _state->tr.fs->super_block_version;
 }
@@ -366,6 +368,7 @@ TEST_P(StorageTest, FailDataWriteWithCounterIncrement) {
     ASSERT_NE(NULL, _state->tr.fs->initial_super_block_tr);
     ASSERT_NE(_state->tr.fs->super_block_version,
               _state->tr.fs->written_super_block_version);
+    expect_errors(TRUSTY_STORAGE_ERROR_RPMB_COUNTER_MISMATCH_RECOVERED, 1);
     transaction_activate(&_state->tr);
 
     /* did we recover? */
@@ -401,6 +404,7 @@ TEST_P(StorageTest, FailDataWriteFullCacheWithIncrement) {
     ASSERT_NE(NULL, _state->tr.fs->initial_super_block_tr);
     ASSERT_NE(_state->tr.fs->super_block_version,
               _state->tr.fs->written_super_block_version);
+    expect_errors(TRUSTY_STORAGE_ERROR_RPMB_COUNTER_MISMATCH_RECOVERED, 1);
     transaction_activate(&_state->tr);
 
     /* did we recover? */
@@ -446,6 +450,7 @@ TEST_P(StorageTest, FailRpmbVerify) {
     ASSERT_NE(NULL, _state->tr.fs->initial_super_block_tr);
     ASSERT_NE(_state->tr.fs->super_block_version,
               _state->tr.fs->written_super_block_version);
+    expect_errors(TRUSTY_STORAGE_ERROR_RPMB_COUNTER_MISMATCH_RECOVERED, 1);
     transaction_activate(&_state->tr);
 
     /* Fail the verification that we actually performed the RPMB write */
@@ -494,6 +499,8 @@ TEST(StorageTest, FlushFailingSpecialTransaction) {
     transaction_init(&tp_tr, &test_block_device.tr_state_rpmb, true);
     int tp_initial_super_block_version = tp_tr.fs->super_block_version;
 
+    mock_error_report_clear();
+
     fail_next_rpmb_writes(1, true);
     file_test(&tp_tr, __func__, FILE_OPEN_CREATE_EXCLUSIVE, 1, 0, 0, false, 0);
 
@@ -503,6 +510,7 @@ TEST(StorageTest, FlushFailingSpecialTransaction) {
     ASSERT_NE(NULL, tp_tr.fs->initial_super_block_tr);
     ASSERT_NE(tp_tr.fs->super_block_version,
               tp_tr.fs->written_super_block_version);
+    expect_errors(TRUSTY_STORAGE_ERROR_RPMB_COUNTER_MISMATCH_RECOVERED, 1);
     transaction_activate(&tp_tr);
 
     /*
