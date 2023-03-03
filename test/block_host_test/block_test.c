@@ -18,6 +18,7 @@
 #include <inttypes.h>
 #include <limits.h>
 #include <lk/macros.h>
+#include <malloc.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -32,6 +33,7 @@
 #include "checkpoint.h"
 #include "crypt.h"
 #include "debug_stats.h"
+#include "error_reporting_mock.h"
 #include "file.h"
 #include "transaction.h"
 
@@ -2172,10 +2174,12 @@ static void future_fs_version_test(struct transaction* tr) {
     ret = fs_init(fs, FILE_SYSTEM_TEST, key, dev, super_dev,
                   FS_INIT_FLAGS_NONE);
     assert(ret == -1);
+    expect_errors(TRUSTY_STORAGE_ERROR_SUPERBLOCK_INVALID, 1);
 
     ret = fs_init(fs, FILE_SYSTEM_TEST, key, dev, super_dev,
                   FS_INIT_FLAGS_DO_CLEAR);
     assert(ret == -1);
+    expect_errors(TRUSTY_STORAGE_ERROR_SUPERBLOCK_INVALID, 1);
 
     fs->dev = dev;
     fs->super_dev = super_dev;
@@ -2256,10 +2260,12 @@ static void unknown_required_flags_test(struct transaction* tr) {
     ret = fs_init(fs, FILE_SYSTEM_TEST, key, dev, super_dev,
                   FS_INIT_FLAGS_NONE);
     assert(ret == -1);
+    expect_errors(TRUSTY_STORAGE_ERROR_SUPERBLOCK_INVALID, 1);
 
     ret = fs_init(fs, FILE_SYSTEM_TEST, key, dev, super_dev,
                   FS_INIT_FLAGS_DO_CLEAR);
     assert(ret == -1);
+    expect_errors(TRUSTY_STORAGE_ERROR_SUPERBLOCK_INVALID, 1);
 
     fs->dev = dev;
     fs->super_dev = super_dev;
@@ -2270,10 +2276,12 @@ static void unknown_required_flags_test(struct transaction* tr) {
     ret = fs_init(fs, FILE_SYSTEM_TEST, key, dev, super_dev,
                   FS_INIT_FLAGS_NONE);
     assert(ret == -1);
+    expect_errors(TRUSTY_STORAGE_ERROR_SUPERBLOCK_INVALID, 1);
 
     ret = fs_init(fs, FILE_SYSTEM_TEST, key, dev, super_dev,
                   FS_INIT_FLAGS_DO_CLEAR);
     assert(ret == -1);
+    expect_errors(TRUSTY_STORAGE_ERROR_SUPERBLOCK_INVALID, 1);
 
     fs->dev = dev;
     fs->super_dev = super_dev;
@@ -2284,10 +2292,12 @@ static void unknown_required_flags_test(struct transaction* tr) {
     ret = fs_init(fs, FILE_SYSTEM_TEST, key, dev, super_dev,
                   FS_INIT_FLAGS_NONE);
     assert(ret == -1);
+    expect_errors(TRUSTY_STORAGE_ERROR_SUPERBLOCK_INVALID, 1);
 
     ret = fs_init(fs, FILE_SYSTEM_TEST, key, dev, super_dev,
                   FS_INIT_FLAGS_DO_CLEAR);
     assert(ret == -1);
+    expect_errors(TRUSTY_STORAGE_ERROR_SUPERBLOCK_INVALID, 1);
 
     fs->dev = dev;
     fs->super_dev = super_dev;
@@ -2400,11 +2410,18 @@ static void fs_recovery_roots_test(struct transaction* tr) {
            block_mac_to_block(tr, &tr->fs->files.root));
     fs_corruption_helper(tr, select_files_block, 0, true);
     assert(tr->failed);
+    /*
+     * fs_corruption_helper hits the corrupted block while checking the file,
+     * again while re-initializing the FS, and then again checking the file.
+     */
+    expect_errors(TRUSTY_STORAGE_ERROR_BLOCK_MAC_MISMATCH, 3);
 
     assert(!fs_check(tr->fs, false, false));
+    expect_errors(TRUSTY_STORAGE_ERROR_BLOCK_MAC_MISMATCH, 1);
 
     /* re-initialize the filesystem with recovery enabled */
     block_test_reinit(tr, FS_INIT_FLAGS_RECOVERY_CLEAR_ALLOWED);
+    expect_errors(TRUSTY_STORAGE_ERROR_BLOCK_MAC_MISMATCH, 1);
 
     /* Did we recover correctly? */
     create_and_delete(tr, "recovery");
@@ -2415,11 +2432,14 @@ static void fs_recovery_roots_test(struct transaction* tr) {
     fs_corruption_helper(tr, select_free_block, 0, false);
     assert(tr->failed);
     assert(tr->invalid_block_found);
+    expect_errors(TRUSTY_STORAGE_ERROR_BLOCK_MAC_MISMATCH, 3);
 
     assert(!fs_check(tr->fs, false, false));
+    expect_errors(TRUSTY_STORAGE_ERROR_BLOCK_MAC_MISMATCH, 1);
 
     /* re-initialize the filesystem with recovery enabled */
     block_test_reinit(tr, FS_INIT_FLAGS_RECOVERY_CLEAR_ALLOWED);
+    expect_errors(TRUSTY_STORAGE_ERROR_BLOCK_MAC_MISMATCH, 1);
 
     /* Did we recover correctly? */
     create_and_delete(tr, "recovery");
@@ -2439,12 +2459,14 @@ static void fs_check_file_child_test(struct transaction* tr) {
 
     /* Ensure that we detect this corruption */
     assert(!fs_check(tr->fs, true, false));
+    expect_errors(TRUSTY_STORAGE_ERROR_BLOCK_MAC_MISMATCH, 1);
 
     /* re-initialize the filesystem with recovery enabled */
     block_test_reinit(tr, FS_INIT_FLAGS_RECOVERY_CLEAR_ALLOWED);
 
     /* recovery doesn't fix this error */
     assert(!fs_check(tr->fs, true, false));
+    expect_errors(TRUSTY_STORAGE_ERROR_BLOCK_MAC_MISMATCH, 1);
 
     transaction_fail(tr);
     block_test_reinit(tr, FS_INIT_FLAGS_DO_CLEAR);
@@ -2463,15 +2485,18 @@ static void fs_check_free_child_test(struct transaction* tr) {
     fs_corruption_helper(tr, select_free_block, 1, false);
     assert(tr->failed);
     assert(tr->invalid_block_found);
+    expect_errors(TRUSTY_STORAGE_ERROR_BLOCK_MAC_MISMATCH, 4);
 
     /* Ensure that we detect this corruption */
     assert(!fs_check(tr->fs, true, false));
+    expect_errors(TRUSTY_STORAGE_ERROR_BLOCK_MAC_MISMATCH, 2);
 
     /* re-initialize the filesystem with recovery enabled */
     block_test_reinit(tr, FS_INIT_FLAGS_RECOVERY_CLEAR_ALLOWED);
 
     /* recovery doesn't fix this error */
     assert(!fs_check(tr->fs, true, false));
+    expect_errors(TRUSTY_STORAGE_ERROR_BLOCK_MAC_MISMATCH, 2);
 
     transaction_fail(tr);
     block_test_reinit(tr, FS_INIT_FLAGS_DO_CLEAR);
@@ -2485,6 +2510,7 @@ static void fs_recovery_data_blocks_test(struct transaction* tr) {
     transaction_activate(tr);
 
     assert(fs_check(tr->fs, true, false));
+    expect_errors(TRUSTY_STORAGE_ERROR_BLOCK_MAC_MISMATCH, 1);
 
     /* file should have been deleted as corrupted */
     create_and_delete(tr, "recovery");
@@ -2522,6 +2548,7 @@ static void fs_recovery_clear_test(struct transaction* tr) {
      * recovery enabled.
      */
     block_test_swap_clear_reinit(tr, FS_INIT_FLAGS_RECOVERY_CLEAR_ALLOWED);
+    expect_errors(TRUSTY_STORAGE_ERROR_BLOCK_MAC_MISMATCH, 1);
 
     /* test file should be missing */
     open_test_file_etc(tr, &file, "recovery", FILE_OPEN_NO_CREATE, true);
@@ -2872,18 +2899,22 @@ static void fs_alternate_recovery_test(struct transaction* tr) {
                        true);
     transaction_complete(tr);
     assert(tr->failed);
+    expect_errors(TRUSTY_STORAGE_ERROR_BLOCK_MAC_MISMATCH, 1);
 
     /* re-initialize the filesystem without recovery enabled */
     block_test_reinit(tr, FS_INIT_FLAGS_ALTERNATE_DATA);
+    expect_errors(TRUSTY_STORAGE_ERROR_BLOCK_MAC_MISMATCH, 1);
 
     open_test_file_etc(tr, &file, "recovery_alternate",
                        FILE_OPEN_CREATE_EXCLUSIVE, true);
     transaction_complete(tr);
     assert(tr->failed);
+    expect_errors(TRUSTY_STORAGE_ERROR_BLOCK_MAC_MISMATCH, 1);
 
     /* re-initialize the filesystem with recovery enabled */
     block_test_reinit(tr, FS_INIT_FLAGS_RECOVERY_CLEAR_ALLOWED |
                                   FS_INIT_FLAGS_ALTERNATE_DATA);
+    expect_errors(TRUSTY_STORAGE_ERROR_BLOCK_MAC_MISMATCH, 1);
 
     file_test(tr, "recovery_alternate", FILE_OPEN_CREATE_EXCLUSIVE,
               file_test_block_count, 0, 0, false, 1);
@@ -2918,17 +2949,21 @@ static void fs_alternate_recovery_test(struct transaction* tr) {
     open_test_file_etc(tr, &file, "recovery_main", FILE_OPEN_NO_CREATE, true);
     transaction_complete(tr);
     assert(tr->failed);
+    expect_errors(TRUSTY_STORAGE_ERROR_BLOCK_MAC_MISMATCH, 1);
 
     /* re-initialize the filesystem without recovery enabled */
     block_test_reinit(tr, FS_INIT_FLAGS_NONE);
+    expect_errors(TRUSTY_STORAGE_ERROR_BLOCK_MAC_MISMATCH, 1);
 
     open_test_file_etc(tr, &file, "recovery_main", FILE_OPEN_CREATE_EXCLUSIVE,
                        true);
     transaction_complete(tr);
     assert(tr->failed);
+    expect_errors(TRUSTY_STORAGE_ERROR_BLOCK_MAC_MISMATCH, 1);
 
     /* re-initialize the filesystem with recovery enabled */
     block_test_reinit(tr, FS_INIT_FLAGS_RECOVERY_CLEAR_ALLOWED);
+    expect_errors(TRUSTY_STORAGE_ERROR_BLOCK_MAC_MISMATCH, 1);
 
     file_test(tr, "recovery_main", FILE_OPEN_CREATE_EXCLUSIVE,
               file_test_block_count, 0, 0, false, 1);
@@ -3190,6 +3225,7 @@ int main(int argc, const char* argv[]) {
     transaction_init(&tr, &fs, false);
 
     for (i = 0; i < countof(tests); i++) {
+        mock_error_report_clear();
         transaction_activate(&tr);
         printf("%s: start test: %s\n", __func__, tests[i].name);
         tests[i].func(&tr);
