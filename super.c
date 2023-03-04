@@ -755,8 +755,8 @@ static int fs_init_from_super(struct fs* fs,
         }
 
         if (!is_clear && !do_clear &&
-            (!block_probe(fs, new_files_root) ||
-             !block_probe(fs, new_free_root))) {
+            (!block_probe(fs, new_files_root, true) ||
+             !block_probe(fs, new_free_root, false))) {
             pr_init("Backing file probe failed, fs is corrupted.\n");
             if (recovery_allowed) {
                 pr_init("Attempting to clear corrupted fs.\n");

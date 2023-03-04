@@ -129,7 +129,9 @@ void* block_get_copy(struct transaction* tr,
 
 void block_put(const void* data, struct obj_ref* ref);
 
-bool block_probe(struct fs* fs, const struct block_mac* block_mac);
+bool block_probe(struct fs* fs,
+                 const struct block_mac* block_mac,
+                 bool allow_invalid);
 
 data_block_t data_to_block_num(const void* data); /* test api, remove ? */
 

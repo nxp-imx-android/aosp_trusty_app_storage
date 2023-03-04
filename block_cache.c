@@ -1637,13 +1637,18 @@ void block_put(const void* data, struct obj_ref* ref) {
  * block_probe - Verify that the given block is loadable and its mac is correct
  * @fs:          Filesystem containing the block to probe
  * @block_mac:   Block to probe
+ * @allow_invalid: If %true, an invalid (i.e. zero) @block_mac will not be
+ *                 probed and this function will return true
  *
  * Return: %false if the block is not valid or does not match the expected mac.
  * Returns %true if the block was readable, valid and matched the expected mac.
- * Also returns %true if an I/O error was encountered which does not positively
+ * If @allow_invalid is %true, also return %true if @block_mac is invalid. Also
+ * returns %true if an I/O error was encountered which does not positively
  * confirm a corrupted block.
  */
-bool block_probe(struct fs* fs, const struct block_mac* block_mac) {
+bool block_probe(struct fs* fs,
+                 const struct block_mac* block_mac,
+                 bool allow_invalid) {
     struct transaction probe_tr;
     struct obj_ref probe_ref = OBJ_REF_INITIAL_VALUE(probe_ref);
     const void* probe_block;
@@ -1662,6 +1667,8 @@ bool block_probe(struct fs* fs, const struct block_mac* block_mac) {
         } else if (probe_tr.invalid_block_found) {
             valid = false;
         }
+    } else if (allow_invalid) {
+        valid = true;
     }
     transaction_fail(&probe_tr);
     transaction_free(&probe_tr);
