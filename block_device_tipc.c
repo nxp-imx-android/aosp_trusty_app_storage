@@ -439,10 +439,15 @@ static int check_storage_size(handle_t handle,
     ret = ns_get_max_size(handle, dev_ns->ns_handle, sz);
     if (ret < 0) {
         /* In case we have an old storageproxyd, use default */
-        if (*sz == STORAGE_ERR_UNIMPLEMENTED) {
+        if (ret == ERR_NOT_IMPLEMENTED) {
             *sz = BLOCK_COUNT_MAIN * dev_ns->dev.block_size;
+            ret = 0;
+        } else {
+            SS_ERR("%s: Could not get max size: %d\n", __func__, ret);
         }
     } else if (*sz < (dev_ns->dev.block_size * 8)) {
+        SS_ERR("%s: max storage file size %" PRIu64 " is too small\n", __func__,
+               *sz);
         ret = -1;
     }
     return ret;

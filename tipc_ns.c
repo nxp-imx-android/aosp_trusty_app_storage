@@ -39,6 +39,8 @@ static inline int translate_error(enum storage_err err) {
         return ERR_NOT_VALID;
     case STORAGE_ERR_SYNC_FAILURE:
         return ERR_IO;
+    case STORAGE_ERR_UNIMPLEMENTED:
+        return ERR_NOT_IMPLEMENTED;
     case STORAGE_ERR_GENERIC:
     default:
         return ERR_GENERIC;
