@@ -75,6 +75,13 @@ STATIC_ASSERT(sizeof(struct super_block_backup) == 76);
  *                                  last checkpoint. A block is only free if it
  *                                  is in both @free and @checkpoint_free.
  * @super_dev:                      Block device used to store super blocks.
+ * @readable:                       %true if the file system is initialized and
+ *                                  readable. If false, no reads are valid and
+ *                                  @writable must be %false.
+ * @writable:                       %true if the file system may be modified. If
+ *                                  %false, filesystem contents may be readable,
+ *                                  but no superblock or block changes are
+ *                                  permitted.
  * @allow_tampering:                %false if the filesystem must detect
  *                                  tampering of read and write operations.
  *                                  %true otherwise. If %false, when a write
@@ -127,6 +134,8 @@ struct fs {
     struct block_mac checkpoint;
     struct block_set checkpoint_free;
     struct block_device* super_dev;
+    bool readable;
+    bool writable;
     bool allow_tampering;
     const struct key* key;
     data_block_t super_block[2];
@@ -192,6 +201,14 @@ int fs_init(struct fs* fs,
 
 static inline bool fs_is_repaired(struct fs* fs) {
     return fs->main_repaired && !fs->alternate_data;
+}
+
+static inline bool fs_is_readable(struct fs* fs) {
+    return fs->readable;
+}
+
+static inline bool fs_is_writable(struct fs* fs) {
+    return fs->writable;
 }
 
 /**

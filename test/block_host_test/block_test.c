@@ -2152,9 +2152,14 @@ static void future_fs_version_test(struct transaction* tr) {
     uint16_t* super_rw;
     data_block_t block;
     int ret;
+    struct file_handle file;
+    enum file_open_result open_result;
 
     /* offset of fs_version field in uint16_t words */
     size_t fs_version_offset = 28 / 2;
+
+    file_test(tr, "future_fs_version_file", FILE_OPEN_CREATE_EXCLUSIVE, 0, 0, 0,
+              false, 1);
 
     transaction_complete(tr);
 
@@ -2173,16 +2178,43 @@ static void future_fs_version_test(struct transaction* tr) {
 
     ret = fs_init(fs, FILE_SYSTEM_TEST, key, dev, super_dev,
                   FS_INIT_FLAGS_NONE);
-    assert(ret == -1);
+    assert(ret == 0);
+    assert(!fs_is_readable(fs));
     expect_errors(TRUSTY_STORAGE_ERROR_SUPERBLOCK_INVALID, 1);
+
+    transaction_init(tr, fs, true);
+    open_result = file_open(tr, "future_fs_version_file", &file,
+                            FILE_OPEN_NO_CREATE, false);
+    assert(open_result == FILE_OPEN_ERR_FAILED);
+    transaction_fail(tr);
+    transaction_free(tr);
+    fs_destroy(fs);
+    block_cache_dev_destroy(dev);
 
     ret = fs_init(fs, FILE_SYSTEM_TEST, key, dev, super_dev,
                   FS_INIT_FLAGS_DO_CLEAR);
-    assert(ret == -1);
+    assert(ret == 0);
+    assert(!fs_is_readable(fs));
     expect_errors(TRUSTY_STORAGE_ERROR_SUPERBLOCK_INVALID, 1);
 
+    transaction_init(tr, fs, true);
+    open_result = file_open(tr, "future_fs_version_file", &file,
+                            FILE_OPEN_NO_CREATE, false);
+    assert(open_result == FILE_OPEN_ERR_FAILED);
+    transaction_fail(tr);
+    transaction_free(tr);
+    fs_destroy(fs);
+    block_cache_dev_destroy(dev);
+
+    /*
+     * fs is not mountable, but we want to rewrite a block. Set up the bare
+     * minimum required fs so we can rewrite the superblock manually.
+     */
     fs->dev = dev;
     fs->super_dev = super_dev;
+    fs->readable = true;
+    fs->writable = true;
+
     transaction_init(tr, fs, false);
     super_ro = block_get_super(fs, block, &super_ref);
     assert(super_ro);
@@ -2198,6 +2230,9 @@ static void future_fs_version_test(struct transaction* tr) {
     assert(ret == 0);
 
     transaction_init(tr, fs, true);
+
+    file_test(tr, "future_fs_version_file", FILE_OPEN_NO_CREATE, 0, 0, 0,
+              true /* delete */, 1);
 }
 
 /**
@@ -2223,6 +2258,11 @@ static uint16_t set_required_flags(struct fs* fs, uint16_t required_flags) {
     data_block_t block;
     uint16_t old_required_flags;
 
+    /*
+     * If the fs was mounted read-only due to an error, we need to override this
+     * state. We want to manually rewrite the superblock, so we have to override
+     * the read-only state for block_dirty() to be allowed.
+     */
     transaction_init(&tr, fs, false);
     block = fs->super_block[fs->super_block_version & 1];
     super_ro = block_get_super(fs, block, &super_ref);
@@ -2245,9 +2285,14 @@ static void unknown_required_flags_test(struct transaction* tr) {
     struct block_device* super_dev = fs->super_dev;
     int ret;
     uint16_t initial_required_flags;
+    struct file_handle file;
+    enum file_open_result open_result;
 
     /* update when SUPER_BLOCK_REQUIRED_FLAGS_MASK changes in super.c */
     uint16_t first_unsupported_required_flag = 0x2U;
+
+    file_test(tr, "unknown_flags_file", FILE_OPEN_CREATE_EXCLUSIVE, 0, 0, 0,
+              false, 1);
 
     transaction_complete(tr);
     transaction_free(tr);
@@ -2259,48 +2304,118 @@ static void unknown_required_flags_test(struct transaction* tr) {
 
     ret = fs_init(fs, FILE_SYSTEM_TEST, key, dev, super_dev,
                   FS_INIT_FLAGS_NONE);
-    assert(ret == -1);
+    assert(ret == 0);
+    assert(!fs_is_readable(fs));
     expect_errors(TRUSTY_STORAGE_ERROR_SUPERBLOCK_INVALID, 1);
+
+    transaction_init(tr, fs, true);
+    open_result = file_open(tr, "unknown_flags_file", &file,
+                            FILE_OPEN_NO_CREATE, false);
+    assert(open_result == FILE_OPEN_ERR_FAILED);
+    transaction_fail(tr);
+    transaction_free(tr);
+    fs_destroy(fs);
+    block_cache_dev_destroy(dev);
 
     ret = fs_init(fs, FILE_SYSTEM_TEST, key, dev, super_dev,
                   FS_INIT_FLAGS_DO_CLEAR);
-    assert(ret == -1);
+    assert(ret == 0);
+    assert(!fs_is_readable(fs));
     expect_errors(TRUSTY_STORAGE_ERROR_SUPERBLOCK_INVALID, 1);
 
+    transaction_init(tr, fs, true);
+    open_result = file_open(tr, "unknown_flags_file", &file,
+                            FILE_OPEN_NO_CREATE, false);
+    assert(open_result == FILE_OPEN_ERR_FAILED);
+    transaction_fail(tr);
+    transaction_free(tr);
+    fs_destroy(fs);
+    block_cache_dev_destroy(dev);
+
+    /*
+     * fs is not mountable, but we want to rewrite a block. Set up the bare
+     * minimum required fs so we can rewrite the superblock manually.
+     */
     fs->dev = dev;
     fs->super_dev = super_dev;
+    fs->readable = true;
+    fs->writable = true;
 
     /* set all flag bits, this should fail unless we support 16 flags */
     set_required_flags(fs, UINT16_MAX);
 
     ret = fs_init(fs, FILE_SYSTEM_TEST, key, dev, super_dev,
                   FS_INIT_FLAGS_NONE);
-    assert(ret == -1);
+    assert(ret == 0);
+    assert(!fs_is_readable(fs));
     expect_errors(TRUSTY_STORAGE_ERROR_SUPERBLOCK_INVALID, 1);
+
+    transaction_init(tr, fs, true);
+    open_result = file_open(tr, "unknown_flags_file", &file,
+                            FILE_OPEN_NO_CREATE, false);
+    assert(open_result == FILE_OPEN_ERR_FAILED);
+    transaction_fail(tr);
+    transaction_free(tr);
+    fs_destroy(fs);
+    block_cache_dev_destroy(dev);
 
     ret = fs_init(fs, FILE_SYSTEM_TEST, key, dev, super_dev,
                   FS_INIT_FLAGS_DO_CLEAR);
-    assert(ret == -1);
+    assert(ret == 0);
+    assert(!fs_is_readable(fs));
     expect_errors(TRUSTY_STORAGE_ERROR_SUPERBLOCK_INVALID, 1);
+
+    transaction_init(tr, fs, true);
+    open_result = file_open(tr, "unknown_flags_file", &file,
+                            FILE_OPEN_NO_CREATE, false);
+    assert(open_result == FILE_OPEN_ERR_FAILED);
+    transaction_fail(tr);
+    transaction_free(tr);
+    fs_destroy(fs);
+    block_cache_dev_destroy(dev);
 
     fs->dev = dev;
     fs->super_dev = super_dev;
+    fs->readable = true;
+    fs->writable = true;
 
     /* set highest flag bit, this should fail unless we support 16 flags */
     set_required_flags(fs, 0x1U << 15);
 
     ret = fs_init(fs, FILE_SYSTEM_TEST, key, dev, super_dev,
                   FS_INIT_FLAGS_NONE);
-    assert(ret == -1);
+    assert(ret == 0);
+    assert(!fs_is_readable(fs));
     expect_errors(TRUSTY_STORAGE_ERROR_SUPERBLOCK_INVALID, 1);
+
+    transaction_init(tr, fs, true);
+    open_result = file_open(tr, "unknown_flags_file", &file,
+                            FILE_OPEN_NO_CREATE, false);
+    assert(open_result == FILE_OPEN_ERR_FAILED);
+    transaction_fail(tr);
+    transaction_free(tr);
+    fs_destroy(fs);
+    block_cache_dev_destroy(dev);
 
     ret = fs_init(fs, FILE_SYSTEM_TEST, key, dev, super_dev,
                   FS_INIT_FLAGS_DO_CLEAR);
-    assert(ret == -1);
+    assert(ret == 0);
+    assert(!fs_is_readable(fs));
     expect_errors(TRUSTY_STORAGE_ERROR_SUPERBLOCK_INVALID, 1);
+
+    transaction_init(tr, fs, true);
+    open_result = file_open(tr, "unknown_flags_file", &file,
+                            FILE_OPEN_NO_CREATE, false);
+    assert(open_result == FILE_OPEN_ERR_FAILED);
+    transaction_fail(tr);
+    transaction_free(tr);
+    fs_destroy(fs);
+    block_cache_dev_destroy(dev);
 
     fs->dev = dev;
     fs->super_dev = super_dev;
+    fs->readable = true;
+    fs->writable = true;
 
     set_required_flags(fs, initial_required_flags);
 
@@ -2309,6 +2424,9 @@ static void unknown_required_flags_test(struct transaction* tr) {
     assert(ret == 0);
 
     transaction_init(tr, fs, true);
+
+    file_test(tr, "unknown_flags_file", FILE_OPEN_NO_CREATE, 0, 0, 0,
+              true /* delete */, 1);
 }
 
 typedef data_block_t (*block_selector)(struct transaction* tr,

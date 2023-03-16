@@ -197,6 +197,14 @@ static bool update_super_block_internal(struct transaction* tr,
     super_block_opt_flags8_t opt_flags = SUPER_BLOCK_OPT_FLAGS_HAS_FLAGS3 |
                                          SUPER_BLOCK_OPT_FLAGS_HAS_CHECKPOINT;
 
+    if (!tr->fs->writable) {
+        pr_err("Attempting to write superblock for read-only filesystem\n");
+        if (!tr->failed) {
+            transaction_fail(tr);
+        }
+        return false;
+    }
+
     assert(block_size >= sizeof(struct super_block));
     assert(tr->fs->initial_super_block_tr == NULL ||
            tr->fs->initial_super_block_tr == tr);
@@ -329,10 +337,14 @@ static bool write_initial_super_block(struct fs* fs) {
  * will be written before any other block. This can be used to re-sync the
  * in-memory fs-state with the on-disk state after detecting a write failure
  * where no longer know the on-disk super block state.
+ *
+ * @fs must be writable when calling this function.
  */
 void write_current_super_block(struct fs* fs, bool reinitialize) {
     bool super_block_updated;
     struct transaction* tr;
+
+    assert(fs->writable);
 
     if (fs->initial_super_block_tr) {
         /*
@@ -588,7 +600,10 @@ static void fs_init_free_set(struct fs* fs, struct block_set* set) {
  * @super:      Superblock data, or %NULL.
  * @flags:      Any of &typedef fs_init_flags32_t, ORed together.
  *
- * Return: 0 if super block was usable, -1 if not.
+ * Return: 0 if super block was usable, -1 if a fatal error was encountered and
+ * initialization should not continue. The file system may not be readable, even
+ * if this function returns 0. Check @fs->readable before attempting to read
+ * from this file system.
  */
 static int fs_init_from_super(struct fs* fs,
                               const struct super_block* super,
@@ -604,23 +619,10 @@ static int fs_init_from_super(struct fs* fs,
             has_backup_field && super &&
             (super->opt_flags & SUPER_BLOCK_OPT_FLAGS_HAS_CHECKPOINT);
     bool recovery_allowed = flags & FS_INIT_FLAGS_RECOVERY_CLEAR_ALLOWED;
+    bool read_only = false;
     const struct block_mac* new_files_root;
     const struct block_mac* new_free_root;
     const struct block_mac* new_checkpoint = NULL;
-
-    if (super && super->fs_version > SUPER_BLOCK_FS_VERSION) {
-        pr_err("ERROR: super block is from the future 0x%x\n",
-               super->fs_version);
-        error_report_superblock_invalid(fs->name);
-        return -1;
-    }
-
-    if (super && (super->required_flags & ~SUPER_BLOCK_REQUIRED_FLAGS_MASK)) {
-        pr_err("ERROR: super block requires unrecognized fs features: 0x%x\n",
-               super->required_flags);
-        error_report_superblock_invalid(fs->name);
-        return -1;
-    }
 
     /*
      * We check that the super-block matches these block device params in
@@ -649,6 +651,30 @@ static int fs_init_from_super(struct fs* fs,
     fs->reserved_count = fs->dev->block_count / 8 * 5;
 
     fs->alternate_data = flags & FS_INIT_FLAGS_ALTERNATE_DATA;
+
+    /*
+     * Check version and flags after initializing an empty FS, so that we can
+     * disallow writing and continue initializing other file systems. If we exit
+     * early here this file system will be inaccessible, but its fields are
+     * safely initialized.
+     */
+    if (super && super->fs_version > SUPER_BLOCK_FS_VERSION) {
+        pr_err("ERROR: super block is from the future 0x%x\n",
+               super->fs_version);
+        error_report_superblock_invalid(fs->name);
+        assert(!fs->readable);
+        assert(!fs->writable);
+        return 0;
+    }
+
+    if (super && (super->required_flags & ~SUPER_BLOCK_REQUIRED_FLAGS_MASK)) {
+        pr_err("ERROR: super block requires unrecognized fs features: 0x%x\n",
+               super->required_flags);
+        error_report_superblock_invalid(fs->name);
+        assert(!fs->readable);
+        assert(!fs->writable);
+        return 0;
+    }
 
     if (super) {
         fs->super_block_version = super->flags & SUPER_BLOCK_FLAGS_VERSION_MASK;
@@ -711,21 +737,27 @@ static int fs_init_from_super(struct fs* fs,
             if ((!do_clear) && (!is_clear)) {
                 /*
                  * If block device is smaller than super and we're not clearing
-                 * the fs, error
+                 * the fs, we want to prevent write access to avoid losing data.
+                 * Read-only access is still allowed, although blocks may be
+                 * missing.
                  */
                 pr_err("bad block count 0x%" PRIx64 ", expected <= 0x%" PRIx64
                        "\n",
                        super->block_count, fs->dev->block_count);
-                return -1;
+                read_only = true;
             } else if (flags & FS_INIT_FLAGS_ALTERNATE_DATA) {
                 /*
-                 * Either we are on main filesystem and switching to
-                 * alternate or we are on alternate. Either case is an
-                 * error.
+                 * Either we are on main filesystem and switching to alternate
+                 * or we are on alternate. Either case is an error. If we get
+                 * here, then the alternate FS is not backed by a temp file,
+                 * which should never happen. We want to error loudly in this
+                 * case, but continue mounting other file systems.
                  */
-                pr_init("Can't clear fs if FS_INIT_FLAGS_ALTERNATE_DATA is"
-                        " set .\n");
-                return -1;
+                pr_err("Can't clear fs if FS_INIT_FLAGS_ALTERNATE_DATA is"
+                       " set .\n");
+                assert(!fs->readable);
+                assert(!fs->writable);
+                return 0;
             } else {
                 /*
                  * If we are are on main filesystem and the backup is an
@@ -756,11 +788,12 @@ static int fs_init_from_super(struct fs* fs,
     if (super && !is_clear && !do_clear) {
         if (!fs_set_roots(fs, new_free_root, new_files_root, new_checkpoint)) {
             pr_err("failed to initialize filesystem roots\n");
-            return -1;
+            read_only = true;
+        } else {
+            pr_init("loaded super block version %d, checkpoint exists: %d\n",
+                    fs->super_block_version,
+                    block_range_empty(fs->checkpoint_free.initial_range));
         }
-        pr_init("loaded super block version %d, checkpoint exists: %d\n",
-                fs->super_block_version,
-                block_range_empty(fs->checkpoint_free.initial_range));
     } else {
         if (is_clear) {
             pr_init("superblock, version %d, is empty fs\n",
@@ -782,6 +815,19 @@ static int fs_init_from_super(struct fs* fs,
     assert(fs->mac_size <= sizeof(struct mac));
     assert(fs->mac_size == sizeof(struct mac) || fs->dev->tamper_detecting);
 
+    /*
+     * fs_set_roots() unconditionally set the files and free roots. If it fails,
+     * it failed to read the checkpoint block but that should only block
+     * modification, not reading.
+     */
+    fs->readable = true;
+
+    if (read_only) {
+        assert(!fs->writable);
+        return 0;
+    }
+
+    fs->writable = true;
     if (do_clear && !is_clear) {
         if (!write_initial_super_block(fs)) {
             return -1;
@@ -1026,6 +1072,8 @@ int fs_init(struct fs* fs,
     fs->key = key;
     fs->dev = dev;
     fs->super_dev = super_dev;
+    fs->readable = false;
+    fs->writable = false;
     fs->allow_tampering = flags & FS_INIT_FLAGS_ALLOW_TAMPERING;
     list_initialize(&fs->transactions);
     list_initialize(&fs->allocated);
@@ -1070,6 +1118,8 @@ void fs_destroy(struct fs* fs) {
     assert(list_is_empty(&fs->transactions));
     assert(list_is_empty(&fs->allocated));
     list_delete(&fs->node);
+    fs->readable = false;
+    fs->writable = false;
 }
 
 /**
@@ -1093,8 +1143,16 @@ void fs_unknown_super_block_state_all(void) {
          * chain. If a special transaction already exists we are guaranteed that
          * it will be reinitialized and flushed to disk before any new writes to
          * that FS, so we don't need to reinitialize it here.
+         *
+         * If this file system is not writable, we should not try to re-write
+         * the current super block state. A read-only file system cannot have
+         * any modifications that we are allowed to save, and it does not need
+         * to be re-synced here as we cannot have previously failed to write its
+         * superblock.
          */
-        write_current_super_block(fs, false /* reinitialize */);
+        if (fs->writable) {
+            write_current_super_block(fs, false /* reinitialize */);
+        }
     }
 }
 

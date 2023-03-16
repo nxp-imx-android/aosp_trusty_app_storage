@@ -242,6 +242,14 @@ static data_block_t find_free_block(struct transaction* tr,
     data_block_t min_block = min_block_in;
     struct block_set* set;
 
+    if (!fs_is_writable(tr->fs)) {
+        printf("Read-only filesystem tried to allocate a free block\n");
+        if (!tr->failed) {
+            transaction_fail(tr);
+        }
+        return 0;
+    }
+
     assert(list_in_list(&tr->node)); /* transaction must be active */
 
     pr_read("min_block %" PRIu64 "\n", min_block);

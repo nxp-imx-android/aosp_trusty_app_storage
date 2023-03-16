@@ -1252,6 +1252,7 @@ void* block_dirty(struct transaction* tr, const void* data, bool is_tmp) {
     assert(list_in_list(&tr->node)); /* transaction must be active */
     assert(!entry->dirty_tr || entry->dirty_tr == tr);
     assert(!entry->dirty_ref);
+    assert(fs_is_writable(tr->fs));
 
     if (block_cache_entry_data_is_encrypted(entry)) {
         if (print_block_ops) {

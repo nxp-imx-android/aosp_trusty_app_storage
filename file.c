@@ -895,6 +895,10 @@ bool file_iterate(struct transaction* tr,
     bool stop;
     bool removed = false;
 
+    if (!fs_is_readable(tr->fs)) {
+        return false;
+    }
+
     if (start_path == NULL) {
         block_tree_walk(tr, tree, 0, true, &tree_path);
     } else {
@@ -950,6 +954,10 @@ enum file_open_result file_open(struct transaction* tr,
     struct obj_ref file_entry_ref = OBJ_REF_INITIAL_VALUE(file_entry_ref);
 
     assert(tr->fs);
+
+    if (!fs_is_readable(tr->fs)) {
+        return FILE_OPEN_ERR_FAILED;
+    }
 
     found = file_tree_lookup(&block_mac, tr, &tr->files_added, &tree_path, path,
                              false);
@@ -1041,6 +1049,11 @@ bool file_delete(struct transaction* tr, const char* path) {
     struct block_map block_map = BLOCK_MAP_INITIAL_VALUE(block_map);
     struct block_tree_path tree_path;
     struct file_handle* open_file;
+
+    if (!fs_is_readable(tr->fs)) {
+        transaction_fail(tr);
+        return false;
+    }
 
     found = file_tree_lookup(&block_mac, tr, &tr->files_added, &tree_path, path,
                              true);
