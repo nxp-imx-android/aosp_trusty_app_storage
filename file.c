@@ -963,6 +963,10 @@ enum file_open_result file_open(struct transaction* tr,
         goto found;
     }
 
+    if (tr->failed) {
+        return FILE_OPEN_ERR_FAILED;
+    }
+
     /*
      * If the file is not found and we have made repairs, the file might have
      * existed before the repair.
@@ -977,7 +981,11 @@ enum file_open_result file_open(struct transaction* tr,
     if (found) {
         goto created;
     }
-    return FILE_OPEN_ERR_NOT_FOUND;
+    if (tr->failed) {
+        return FILE_OPEN_ERR_FAILED;
+    } else {
+        return FILE_OPEN_ERR_NOT_FOUND;
+    }
 
 found:
     if (create == FILE_OPEN_CREATE_EXCLUSIVE) {

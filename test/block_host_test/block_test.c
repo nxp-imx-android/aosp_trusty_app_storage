@@ -2319,6 +2319,7 @@ static void fs_corruption_helper(struct transaction* tr,
                                  unsigned int arg,
                                  bool expect_missing_file) {
     struct file_handle file;
+    enum file_open_result result;
     struct fs* fs = tr->fs;
 
     file_test(tr, "recovery", FILE_OPEN_CREATE_EXCLUSIVE, file_test_block_count,
@@ -2337,9 +2338,11 @@ static void fs_corruption_helper(struct transaction* tr,
     memset(&blocks[callback(tr, arg)], 0, sizeof(struct block));
     block_cache_dev_destroy(fs->dev);
 
-    open_test_file_etc(tr, &file, "recovery", FILE_OPEN_NO_CREATE,
-                       expect_missing_file);
-    if (!expect_missing_file) {
+    result = file_open(tr, "recovery", &file, FILE_OPEN_NO_CREATE, false);
+    if (expect_missing_file) {
+        assert(result == FILE_OPEN_ERR_FAILED);
+    } else {
+        assert(result == FILE_OPEN_SUCCESS);
         file_close(&file);
     }
     transaction_complete(tr);
