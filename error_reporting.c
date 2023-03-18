@@ -19,7 +19,7 @@
 #ifdef STORAGE_ENABLE_ERROR_REPORTING
 
 #include <android/frameworks/stats/atoms.h>
-#include <android/trusty/stats/stats_ports.h>
+#include <android/trusty/stats/ports.h>
 #include <trusty/uuid.h>
 #include <trusty_log.h>
 
