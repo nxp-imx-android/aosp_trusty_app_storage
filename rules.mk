@@ -97,8 +97,11 @@ MODULE_LIBRARY_DEPS := \
 
 ifeq (true,$(call TOBOOL,$(STORAGE_ENABLE_ERROR_REPORTING)))
 MODULE_LIBRARY_DEPS += \
+	trusty/user/base/interface/stats/nw \
+	trusty/user/base/interface/stats_setter \
 	trusty/user/base/interface/stats/tz \
-	trusty/user/base/lib/metrics_atoms
+	trusty/user/base/lib/metrics_atoms \
+	trusty/user/base/lib/stats
 endif
 
 MODULE_DEPS += \
