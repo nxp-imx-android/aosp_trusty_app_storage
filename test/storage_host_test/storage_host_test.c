@@ -48,7 +48,7 @@ static void open_test_file_etc(struct transaction* tr,
                                struct file_handle* file,
                                const char* path,
                                enum file_create_mode create,
-                               bool expect_failure) {
+                               enum file_op_result expected_result) {
     enum file_op_result result;
     /* TODO: parameterize the allow_repaired argument if needed */
     result = file_open(tr, path, file, create, false);
@@ -57,7 +57,7 @@ static void open_test_file_etc(struct transaction* tr,
                path, create, block_mac_to_block(tr, &file->block_mac));
     }
 
-    ASSERT_EQ(result == FILE_OP_SUCCESS, !expect_failure);
+    ASSERT_EQ(result, expected_result);
     ASSERT_EQ(true, result != FILE_OP_SUCCESS ||
                             block_mac_valid(tr, &file->block_mac));
 
@@ -68,7 +68,7 @@ static void open_test_file(struct transaction* tr,
                            struct file_handle* file,
                            const char* path,
                            enum file_create_mode create) {
-    open_test_file_etc(tr, file, path, create, false);
+    open_test_file_etc(tr, file, path, create, FILE_OP_SUCCESS);
 }
 
 /* run tests on already open file */

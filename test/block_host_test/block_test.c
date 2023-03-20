@@ -1036,7 +1036,7 @@ static void open_test_file_etc(struct transaction* tr,
                                struct file_handle* file,
                                const char* path,
                                enum file_create_mode create,
-                               bool expect_failure) {
+                               enum file_op_result expected_result) {
     enum file_op_result result;
     result = file_open(tr, path, file, create, allow_repaired);
     if (print_test_verbose) {
@@ -1044,7 +1044,7 @@ static void open_test_file_etc(struct transaction* tr,
                path, create, block_mac_to_block(tr, &file->block_mac));
     }
 
-    assert((result == FILE_OP_SUCCESS) == !expect_failure);
+    assert(result == expected_result);
     assert(result != FILE_OP_SUCCESS || block_mac_valid(tr, &file->block_mac));
 }
 
@@ -1052,7 +1052,7 @@ static void open_test_file(struct transaction* tr,
                            struct file_handle* file,
                            const char* path,
                            enum file_create_mode create) {
-    open_test_file_etc(tr, file, path, create, false);
+    open_test_file_etc(tr, file, path, create, FILE_OP_SUCCESS);
 }
 
 static void file_allocate_all_test(struct transaction* master_tr,
@@ -1256,7 +1256,7 @@ static void file_move_expect(struct transaction* tr,
                              enum file_create_mode src_create,
                              const char* dest_path,
                              enum file_create_mode dest_create,
-                             bool expect) {
+                             enum file_op_result expected_result) {
     struct file_handle file;
     enum file_op_result res;
 
@@ -1265,17 +1265,9 @@ static void file_move_expect(struct transaction* tr,
     open_test_file(tr, &file, src_path, src_create);
 
     res = file_move(tr, &file, dest_path, dest_create);
-    assert((res == FILE_OP_SUCCESS) == expect);
+    assert(res == expected_result);
     assert(!tr->failed);
     file_close(&file);
-}
-
-static void file_move_expect_fail(struct transaction* tr,
-                                  const char* src_path,
-                                  enum file_create_mode src_create,
-                                  const char* dest_path,
-                                  enum file_create_mode dest_create) {
-    file_move_expect(tr, src_path, src_create, dest_path, dest_create, false);
 }
 
 static void file_move_expect_success(struct transaction* tr,
@@ -1283,7 +1275,8 @@ static void file_move_expect_success(struct transaction* tr,
                                      enum file_create_mode src_create,
                                      const char* dest_path,
                                      enum file_create_mode dest_create) {
-    file_move_expect(tr, src_path, src_create, dest_path, dest_create, true);
+    file_move_expect(tr, src_path, src_create, dest_path, dest_create,
+                     FILE_OP_SUCCESS);
 }
 
 static void file_test_etc(struct transaction* tr,
@@ -1500,8 +1493,10 @@ static void file_splittr1o4_small_test(struct transaction* tr) {
     file_test_split_tr(tr, "test1s", FILE_OPEN_NO_CREATE, 4, 1, 2, 1, 1, 0, false, 1);
 #else
     struct file_handle file[2];
-    open_test_file_etc(tr, &file[0], "test1s", FILE_OPEN_NO_CREATE, false);
-    open_test_file_etc(tr, &file[1], "test1s", FILE_OPEN_NO_CREATE, true);
+    open_test_file_etc(tr, &file[0], "test1s", FILE_OPEN_NO_CREATE,
+                       FILE_OP_SUCCESS);
+    open_test_file_etc(tr, &file[1], "test1s", FILE_OPEN_NO_CREATE,
+                       FILE_OP_ERR_ALREADY_OPEN);
     file_close(&file[0]);
     file_splittr1_small_test(tr);
 #endif
@@ -1600,14 +1595,14 @@ static void file_move_test(struct transaction* tr) {
     file_test(tr, "test2", FILE_OPEN_NO_CREATE, 0, file_test_block_count, false,
               false, 3);
 
-    file_move_expect_fail(tr, "test1", FILE_OPEN_NO_CREATE, "test3",
-                          FILE_OPEN_NO_CREATE);
+    file_move_expect(tr, "test1", FILE_OPEN_NO_CREATE, "test3",
+                     FILE_OPEN_NO_CREATE, FILE_OP_ERR_NOT_FOUND);
 
-    file_move_expect_fail(tr, "test1", FILE_OPEN_NO_CREATE, "test2",
-                          FILE_OPEN_CREATE_EXCLUSIVE);
+    file_move_expect(tr, "test1", FILE_OPEN_NO_CREATE, "test2",
+                     FILE_OPEN_CREATE_EXCLUSIVE, FILE_OP_ERR_EXIST);
 
-    file_move_expect_fail(tr, "test1", FILE_OPEN_NO_CREATE, "test1",
-                          FILE_OPEN_CREATE_EXCLUSIVE);
+    file_move_expect(tr, "test1", FILE_OPEN_NO_CREATE, "test1",
+                     FILE_OPEN_CREATE_EXCLUSIVE, FILE_OP_ERR_EXIST);
 
     file_move_expect_success(tr, "test1", FILE_OPEN_NO_CREATE, "test1",
                              FILE_OPEN_NO_CREATE);
@@ -1616,14 +1611,14 @@ static void file_move_test(struct transaction* tr) {
     assert(!tr->failed);
     transaction_activate(tr);
 
-    file_move_expect_fail(tr, "test1", FILE_OPEN_NO_CREATE, "test3",
-                          FILE_OPEN_NO_CREATE);
+    file_move_expect(tr, "test1", FILE_OPEN_NO_CREATE, "test3",
+                     FILE_OPEN_NO_CREATE, FILE_OP_ERR_NOT_FOUND);
 
-    file_move_expect_fail(tr, "test1", FILE_OPEN_NO_CREATE, "test2",
-                          FILE_OPEN_CREATE_EXCLUSIVE);
+    file_move_expect(tr, "test1", FILE_OPEN_NO_CREATE, "test2",
+                     FILE_OPEN_CREATE_EXCLUSIVE, FILE_OP_ERR_EXIST);
 
-    file_move_expect_fail(tr, "test1", FILE_OPEN_NO_CREATE, "test1",
-                          FILE_OPEN_CREATE_EXCLUSIVE);
+    file_move_expect(tr, "test1", FILE_OPEN_NO_CREATE, "test1",
+                     FILE_OPEN_CREATE_EXCLUSIVE, FILE_OP_ERR_EXIST);
 
     file_move_expect_success(tr, "test1", FILE_OPEN_NO_CREATE, "test1",
                              FILE_OPEN_NO_CREATE);
@@ -2457,7 +2452,8 @@ static void fs_corruption_helper(struct transaction* tr,
     assert(!tr->failed);
     transaction_activate(tr);
 
-    open_test_file_etc(tr, &file, "recovery", FILE_OPEN_NO_CREATE, false);
+    open_test_file_etc(tr, &file, "recovery", FILE_OPEN_NO_CREATE,
+                       FILE_OP_SUCCESS);
     file_close(&file);
     transaction_complete(tr);
     assert(!tr->failed);
@@ -2480,7 +2476,12 @@ static void fs_corruption_helper(struct transaction* tr,
     /* re-initialize the filesystem without recovery enabled */
     block_test_reinit(tr, FS_INIT_FLAGS_NONE);
 
-    open_test_file_etc(tr, &file, "recovery", FILE_OPEN_CREATE_EXCLUSIVE, true);
+    open_test_file_etc(
+            tr, &file, "recovery", FILE_OPEN_NO_CREATE,
+            expect_missing_file ? FILE_OP_ERR_FAILED : FILE_OP_SUCCESS);
+    if (!expect_missing_file) {
+        file_close(&file);
+    }
     transaction_complete(tr);
 }
 
@@ -2507,7 +2508,8 @@ static data_block_t select_data_block(struct transaction* tr,
     struct obj_ref ref = OBJ_REF_INITIAL_VALUE(ref);
     data_block_t data_block_num;
 
-    open_test_file_etc(tr, &file, "recovery", FILE_OPEN_NO_CREATE, false);
+    open_test_file_etc(tr, &file, "recovery", FILE_OPEN_NO_CREATE,
+                       FILE_OP_SUCCESS);
 
     block_data_ro = file_get_block(tr, &file, block, &ref);
     assert(block_data_ro);
@@ -2519,7 +2521,8 @@ static data_block_t select_data_block(struct transaction* tr,
 
 static void create_and_delete(struct transaction* tr, const char* filename) {
     struct file_handle file;
-    open_test_file_etc(tr, &file, filename, FILE_OPEN_CREATE_EXCLUSIVE, false);
+    open_test_file_etc(tr, &file, filename, FILE_OPEN_CREATE_EXCLUSIVE,
+                       FILE_OP_SUCCESS);
     transaction_complete(tr);
     assert(!tr->failed);
     file_close(&file);
@@ -2703,13 +2706,15 @@ static void fs_recovery_clear_test(struct transaction* tr) {
     expect_errors(TRUSTY_STORAGE_ERROR_BLOCK_MAC_MISMATCH, 1);
 
     /* test file should be missing */
-    open_test_file_etc(tr, &file, "recovery", FILE_OPEN_NO_CREATE, true);
+    open_test_file_etc(tr, &file, "recovery", FILE_OPEN_NO_CREATE,
+                       FILE_OP_ERR_NOT_FOUND);
     transaction_complete(tr);
 
     block_test_swap_reinit(tr, FS_INIT_FLAGS_RECOVERY_CLEAR_ALLOWED);
 
     /* test file should NOT be back */
-    open_test_file_etc(tr, &file, "recovery", FILE_OPEN_NO_CREATE, true);
+    open_test_file_etc(tr, &file, "recovery", FILE_OPEN_NO_CREATE,
+                       FILE_OP_ERR_NOT_FOUND);
 }
 
 static void fs_recovery_restore_test(struct transaction* tr) {
@@ -2747,7 +2752,7 @@ static void fs_recovery_restore_test(struct transaction* tr) {
 
     /* make sure it's gone */
     open_test_file_etc(tr, &file, "recovery_restore", FILE_OPEN_NO_CREATE,
-                       true);
+                       FILE_OP_ERR_NOT_FOUND);
     file_test(tr, "recovery_not_in_checkpoint", FILE_OPEN_CREATE_EXCLUSIVE,
               file_test_block_count, 0, 0, false, 1);
     transaction_complete(tr);
@@ -2836,7 +2841,7 @@ static void fs_alternate_negative_test(struct transaction* tr) {
     assert(!tr->failed);
     transaction_activate(tr);
 
-    open_test_file_etc(tr, &file, "main", FILE_OPEN_NO_CREATE, false);
+    open_test_file_etc(tr, &file, "main", FILE_OPEN_NO_CREATE, FILE_OP_SUCCESS);
     file_close(&file);
     transaction_complete(tr);
     assert(!tr->failed);
@@ -2845,7 +2850,8 @@ static void fs_alternate_negative_test(struct transaction* tr) {
     block_test_swap_clear_reinit(tr, FS_INIT_FLAGS_DO_CLEAR);
 
     /* Ensure that the file is missing */
-    open_test_file_etc(tr, &file, "main", FILE_OPEN_NO_CREATE, true);
+    open_test_file_etc(tr, &file, "main", FILE_OPEN_NO_CREATE,
+                       FILE_OP_ERR_NOT_FOUND);
 
     /* Flush the cleared superblock here */
     transaction_complete(tr);
@@ -2856,7 +2862,8 @@ static void fs_alternate_negative_test(struct transaction* tr) {
      * Ensure that the file is still missing (i.e. we did not create and restore
      * a backup)
      */
-    open_test_file_etc(tr, &file, "main", FILE_OPEN_NO_CREATE, true);
+    open_test_file_etc(tr, &file, "main", FILE_OPEN_NO_CREATE,
+                       FILE_OP_ERR_NOT_FOUND);
     transaction_fail(tr);
 
     block_test_swap_clear_reinit(tr, FS_INIT_FLAGS_DO_CLEAR);
@@ -2879,7 +2886,7 @@ static void fs_alternate_test(struct transaction* tr) {
     assert(!tr->failed);
     transaction_activate(tr);
 
-    open_test_file_etc(tr, &file, "main", FILE_OPEN_NO_CREATE, false);
+    open_test_file_etc(tr, &file, "main", FILE_OPEN_NO_CREATE, FILE_OP_SUCCESS);
     file_close(&file);
     transaction_complete(tr);
     assert(!tr->failed);
@@ -2889,7 +2896,8 @@ static void fs_alternate_test(struct transaction* tr) {
             tr, FS_INIT_FLAGS_DO_CLEAR | FS_INIT_FLAGS_ALTERNATE_DATA);
 
     /* test file should be missing */
-    open_test_file_etc(tr, &file, "main", FILE_OPEN_NO_CREATE, true);
+    open_test_file_etc(tr, &file, "main", FILE_OPEN_NO_CREATE,
+                       FILE_OP_ERR_NOT_FOUND);
     transaction_fail(tr);
 
     /*
@@ -2900,7 +2908,8 @@ static void fs_alternate_test(struct transaction* tr) {
                       FS_INIT_FLAGS_DO_CLEAR | FS_INIT_FLAGS_ALTERNATE_DATA);
 
     /* test file should still be missing */
-    open_test_file_etc(tr, &file, "main", FILE_OPEN_NO_CREATE, true);
+    open_test_file_etc(tr, &file, "main", FILE_OPEN_NO_CREATE,
+                       FILE_OP_ERR_NOT_FOUND);
     transaction_fail(tr);
     transaction_activate(tr);
 
@@ -2912,27 +2921,30 @@ static void fs_alternate_test(struct transaction* tr) {
     /* simulate a reboot with a cleared superblock but non-empty backing file */
     block_test_reinit(tr, FS_INIT_FLAGS_ALTERNATE_DATA);
 
-    open_test_file_etc(tr, &file, "alternate", FILE_OPEN_NO_CREATE, true);
+    open_test_file_etc(tr, &file, "alternate", FILE_OPEN_NO_CREATE,
+                       FILE_OP_ERR_NOT_FOUND);
     transaction_fail(tr);
 
     /* simulate a reboot, switching to main mode */
     block_test_swap_reinit(tr, FS_INIT_FLAGS_NONE);
 
     /* test file should be available */
-    open_test_file_etc(tr, &file, "main", FILE_OPEN_NO_CREATE, false);
+    open_test_file_etc(tr, &file, "main", FILE_OPEN_NO_CREATE, FILE_OP_SUCCESS);
     file_close(&file);
     transaction_complete(tr);
     assert(!tr->failed);
 
     /* and alternate test file should not be */
-    open_test_file_etc(tr, &file, "alternate", FILE_OPEN_NO_CREATE, true);
+    open_test_file_etc(tr, &file, "alternate", FILE_OPEN_NO_CREATE,
+                       FILE_OP_ERR_NOT_FOUND);
     transaction_fail(tr);
 
     /* simulate a reboot, switching to alternate mode */
     block_test_swap_reinit(tr, FS_INIT_FLAGS_ALTERNATE_DATA);
 
     /* main test file should not exist */
-    open_test_file_etc(tr, &file, "main", FILE_OPEN_NO_CREATE, true);
+    open_test_file_etc(tr, &file, "main", FILE_OPEN_NO_CREATE,
+                       FILE_OP_ERR_NOT_FOUND);
     transaction_fail(tr);
     transaction_activate(tr);
 
@@ -2943,7 +2955,8 @@ static void fs_alternate_test(struct transaction* tr) {
     assert(!tr->failed);
     transaction_activate(tr);
 
-    open_test_file_etc(tr, &file, "alternate", FILE_OPEN_NO_CREATE, false);
+    open_test_file_etc(tr, &file, "alternate", FILE_OPEN_NO_CREATE,
+                       FILE_OP_SUCCESS);
     file_close(&file);
     transaction_complete(tr);
     assert(!tr->failed);
@@ -2951,7 +2964,8 @@ static void fs_alternate_test(struct transaction* tr) {
     /* simulate reboot, still in alternate mode */
     block_test_reinit(tr, FS_INIT_FLAGS_ALTERNATE_DATA);
 
-    open_test_file_etc(tr, &file, "alternate", FILE_OPEN_NO_CREATE, false);
+    open_test_file_etc(tr, &file, "alternate", FILE_OPEN_NO_CREATE,
+                       FILE_OP_SUCCESS);
     file_close(&file);
     transaction_complete(tr);
     assert(!tr->failed);
@@ -2960,28 +2974,31 @@ static void fs_alternate_test(struct transaction* tr) {
     block_test_swap_reinit(tr, FS_INIT_FLAGS_NONE);
 
     /* test file should be back */
-    open_test_file_etc(tr, &file, "main", FILE_OPEN_NO_CREATE, false);
+    open_test_file_etc(tr, &file, "main", FILE_OPEN_NO_CREATE, FILE_OP_SUCCESS);
     file_close(&file);
     transaction_complete(tr);
     assert(!tr->failed);
     transaction_activate(tr);
 
     /* and alternate file should be gone */
-    open_test_file_etc(tr, &file, "alternate", FILE_OPEN_NO_CREATE, true);
+    open_test_file_etc(tr, &file, "alternate", FILE_OPEN_NO_CREATE,
+                       FILE_OP_ERR_NOT_FOUND);
     transaction_fail(tr);
 
     /* simulate reboot back into alternate */
     block_test_swap_reinit(tr, FS_INIT_FLAGS_ALTERNATE_DATA);
 
     /* alternate test file should be back */
-    open_test_file_etc(tr, &file, "alternate", FILE_OPEN_NO_CREATE, false);
+    open_test_file_etc(tr, &file, "alternate", FILE_OPEN_NO_CREATE,
+                       FILE_OP_SUCCESS);
     file_close(&file);
     transaction_complete(tr);
     assert(!tr->failed);
     transaction_activate(tr);
 
     /* and regular file should be gone */
-    open_test_file_etc(tr, &file, "main", FILE_OPEN_NO_CREATE, true);
+    open_test_file_etc(tr, &file, "main", FILE_OPEN_NO_CREATE,
+                       FILE_OP_ERR_NOT_FOUND);
     transaction_fail(tr);
 
     block_test_swap_clear_reinit(tr, FS_INIT_FLAGS_DO_CLEAR);
@@ -3001,7 +3018,8 @@ static void fs_alternate_empty_test(struct transaction* tr) {
     block_test_swap_clear_reinit(tr, FS_INIT_FLAGS_DO_CLEAR);
 
     /* Ensure that the file is missing */
-    open_test_file_etc(tr, &file, "main", FILE_OPEN_NO_CREATE, true);
+    open_test_file_etc(tr, &file, "main", FILE_OPEN_NO_CREATE,
+                       FILE_OP_ERR_NOT_FOUND);
     transaction_fail(tr);
 
     /* swap to alternate and clear */
@@ -3009,7 +3027,8 @@ static void fs_alternate_empty_test(struct transaction* tr) {
             tr, FS_INIT_FLAGS_DO_CLEAR | FS_INIT_FLAGS_ALTERNATE_DATA);
 
     /* Ensure that the file is still missing */
-    open_test_file_etc(tr, &file, "main", FILE_OPEN_NO_CREATE, true);
+    open_test_file_etc(tr, &file, "main", FILE_OPEN_NO_CREATE,
+                       FILE_OP_ERR_NOT_FOUND);
     transaction_fail(tr);
     transaction_activate(tr);
 
@@ -3020,7 +3039,8 @@ static void fs_alternate_empty_test(struct transaction* tr) {
     assert(!tr->failed);
     transaction_activate(tr);
 
-    open_test_file_etc(tr, &file, "alternate", FILE_OPEN_NO_CREATE, false);
+    open_test_file_etc(tr, &file, "alternate", FILE_OPEN_NO_CREATE,
+                       FILE_OP_SUCCESS);
     file_close(&file);
     transaction_complete(tr);
     assert(!tr->failed);
@@ -3028,7 +3048,8 @@ static void fs_alternate_empty_test(struct transaction* tr) {
     /* reboot back to alternate with data */
     block_test_reinit(tr, FS_INIT_FLAGS_ALTERNATE_DATA);
 
-    open_test_file_etc(tr, &file, "alternate", FILE_OPEN_NO_CREATE, false);
+    open_test_file_etc(tr, &file, "alternate", FILE_OPEN_NO_CREATE,
+                       FILE_OP_SUCCESS);
     file_close(&file);
     transaction_complete(tr);
     assert(!tr->failed);
@@ -3037,13 +3058,15 @@ static void fs_alternate_empty_test(struct transaction* tr) {
     block_test_swap_reinit(tr, FS_INIT_FLAGS_NONE);
 
     /* Ensure that the file is missing */
-    open_test_file_etc(tr, &file, "alternate", FILE_OPEN_NO_CREATE, true);
+    open_test_file_etc(tr, &file, "alternate", FILE_OPEN_NO_CREATE,
+                       FILE_OP_ERR_NOT_FOUND);
     transaction_fail(tr);
 
     /* reboot to alternate to check that our data is still there */
     block_test_swap_reinit(tr, FS_INIT_FLAGS_ALTERNATE_DATA);
 
-    open_test_file_etc(tr, &file, "alternate", FILE_OPEN_NO_CREATE, false);
+    open_test_file_etc(tr, &file, "alternate", FILE_OPEN_NO_CREATE,
+                       FILE_OP_SUCCESS);
     file_close(&file);
     transaction_complete(tr);
     assert(!tr->failed);
@@ -3060,7 +3083,8 @@ static void fs_alternate_empty_test(struct transaction* tr) {
     block_test_reinit(tr, FS_INIT_FLAGS_NONE);
 
     /* Ensure that the file is still missing */
-    open_test_file_etc(tr, &file, "main", FILE_OPEN_NO_CREATE, true);
+    open_test_file_etc(tr, &file, "main", FILE_OPEN_NO_CREATE,
+                       FILE_OP_ERR_NOT_FOUND);
     transaction_fail(tr);
 
     /* reboot to alternate, clearing */
@@ -3074,7 +3098,8 @@ static void fs_alternate_empty_test(struct transaction* tr) {
     assert(!tr->failed);
     transaction_activate(tr);
 
-    open_test_file_etc(tr, &file, "alternate", FILE_OPEN_NO_CREATE, false);
+    open_test_file_etc(tr, &file, "alternate", FILE_OPEN_NO_CREATE,
+                       FILE_OP_SUCCESS);
     file_close(&file);
     transaction_complete(tr);
     assert(!tr->failed);
@@ -3094,7 +3119,7 @@ static void fs_alternate_empty_test(struct transaction* tr) {
     assert(!tr->failed);
     transaction_activate(tr);
 
-    open_test_file_etc(tr, &file, "main", FILE_OPEN_NO_CREATE, false);
+    open_test_file_etc(tr, &file, "main", FILE_OPEN_NO_CREATE, FILE_OP_SUCCESS);
     file_close(&file);
     transaction_complete(tr);
     assert(!tr->failed);
@@ -3119,7 +3144,8 @@ static void fs_alternate_recovery_test(struct transaction* tr) {
     assert(!tr->failed);
     transaction_activate(tr);
 
-    open_test_file_etc(tr, &file, "recovery_main", FILE_OPEN_NO_CREATE, false);
+    open_test_file_etc(tr, &file, "recovery_main", FILE_OPEN_NO_CREATE,
+                       FILE_OP_SUCCESS);
     file_close(&file);
     transaction_complete(tr);
     assert(!tr->failed);
@@ -3134,7 +3160,7 @@ static void fs_alternate_recovery_test(struct transaction* tr) {
     transaction_activate(tr);
 
     open_test_file_etc(tr, &file, "recovery_alternate", FILE_OPEN_NO_CREATE,
-                       false);
+                       FILE_OP_SUCCESS);
     file_close(&file);
     transaction_complete(tr);
     assert(!tr->failed);
@@ -3146,7 +3172,7 @@ static void fs_alternate_recovery_test(struct transaction* tr) {
 
     transaction_activate(tr);
     open_test_file_etc(tr, &file, "recovery_alternate", FILE_OPEN_NO_CREATE,
-                       true);
+                       FILE_OP_ERR_FAILED);
     transaction_complete(tr);
     assert(tr->failed);
     expect_errors(TRUSTY_STORAGE_ERROR_BLOCK_MAC_MISMATCH, 1);
@@ -3156,7 +3182,7 @@ static void fs_alternate_recovery_test(struct transaction* tr) {
     expect_errors(TRUSTY_STORAGE_ERROR_BLOCK_MAC_MISMATCH, 1);
 
     open_test_file_etc(tr, &file, "recovery_alternate",
-                       FILE_OPEN_CREATE_EXCLUSIVE, true);
+                       FILE_OPEN_CREATE_EXCLUSIVE, FILE_OP_ERR_FAILED);
     transaction_complete(tr);
     assert(tr->failed);
     expect_errors(TRUSTY_STORAGE_ERROR_BLOCK_MAC_MISMATCH, 1);
@@ -3176,7 +3202,7 @@ static void fs_alternate_recovery_test(struct transaction* tr) {
 
     /* alternate test file should be missing */
     open_test_file_etc(tr, &file, "recovery_alternate", FILE_OPEN_NO_CREATE,
-                       true);
+                       FILE_OP_ERR_NOT_FOUND);
     transaction_complete(tr);
     transaction_activate(tr);
 
@@ -3196,7 +3222,8 @@ static void fs_alternate_recovery_test(struct transaction* tr) {
     block_cache_dev_destroy(fs->dev);
 
     transaction_activate(tr);
-    open_test_file_etc(tr, &file, "recovery_main", FILE_OPEN_NO_CREATE, true);
+    open_test_file_etc(tr, &file, "recovery_main", FILE_OPEN_NO_CREATE,
+                       FILE_OP_ERR_FAILED);
     transaction_complete(tr);
     assert(tr->failed);
     expect_errors(TRUSTY_STORAGE_ERROR_BLOCK_MAC_MISMATCH, 1);
@@ -3206,7 +3233,7 @@ static void fs_alternate_recovery_test(struct transaction* tr) {
     expect_errors(TRUSTY_STORAGE_ERROR_BLOCK_MAC_MISMATCH, 1);
 
     open_test_file_etc(tr, &file, "recovery_main", FILE_OPEN_CREATE_EXCLUSIVE,
-                       true);
+                       FILE_OP_ERR_FAILED);
     transaction_complete(tr);
     assert(tr->failed);
     expect_errors(TRUSTY_STORAGE_ERROR_BLOCK_MAC_MISMATCH, 1);
@@ -3225,7 +3252,7 @@ static void fs_alternate_recovery_test(struct transaction* tr) {
 
     /* alternate test file should exist */
     open_test_file_etc(tr, &file, "recovery_alternate", FILE_OPEN_NO_CREATE,
-                       false);
+                       FILE_OP_SUCCESS);
     file_close(&file);
     transaction_complete(tr);
     assert(!tr->failed);
@@ -3250,7 +3277,7 @@ static void fs_alternate_init_test(struct transaction* tr) {
     assert(!tr->failed);
     transaction_activate(tr);
 
-    open_test_file_etc(tr, &file, "main", FILE_OPEN_NO_CREATE, false);
+    open_test_file_etc(tr, &file, "main", FILE_OPEN_NO_CREATE, FILE_OP_SUCCESS);
     file_close(&file);
     transaction_complete(tr);
     assert(!tr->failed);
@@ -3259,7 +3286,8 @@ static void fs_alternate_init_test(struct transaction* tr) {
     block_test_swap_clear_reinit(tr, FS_INIT_FLAGS_ALTERNATE_DATA);
 
     /* test file should be missing */
-    open_test_file_etc(tr, &file, "main", FILE_OPEN_NO_CREATE, true);
+    open_test_file_etc(tr, &file, "main", FILE_OPEN_NO_CREATE,
+                       FILE_OP_ERR_NOT_FOUND);
     transaction_fail(tr);
     transaction_activate(tr);
 
@@ -3270,7 +3298,8 @@ static void fs_alternate_init_test(struct transaction* tr) {
     assert(!tr->failed);
     transaction_activate(tr);
 
-    open_test_file_etc(tr, &file, "alternate", FILE_OPEN_NO_CREATE, false);
+    open_test_file_etc(tr, &file, "alternate", FILE_OPEN_NO_CREATE,
+                       FILE_OP_SUCCESS);
     file_close(&file);
     transaction_complete(tr);
     assert(!tr->failed);
@@ -3278,7 +3307,7 @@ static void fs_alternate_init_test(struct transaction* tr) {
     /* reboot into main */
     block_test_swap_reinit(tr, FS_INIT_FLAGS_NONE);
 
-    open_test_file_etc(tr, &file, "main", FILE_OPEN_NO_CREATE, false);
+    open_test_file_etc(tr, &file, "main", FILE_OPEN_NO_CREATE, FILE_OP_SUCCESS);
     file_close(&file);
 }
 
