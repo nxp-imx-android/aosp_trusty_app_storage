@@ -39,9 +39,12 @@ struct block_mac {
         { 0 }                              \
     }
 
+struct fs;
 struct transaction;
 
 void block_mac_clear(const struct transaction* tr, struct block_mac* dest);
+data_block_t block_mac_to_block_fs(const struct fs* fs,
+                                   const struct block_mac* block_mac);
 data_block_t block_mac_to_block(const struct transaction* tr,
                                 const struct block_mac* block_mac);
 const void* block_mac_to_mac(const struct transaction* tr,
@@ -58,6 +61,11 @@ bool block_mac_eq(const struct transaction* tr,
 void block_mac_copy(const struct transaction* tr,
                     struct block_mac* dest,
                     const struct block_mac* src);
+
+static inline bool block_mac_valid_fs(const struct fs* fs,
+                                      const struct block_mac* block_mac) {
+    return block_mac_to_block_fs(fs, block_mac);
+}
 
 static inline bool block_mac_valid(const struct transaction* tr,
                                    const struct block_mac* block_mac) {
