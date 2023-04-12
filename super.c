@@ -861,26 +861,27 @@ static int fs_init_from_super(struct fs* fs,
              * fs_set_roots() returns false if the checkpoint restore failed,
              * but leaves the roots in a valid state to allow read-only access.
              */
-            pr_err("failed to initialize filesystem roots\n");
+            pr_err("fs %s: failed to initialize filesystem roots\n", fs->name);
             read_only = true;
         } else {
-            pr_init("loaded super block version %d, checkpoint exists: %d\n",
-                    fs->super_block_version,
+            pr_init("fs %s: loaded super block version %d, checkpoint exists: %d\n",
+                    fs->name, fs->super_block_version,
                     block_range_empty(fs->checkpoint_free.initial_range));
         }
     } else {
         if (is_clear) {
-            pr_init("superblock, version %d, is empty fs\n",
+            pr_init("fs %s: superblock, version %d, is empty fs\n", fs->name,
                     fs->super_block_version);
         } else if (do_clear) {
-            pr_init("clear requested, create empty, version %d\n",
-                    fs->super_block_version);
+            pr_init("fs %s: clear requested, create empty, version %d\n",
+                    fs->name, fs->super_block_version);
             if (!fs->alternate_data) {
                 fs->main_repaired = false;
                 fs->needs_full_scan = false;
             }
         } else {
-            pr_init("no valid super-block found, create empty\n");
+            pr_init("fs %s: no valid super-block found, create empty\n",
+                    fs->name);
         }
         fs_init_free_set(fs, &fs->free);
     }
