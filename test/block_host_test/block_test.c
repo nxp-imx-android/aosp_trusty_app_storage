@@ -157,6 +157,7 @@ static void block_test_clear_reinit_etc(struct transaction* tr,
 
     ret = fs_init(fs, FILE_SYSTEM_TEST, key, dev, super_dev, flags);
     assert(ret == 0);
+    fs->reserved_count = 18; /* HACK: override default reserved space */
     transaction_init(tr, fs, true);
 }
 
@@ -2596,7 +2597,11 @@ static void fs_check_file_child_test(struct transaction* tr) {
 
     /* Corrupt a child in the files list */
     fs_corruption_helper(tr, select_files_block, 1, false);
-    assert(tr->failed);
+    /*
+     * We corrupt a file tree block, but the file that fs_corruption_helper
+     * probes is linked in a different file tree leaf and is unaffected by this,
+     * so the transaction succeeds.
+     */
 
     /* Ensure that we detect this corruption */
     assert(fs_check_full(tr->fs) == FS_CHECK_INVALID_BLOCK);
