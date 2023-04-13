@@ -904,10 +904,20 @@ static int fs_init_from_super(struct fs* fs,
     }
 
     fs->writable = true;
-    if ((do_clear && !is_clear) || flags & FS_INIT_FLAGS_RESTORE_CHECKPOINT) {
+    if (do_clear && !is_clear) {
         if (!write_initial_super_block(fs)) {
             return -1;
         }
+    } else if (flags & FS_INIT_FLAGS_RESTORE_CHECKPOINT) {
+        /*
+         * Flush the new restored checkpoint to superblock before overwriting
+         * any data blocks. We know that we can't already have a pending
+         * initial_super_block_tr yet because we just made the filesystem
+         * writable, and write_current_super_block() requires a writable
+         * filesystem.
+         */
+        assert(!fs->initial_super_block_tr);
+        write_current_super_block(fs, false);
     }
 
     return 0;
