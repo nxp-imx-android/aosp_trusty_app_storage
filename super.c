@@ -616,6 +616,9 @@ static bool fs_set_roots(struct fs* fs,
         if (block_mac_valid(&tr, &fs->checkpoint)) {
             success = checkpoint_read(&tr, &fs->checkpoint, &checkpoint_files,
                                       &fs->checkpoint_free);
+        } else if (restore_checkpoint) {
+            /* We do not want to restore a non-existent checkpoint */
+            success = false;
         }
         if (success && restore_checkpoint) {
             /*

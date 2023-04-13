@@ -2776,6 +2776,32 @@ static void fs_recovery_clear_test(struct transaction* tr) {
                        FILE_OP_ERR_NOT_FOUND);
 }
 
+static void fs_restore_nonexistent_checkpoint_test(struct transaction* tr) {
+    /* ensure that there is no existing checkpoint */
+    transaction_fail(tr);
+    block_test_clear_superblock_reinit(tr, FS_INIT_FLAGS_NONE);
+
+    file_test(tr, "nonexistent_checkpoint", FILE_OPEN_CREATE_EXCLUSIVE,
+              file_test_block_count, 0, 0, false, 1);
+    transaction_complete(tr);
+    assert(!tr->failed);
+
+    /* attempt to restore a non-existent checkpoint */
+    block_test_reinit(tr, FS_INIT_FLAGS_RESTORE_CHECKPOINT);
+
+    /* reads should work */
+    file_test(tr, "nonexistent_checkpoint", FILE_OPEN_NO_CREATE, 0,
+              file_test_block_count, 0, false, 1);
+
+    /* but writes should fail */
+    file_delete(tr, "nonexistent_checkpoint", allow_repaired);
+    transaction_complete(tr);
+    assert(tr->failed);
+
+    block_test_reinit(tr, FS_INIT_FLAGS_NONE);
+    file_delete(tr, "nonexistent_checkpoint", allow_repaired);
+}
+
 static void fs_recovery_restore_test(struct transaction* tr) {
     struct file_handle file;
     enum file_op_result result;
@@ -3505,6 +3531,7 @@ struct {
         TEST(fs_corrupt_data_blocks_test),
         TEST(fs_persist_needs_full_scan_test),
         TEST(fs_recovery_clear_test),
+        TEST(fs_restore_nonexistent_checkpoint_test),
         TEST(fs_recovery_restore_test),
         TEST(fs_recovery_restore_test2),
         TEST(fs_recovery_restore_cleanup),
