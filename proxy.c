@@ -142,7 +142,6 @@ struct ipc_channel_context* proxy_connect(struct ipc_port_context* parent_ctx,
 
     return &session->proxy_ctx;
 
-err_init_block_device:
 #if !WITH_HKDF_RPMB_KEY
 err_get_rpmb_key:
 #endif
