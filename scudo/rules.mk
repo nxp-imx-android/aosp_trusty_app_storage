@@ -20,6 +20,7 @@ MODULE := $(LOCAL_DIR)
 SCUDO_DIR := $(call FIND_EXTERNAL,scudo)
 
 MODULE_INCLUDES += \
+	$(LOCAL_DIR)/include \
 	$(SCUDO_DIR)/standalone \
 	$(SCUDO_DIR)/standalone/include \
 
@@ -30,6 +31,9 @@ MODULE_CFLAGS += \
 	-fno-emulated-tls \
 	-Wno-unused-result \
 	-DSCUDO_MIN_ALIGNMENT_LOG=4 \
+
+MODULE_DEFINES += \
+	SCUDO_USE_CUSTOM_CONFIG=1
 
 MODULE_CPPFLAGS += \
 	-fno-exceptions \
@@ -56,7 +60,7 @@ MODULE_SRCS += \
 	$(SCUDO_DIR)/standalone/string_utils.cpp \
 	$(SCUDO_DIR)/standalone/trusty.cpp \
 	$(SCUDO_DIR)/standalone/rss_limit_checker.cpp \
-	$(LOCAL_DIR)/wrappers.cpp \
+	$(LOCAL_DIR)/wrappers.cpp
 
 # Add dependency on syscall-stubs
 MODULE_LIBRARY_DEPS += trusty/user/base/lib/syscall-stubs
