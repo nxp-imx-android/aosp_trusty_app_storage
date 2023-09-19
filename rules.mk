@@ -19,7 +19,7 @@ MODULE := $(LOCAL_DIR)
 
 STORAGE_RPMB_PROTOCOL ?= MMC
 
-CONSTANTS := $(LOCAL_DIR)/storage_consts.json
+MODULE_CONSTANTS := $(LOCAL_DIR)/storage_consts.json
 
 MANIFEST := $(LOCAL_DIR)/manifest.json
 
