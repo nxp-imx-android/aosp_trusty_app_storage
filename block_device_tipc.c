@@ -379,7 +379,7 @@ static int block_device_tipc_program_key(struct rpmb_state* state,
     return 0;
 }
 
-static int block_device_tipc_derive_rpmb_key(struct rpmb_state* state,
+int block_device_tipc_derive_rpmb_key(struct rpmb_state* state,
                                              uint16_t rpmb_key_part_base,
                                              hwkey_session_t hwkey_session) {
     int ret;
@@ -814,6 +814,7 @@ void block_device_tipc_uninit(struct block_device_tipc* state) {
     rpmb_uninit(state->rpmb_state);
 }
 
+#if !BUILD_STORAGE_TEST
 int storage_program_rpmb_key(struct rpmb_state* rpmb_state)
 {
     int rc;
@@ -866,3 +867,4 @@ int storage_erase_rpmb(struct rpmb_state* rpmb_state)
 
     return STORAGE_NO_ERROR;
 }
+#endif
